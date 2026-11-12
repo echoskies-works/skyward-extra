@@ -2523,6 +2523,11 @@ const FOOT_DP: f32 = 24.0;
 /// Enough for the row of them, no more: they are icons on the desktop's own
 /// black, not a card raised over it.
 const TASKS_DP: f32 = 120.0;
+/// How far up, as a share of the tasks' height, a pull has to come to keep
+/// them. It is also where the motor taps and where the page starts to dim,
+/// so the tap and the dimming fall at the same moment: nothing of the tasks
+/// shows until the pull is far enough to keep them.
+const TASKS_MARK: f32 = 0.5;
 /// How dim the page goes while the tasks stand over it.
 const TASKS_DIM: f32 = 0.42;
 /// The ink of what the tasks' strip says, taken from the dark theme's light
@@ -2875,6 +2880,23 @@ struct Foot {
     /// Whether the pull is past the mark, which it taps the motor on
     /// reaching.
     armed: bool,
+}
+
+/// How far the tasks are up over what is shown, nought to one, for a pull
+/// of `pull` against the height `stand` they come to rest at. They are
+/// nought until the pull is far enough to keep them — where the motor taps
+/// — all the way up at that height, and back down to nought as the page is
+/// pushed on past it: a page on its way off the screen does not drag the
+/// tasks up with it.
+fn tasks_up(pull: f32, stand: f32) -> f32 {
+    let mark = stand * TASKS_MARK;
+    if pull <= mark {
+        return 0.0;
+    }
+    if pull > stand {
+        return (1.0 - (pull - stand) / (stand * 0.4)).clamp(0.0, 1.0);
+    }
+    ((pull - mark) / (stand - mark)).clamp(0.0, 1.0)
 }
 
 /// Whether a control is a row: as wide as the cards it lies on.
@@ -4576,22 +4598,30 @@ impl App {
     /// foot of the screen where they will stand. Nothing is listed there
     /// yet, so the strip says so. No card is raised under it: the strip is
     /// the desktop's own black, come clear as the page is pulled off.
+    ///
+    /// Nothing of them shows until the pull is far enough to keep them,
+    /// which is where the motor taps: short of that the page is only being
+    /// felt, not put away. A page pushed past the height they stand at is on
+    /// its way off the screen rather than coming to rest over it, so they
+    /// give way with it instead of riding up on its back — a throw to the
+    /// desktop shows nothing but the page and the desktop under it.
     fn compose_tasks(&mut self, out: &mut Canvas, f: &Fonts) {
         let Some(foot) = self.foot.as_ref() else { return };
         let t = self.theme();
         let m = t.m;
-        // They stand no higher than their own height, however far the pull
-        // has gone: past that it is the page that is going.
         let stand = m.dp(TASKS_DP);
-        let pull = foot.pull.min(stand);
-        if pull <= 0.5 {
+        // How far up they are, nought to one: nought where the motor taps,
+        // all the way at their own height, and back down to nought as the
+        // page goes on past it.
+        let up = tasks_up(foot.pull, stand);
+        if up <= 0.0 {
             return;
         }
         // The page goes as dim as the tasks are up over it.
-        out.dim(TASKS_DIM * (pull / stand).min(1.0));
-        // Nothing of them shows until the strip they stand in is clear
-        // enough to read on, and then it comes in rather than snapping on.
-        let shown = ((pull - stand * 0.35) / (stand * 0.55)).clamp(0.0, 1.0);
+        out.dim(TASKS_DIM * up);
+        // The line comes in a little behind the dimming, so it is read on a
+        // strip already dark enough to hold it.
+        let shown = ((up - 0.2) / 0.8).clamp(0.0, 1.0);
         if shown <= 0.0 {
             return;
         }
@@ -6719,7 +6749,7 @@ impl App {
                     // The mark is where the pull would come to rest at the
                     // tasks' height rather than sink back: let go past it and
                     // they stay up.
-                    let mark = m.dp(TASKS_DP) * 0.5;
+                    let mark = m.dp(TASKS_DP) * TASKS_MARK;
                     if let Some(foot) = self.foot.as_mut() {
                         let cap = if foot.tasks { m.dp(TASKS_DP) } else { self.h as f32 };
                         foot.pull = (from - y).clamp(0.0, cap);
@@ -8864,11 +8894,23 @@ mod tests {
     fn the_tasks_tap_the_motor_once_as_they_come_within_reach() {
         let f = fonts();
         let mut app = App::new(Screen::Desktop, W, H, PPD);
-        let (foot, mark) = (foot_y(&app), app.theme().m.dp(TASKS_DP) * 0.5);
+        let (foot, mark) = (foot_y(&app), app.theme().m.dp(TASKS_DP) * TASKS_MARK);
         app.touch(Touch::Down(720.0, foot), &f, 0);
         app.touch(Touch::Move(720.0, foot - 20.0), &f, 16);
         assert!(app.touch(Touch::Move(720.0, foot - mark - 20.0), &f, 32).contains(&Effect::Haptic), "a tap as they come within reach");
         assert!(app.touch(Touch::Move(720.0, foot - mark - 40.0), &f, 48).is_empty(), "and only the once");
+    }
+
+    #[test]
+    fn the_tasks_show_only_while_the_page_comes_to_rest_over_them() {
+        let stand = 120.0;
+        assert_eq!(tasks_up(0.0, stand), 0.0, "a touch is nothing yet");
+        assert_eq!(tasks_up(stand * TASKS_MARK, stand), 0.0, "nothing of them shows at the mark, where the motor taps");
+        assert!((tasks_up(stand, stand) - 1.0).abs() < 1e-6, "all the way up at the height they come to rest at");
+        let part = tasks_up(stand * 0.75, stand);
+        assert!(part > 0.0 && part < 1.0, "and part of the way between, not snapping on");
+        assert_eq!(tasks_up(stand * 1.5, stand), 0.0, "a page pushed past them is off the screen, and they go with it");
+        assert_eq!(tasks_up(5000.0, stand), 0.0, "nor do they ride up on a page thrown to the desktop");
     }
 
     #[test]
