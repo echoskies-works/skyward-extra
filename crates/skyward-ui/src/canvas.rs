@@ -476,6 +476,56 @@ impl Canvas {
         }
     }
 
+    /// Show a page leaving by the top of the screen, as a phone goes back
+    /// from an app to its desktop: the page `front` with its foot on row
+    /// `at` and its bottom corners rounded to `radius`, over the page
+    /// `behind`, black laid over it `dim` deep. At the screen's height the
+    /// page stands whole; at nothing it is gone and only `behind` shows.
+    /// [`Canvas::rise`] is this move the other way about, and the two are
+    /// what a finger at the foot of the screen drags between. Both pages
+    /// are as big as this canvas, and each of its pixels is written once.
+    pub fn lift(&mut self, front: &Canvas, behind: &Canvas, at: i32, dim: f32, radius: f32) {
+        assert!((front.w, front.h) == (self.w, self.h) && (behind.w, behind.h) == (self.w, self.h), "the pages are one size");
+        assert!(self.whole() && front.whole() && behind.whole(), "pages lift whole");
+        let (w, h) = (self.w as i32, self.h as i32);
+        let at = at.clamp(0, h);
+        let keep = ((1.0 - dim.clamp(0.0, 1.0)) * 256.0).round() as u32;
+        let row = w as usize * 4;
+        for y in 0..h {
+            let rows = y as usize * row..(y as usize + 1) * row;
+            let line = self.data[rows.clone()].as_chunks_mut::<4>().0;
+            let ahead = front.data[rows.clone()].as_chunks::<4>().0;
+            let back = behind.data[rows].as_chunks::<4>().0;
+            // Below the page's foot only the page behind shows, darkened.
+            if y >= at {
+                for (d, s) in line.iter_mut().zip(back) {
+                    *d = darken(*s, keep);
+                }
+                continue;
+            }
+            // Its own row, whole once past the corners it rounds off.
+            let src = (y + h - at) as usize * w as usize;
+            if (at - y) as f32 >= radius {
+                line.copy_from_slice(&ahead[src..src + w as usize]);
+                continue;
+            }
+            for (x, d) in line.iter_mut().enumerate() {
+                let cover = lift_cover(x as i32, y, at, w, radius);
+                let over = ahead[src + x];
+                let under = darken(back[x], keep);
+                *d = if cover >= 1.0 {
+                    over
+                } else if cover <= 0.0 {
+                    under
+                } else {
+                    let a = (cover * 256.0).round() as u32;
+                    let mix = |f: u8, b: u8| ((f as u32 * a + b as u32 * (256 - a) + 128) >> 8) as u8;
+                    [mix(over[0], under[0]), mix(over[1], under[1]), mix(over[2], under[2]), 255]
+                };
+            }
+        }
+    }
+
     /// A copy of the `w` × `h` pixels from (`x`, `y`), which lie in the rows
     /// this canvas holds.
     pub fn crop(&self, x: u32, y: u32, w: u32, h: u32) -> Canvas {
@@ -1163,6 +1213,17 @@ fn rise_cover(x: i32, y: i32, at: i32, w: i32, radius: f32) -> f32 {
     (0.5 - d).clamp(0.0, 1.0)
 }
 
+/// How much of pixel (`x`, `y`) a page whose foot stands on row `at`
+/// covers, its bottom corners rounded to `radius`: the same test as
+/// [`rise_cover`], taken up the screen rather than down it.
+fn lift_cover(x: i32, y: i32, at: i32, w: i32, radius: f32) -> f32 {
+    let (px, py, half) = (x as f32 + 0.5, y as f32 + 0.5, w as f32 / 2.0);
+    let qx = (px - half).abs() - (half - radius);
+    let qy = py + radius - at as f32;
+    let d = if qx > 0.0 && qy > 0.0 { qx.hypot(qy) - radius } else { qx.max(qy) - radius };
+    (0.5 - d).clamp(0.0, 1.0)
+}
+
 /// How far either way from the middle a row of a rounded rectangle `hx`
 /// half wide with corners `r` round reaches, for its outline moved `by`
 /// outwards; `qy` is how far the row lies past where the corners start to
@@ -1386,6 +1447,35 @@ mod tests {
             assert_eq!(at(5 + 6, y), 50 + 60, "past the corner the page is whole");
         }
         assert!(at(6, 2) > 0 && at(6, 2) < 60, "the curve is smoothed: {}", at(6, 2));
+    }
+
+    #[test]
+    fn a_page_lifted_away_leaves_the_one_below_it_whole() {
+        let mut behind = Canvas::new(2, 4);
+        for row in behind.data.chunks_mut(8) {
+            row.copy_from_slice(&[9, 9, 9, 255, 9, 9, 9, 255]);
+        }
+        let mut c = Canvas::new(2, 4);
+        c.lift(&graded(4), &behind, 2, 0.0, 0.0);
+        assert_eq!(greys(&c), [2, 3, 9, 9], "the page's own last rows stand, the page under it below");
+        // Lifted clear, only the page below is left.
+        c.lift(&graded(4), &behind, 0, 0.0, 0.0);
+        assert_eq!(greys(&c), [9, 9, 9, 9]);
+        // The page below goes on darkening as far as it is asked to.
+        c.lift(&graded(4), &behind, 2, 0.5, 0.0);
+        assert_eq!(greys(&c)[2], 4);
+    }
+
+    #[test]
+    fn a_page_lifting_rounds_the_corners_it_leaves_by() {
+        let behind = Canvas::new(20, 20);
+        let mut c = Canvas::new(20, 20);
+        c.lift(&columns(20, 20, 50), &behind, 20, 0.0, 6.0);
+        let at = |x: u32, y: u32| c.data[((y * 20 + x) * 4) as usize];
+        assert_eq!(at(6, 19), 110, "past the corner the page is whole");
+        assert_eq!(at(0, 19), 0, "the corner's tip is cut away");
+        assert_eq!(at(10, 19), 150, "the foot is straight between the corners");
+        assert_eq!(at(0, 0), 50, "the top of the page is untouched");
     }
 
     #[test]

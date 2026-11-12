@@ -408,7 +408,9 @@ pub fn calculator(cx: &Ctx) -> Frame {
         }
     }
 
-    Frame::new(t, c, out, l.pick(CALC_TITLE), m.content_top)
+    // No `<` here: an app opened from the desktop leaves it the way the
+    // desktop's own apps do, by a swipe up from the foot of the screen.
+    Frame { back: false, ..Frame::new(t, c, out, l.pick(CALC_TITLE), m.content_top) }
 }
 
 /// Recovery home, laid out like the Settings root: title, search, a device
