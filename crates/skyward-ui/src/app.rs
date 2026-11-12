@@ -8928,6 +8928,10 @@ mod tests {
         app.key(Key::Back, 0);
         assert_eq!(app.screen(), Screen::Desktop, "fastboot is not behind it");
         assert!(lit(&mut app, &f, &i).is_some(), "the keys go on working the pages");
+        // A finger below the icons hands the keys back, so the power key
+        // turns the panel off rather than lighting what it was on.
+        app.touch(Touch::Down(W as f32 / 2.0, H as f32 - 50.0), &f, 0);
+        app.touch(Touch::Up, &f, 0);
         assert_eq!(press(&mut app, Key::Power, 0), vec![Effect::Ticks]);
         assert!(!app.display_on(), "with the light put out, power turns the panel off");
     }
