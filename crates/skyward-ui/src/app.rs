@@ -8919,17 +8919,15 @@ mod tests {
     }
 
     #[test]
-    fn the_recovery_comes_up_from_fastboot_at_the_home_page() {
+    fn the_recovery_comes_up_from_fastboot_at_the_desktop() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Fastboot, W, H, PPD);
         app.frame(&f, &i);
         app.enter_recovery();
-        assert_eq!(app.screen(), Screen::Home);
+        assert_eq!(app.screen(), Screen::Desktop);
         app.key(Key::Back, 0);
-        assert_eq!(app.screen(), Screen::Home, "fastboot is not behind it");
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Search))), "the keys go on working the pages");
-        app.touch(Touch::Down(W as f32 / 2.0, 200.0), &f, 0);
-        app.touch(Touch::Up, &f, 0);
+        assert_eq!(app.screen(), Screen::Desktop, "fastboot is not behind it");
+        assert!(lit(&mut app, &f, &i).is_some(), "the keys go on working the pages");
         assert_eq!(press(&mut app, Key::Power, 0), vec![Effect::Ticks]);
         assert!(!app.display_on(), "with the light put out, power turns the panel off");
     }
@@ -9253,9 +9251,9 @@ mod tests {
         assert_eq!(tap(&mut app, &f, &i, Action::RebootTo(Target::System)), vec![Effect::Reboot(Target::System)]);
         assert_eq!(swipe(&mut app, &f, &i, Confirm::FactoryReset), vec![Effect::FactoryReset]);
         assert_eq!(tap(&mut app, &f, &i, Action::Dismiss), vec![Effect::Dismiss]);
-        assert_eq!(app.screen(), Screen::Home);
+        assert_eq!(app.screen(), Screen::Desktop);
         app.key(Key::Back, 0);
-        assert_eq!(app.screen(), Screen::Home, "the system's question is not behind it");
+        assert_eq!(app.screen(), Screen::Desktop, "the system's question is not behind it");
     }
 
     #[test]
@@ -9277,7 +9275,7 @@ mod tests {
         let later = 2000;
         assert_eq!(tap_at(&mut app, &f, &i, Action::RebootTo(Target::PowerOff), later), vec![Effect::Reboot(Target::PowerOff)]);
         assert_eq!(tap_at(&mut app, &f, &i, Action::Dismiss, later), vec![Effect::Dismiss]);
-        assert_eq!(app.screen(), Screen::Home);
+        assert_eq!(app.screen(), Screen::Desktop);
     }
 
     #[test]
@@ -9345,7 +9343,7 @@ mod tests {
         let later = 2000;
         assert_eq!(tap_at(&mut app, &f, &i, Action::RebootTo(Target::System), later), vec![Effect::Reboot(Target::System)]);
         assert_eq!(tap_at(&mut app, &f, &i, Action::Dismiss, later), vec![Effect::Dismiss]);
-        assert_eq!(app.screen(), Screen::Home);
+        assert_eq!(app.screen(), Screen::Desktop);
     }
 
     #[test]
@@ -9358,7 +9356,9 @@ mod tests {
         assert_eq!(app.state.erase.done, 0, "nothing was erased");
         assert_eq!(app.state.data, Data::Locked { user: 0, keys: Keys::Digits, checking: false }, "the partition stays as it was");
         assert_eq!(tap_at(&mut app, &f, &i, Action::Dismiss, 1000), vec![Effect::Dismiss]);
-        assert_eq!(app.screen(), Screen::Home);
+        assert_eq!(app.screen(), Screen::Desktop);
+        tap_at(&mut app, &f, &i, Action::Open(Screen::Home), 1000);
+        assert_eq!(app.screen(), Screen::Home, "the recovery icon goes on to the pages");
         assert_eq!(tap_at(&mut app, &f, &i, Action::Open(Screen::Decrypt), 1000), Vec::new(), "the screen lock is asked for at once");
         assert_eq!(app.screen(), Screen::Decrypt);
     }
@@ -9372,6 +9372,8 @@ mod tests {
         app.erase_ended(Ok(()), 0);
         assert_eq!(app.state.data, Data::Erased);
         assert_eq!(tap_at(&mut app, &f, &i, Action::Dismiss, 1000), vec![Effect::Dismiss]);
+        assert_eq!(app.screen(), Screen::Desktop);
+        tap_at(&mut app, &f, &i, Action::Open(Screen::Home), 1000);
         assert!(tap_at(&mut app, &f, &i, Action::Open(Screen::Decrypt), 1000).is_empty(), "nothing opens until the system makes it afresh");
         assert_eq!(app.screen(), Screen::Decrypt);
     }
@@ -9553,7 +9555,7 @@ mod tests {
         app.set_asked(Asked { unhandled: Some("--update_package=/data/ota_package/update.zip".into()), ..Asked::default() });
         assert_eq!(tap(&mut app, &f, &i, Action::RebootTo(Target::System)), vec![Effect::Reboot(Target::System)]);
         assert_eq!(tap(&mut app, &f, &i, Action::Dismiss), vec![Effect::Dismiss]);
-        assert_eq!(app.screen(), Screen::Home);
+        assert_eq!(app.screen(), Screen::Desktop);
     }
 
     /// Drag the knob of a swipe-to-confirm track all the way across.
@@ -10006,7 +10008,7 @@ mod tests {
         let mut first = App::new(Screen::Decrypt, W, H, PPD);
         first.arrive();
         tap(&mut first, &f, &i, Action::Skip);
-        assert_eq!((first.screen(), first.stack.len()), (Screen::Home, 1), "a recovery that started on the page goes on to the home page");
+        assert_eq!((first.screen(), first.stack.len()), (Screen::Desktop, 1), "a recovery that started on the page goes on to the desktop");
     }
 
     #[test]

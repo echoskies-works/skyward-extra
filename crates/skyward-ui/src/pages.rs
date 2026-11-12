@@ -311,7 +311,8 @@ const CALC_KEYS: [[CalcKey; CALC_COLS]; 5] = [
 const CALC_DIGITS: [&str; 10] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
 /// What a key reads. The signs are the ones every calculator uses, so they
-/// are the same in every language.
+/// are the same in every language. Erase is the left arrow, since no font
+/// here draws the erase-to-the-left sign.
 fn calc_text(key: CalcKey) -> &'static str {
     match key {
         CalcKey::Digit(d) => CALC_DIGITS[d as usize],
@@ -324,7 +325,7 @@ fn calc_text(key: CalcKey) -> &'static str {
         CalcKey::Op(CalcOp::Div) => "÷",
         CalcKey::Eq => "=",
         CalcKey::Clear => "AC",
-        CalcKey::Erase => "⌫",
+        CalcKey::Erase => "←",
     }
 }
 
