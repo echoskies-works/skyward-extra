@@ -1019,7 +1019,7 @@ fn main() -> Result<()> {
     }
 
     // The panel mid-gesture, to set beside recordings of the same moves.
-    let moments: [Moment; 34] = [
+    let moments: [Moment; 35] = [
         // A page pulled off the screen by its foot, the desktop come in
         // under it: four frames of the one move, the page gone up by about a
         // quarter, a half, three quarters and all but its last strip. The
@@ -1043,6 +1043,14 @@ fn main() -> Result<()> {
         // The tasks up over the desktop, the desktop dimmed under them, with
         // the strip still saying what is to come there.
         ("00k-tasks-up-dark", Screen::Desktop, true, &|app, f| {
+            let by = app.theme().m.dp(172.0);
+            pull_up(app, f, by)
+        }),
+        // The same over a page, the way a touch stays put instead of going
+        // on: the page has gone up as far as the tasks are tall and dimmed
+        // with them, and the strip stands in what it left, so the foot of
+        // the screen is the tasks rather than the desktop under the page.
+        ("00l-tasks-over-a-page-light", Screen::Calculator, false, &|app, f| {
             let by = app.theme().m.dp(172.0);
             pull_up(app, f, by)
         }),

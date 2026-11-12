@@ -4562,27 +4562,29 @@ impl App {
             self.compose_charging(out, f, info, charge, now);
         }
         self.compose_power_menu(out, f, now);
-        // The tasks come up over the desktop alone: a page pulled off it
-        // has already left.
-        if self.screen() == Screen::Desktop {
-            self.compose_tasks(out, f);
-        }
+        // The tasks come up over whatever is shown, a page or the desktop:
+        // over a page they stand where the pull left them and the page goes
+        // on standing above them.
+        self.compose_tasks(out, f);
         out.dim(self.curtain.level(now));
     }
 
-    /// The tasks up over the desktop: the desktop dimmed, and the strip of
-    /// them standing over the foot of the screen. Nothing is listed there
-    /// yet, so the strip says what is to come.
+    /// The tasks up over the page: the page dimmed, and the strip of them
+    /// standing over the foot of the screen. Nothing is listed there yet,
+    /// so the strip says what is to come.
     fn compose_tasks(&mut self, out: &mut Canvas, f: &Fonts) {
-        let Some(pull) = self.foot.as_ref().filter(|f| f.tasks).map(|f| f.pull) else { return };
+        let Some(foot) = self.foot.as_ref() else { return };
+        let t = self.theme();
+        let m = t.m;
+        // They stand no higher than their own height, however far the pull
+        // has gone: past that it is the page that is going.
+        let pull = foot.pull.min(m.dp(TASKS_DP));
         if pull <= 0.5 {
             return;
         }
-        let t = self.theme();
-        let m = t.m;
         let (w, h) = (m.w as f32, self.h as f32);
         let top = h - pull;
-        // The desktop goes as dim as the tasks are up over it.
+        // The page goes as dim as the tasks are up over it.
         out.dim(TASKS_DIM * (pull / m.dp(TASKS_DP)).min(1.0));
         // The strip: a card with its top corners round, reaching past both
         // sides so its foot is cut by the screen's own.
@@ -4750,6 +4752,9 @@ impl App {
         // A finger pulling the page off the screen by its foot: the page
         // and the desktop under it, both drawn whole, moved against each
         // other, the page's foot standing on the row the pull has left it.
+        // Let go where the tasks stand, the page keeps that much of its
+        // rise and the tasks fill what it has left, so what stands at the
+        // foot is the tasks and not the desktop under it.
         if slide.is_none() {
             if let Some(off) = self.foot.as_ref().filter(|f| !f.tasks).map(|f| f.pull) {
                 let mut page = Canvas::new(out.w, out.h);
@@ -5184,10 +5189,12 @@ impl App {
     }
 
     /// Where the tasks stand, over the foot of the screen, while they are
-    /// up: their top row, or nothing while they are not.
+    /// up: their top row, or nothing while they are not. They stand no
+    /// higher than their own height, past which the page is going.
     fn tasks_top(&self) -> Option<f32> {
-        let foot = self.foot.as_ref().filter(|f| f.tasks)?;
-        (foot.pull > 0.5).then_some(self.h as f32 - foot.pull)
+        let foot = self.foot.as_ref()?;
+        let pull = foot.pull.min(self.theme().m.dp(TASKS_DP));
+        (pull > 0.5).then_some(self.h as f32 - pull)
     }
 
     /// Put the tasks down: they slide back into the foot of the screen and
@@ -5201,8 +5208,9 @@ impl App {
         self.dirty = true;
     }
 
-    /// Carry a pull let go on to where it goes: the page off the screen and
-    /// the desktop left, the tasks up, or either back where it came from.
+    /// Carry a pull let go on to where it goes: the tasks up and standing,
+    /// the page off the screen with the desktop left, or either back where
+    /// it came from.
     fn settle_foot(&mut self, now: u64) -> Vec<Effect> {
         let fx = Vec::new();
         let (h, tasks_h) = (self.h as f32, self.theme().m.dp(TASKS_DP));
@@ -5215,26 +5223,24 @@ impl App {
         if !settled {
             return fx;
         }
-        let (tasks, to) = (foot.tasks, foot.to);
-        if tasks {
-            if to <= 0.5 {
-                // Down: the desktop shows alone again.
-                self.foot = None;
-            } else {
-                // Up: the tasks stay where they came to, until a touch
-                // above them.
-                let foot = self.foot.as_mut().expect("a pull is under way");
-                foot.pull = to;
-                foot.spring = None;
-            }
+        let to = foot.to;
+        // Down: whatever was up shows alone again.
+        if to <= 0.5 {
+            self.foot = None;
             return fx;
         }
-        // A page pulled off the screen is gone: the desktop is what it
+        // The tasks' height: they stay where they came to, over whatever
+        // they were pulled up over, until a touch above them.
+        if to < h - 0.5 {
+            let foot = self.foot.as_mut().expect("a pull is under way");
+            foot.pull = to;
+            foot.spring = None;
+            return fx;
+        }
+        // The screen's height: the page is gone, and the desktop is what it
         // leaves for, whatever lay between them.
         self.foot = None;
-        if to >= h - 0.5 {
-            self.leave_for_desktop();
-        }
+        self.leave_for_desktop();
         fx
     }
 
@@ -6544,8 +6550,8 @@ impl App {
         let pressing = self.pressing();
         match ev {
             Touch::Down(x, y) => {
-                // A touch above the tasks up over the desktop puts them
-                // down again, leaving them as they were.
+                // A touch above the tasks puts them down again, leaving
+                // whatever they stood over as it was.
                 if self.tasks_top().is_some_and(|top| y < top) {
                     self.lower_tasks(now);
                     return fx;
@@ -6649,11 +6655,13 @@ impl App {
                             Drag::Edge { start: x0, from_left, armed: false, x, cy: y0 - m.dp(CUE_LIFT_DP) }
                         }
                         // A finger pulled up from the foot of the screen
-                        // takes the page off for the desktop, or brings the
-                        // desktop's own tasks up over it. The desktop is the
-                        // home of every page, so this asks nothing of what
-                        // lies under the one shown.
+                        // brings the tasks up over whatever is shown, and,
+                        // thrown on past them, takes the page off for the
+                        // desktop. The desktop is the home of every page, so
+                        // this asks nothing of what lies under the one shown.
                         _ if dy < -slop && dy.abs() > dx.abs() && y0 > m.h as f32 - m.dp(FOOT_DP) => {
+                            // Over the desktop there is nowhere further to go
+                            // than the tasks themselves.
                             let tasks = self.screen() == Screen::Desktop;
                             let cap = if tasks { m.dp(TASKS_DP) } else { self.h as f32 };
                             // Whatever the page was doing under the finger
@@ -6783,16 +6791,23 @@ impl App {
                 }
                 Drag::Edge { armed: true, .. } => fx.extend(self.back(now)),
                 Drag::Foot { .. } => {
-                    // A pull let go: past the mark, or carried on fast
-                    // enough, it goes where it leads, else back where it
-                    // came from.
+                    // A pull let go: thrown on fast, it takes the page off
+                    // for the desktop; let go slower, it comes to rest where
+                    // the tasks are, if it got far enough, else it sinks
+                    // back. Over the desktop there is nowhere further than
+                    // the tasks, so nothing there goes off.
                     let speed = -self.tracker.velocity(now);
                     let (h, tasks_h, fling) = (self.h as f32, m.dp(TASKS_DP), m.dp(FOOT_FLING_DP));
                     if let Some(foot) = self.foot.as_mut() {
-                        let (cap, mark) = if foot.tasks { (tasks_h, tasks_h * 0.5) } else { (h, h * 0.25) };
-                        let go = foot.pull > mark || speed > fling;
-                        foot.to = if go { cap } else { 0.0 };
-                        foot.spring = Some(Spring::new(now, foot.pull - foot.to, speed, FOOT_PERIOD));
+                        let to = if !foot.tasks && speed > fling {
+                            h
+                        } else if foot.pull > tasks_h * 0.5 {
+                            tasks_h
+                        } else {
+                            0.0
+                        };
+                        foot.to = to;
+                        foot.spring = Some(Spring::new(now, foot.pull - to, speed, FOOT_PERIOD));
                         self.dirty = true;
                     }
                 }
@@ -8764,6 +8779,29 @@ mod tests {
         app.tick(3000);
         assert_eq!(app.screen(), Screen::Desktop, "the page is off and the desktop is left");
         assert!(app.foot.is_none());
+    }
+
+    #[test]
+    fn a_pull_up_from_the_foot_of_a_page_comes_to_rest_as_the_tasks() {
+        let (f, i) = (fonts(), info());
+        let mut app = opened(Screen::Calculator, &f, &i);
+        let (foot, tasks) = (foot_y(&app), app.theme().m.dp(TASKS_DP));
+        app.touch(Touch::Down(720.0, foot), &f, 0);
+        app.touch(Touch::Move(720.0, foot - 60.0), &f, 16);
+        // Dragged up to the tasks' height and held there, so what is let go
+        // is not read as a fling: the tasks stay, the page stays under them.
+        app.touch(Touch::Move(720.0, foot - tasks * 0.9), &f, 200);
+        app.touch(Touch::Move(720.0, foot - tasks * 0.9), &f, 400);
+        app.touch(Touch::Up, &f, 410);
+        app.tick(3000);
+        assert_eq!(app.screen(), Screen::Calculator, "the page is still there under them");
+        assert!(app.tasks_top().is_some(), "the tasks stay up over the page");
+        // A touch above them puts them down, and the page is left as it was.
+        app.touch(Touch::Down(720.0, 400.0), &f, 3200);
+        app.touch(Touch::Up, &f, 3210);
+        app.tick(5000);
+        assert!(app.tasks_top().is_none(), "the page shows alone again");
+        assert_eq!(app.screen(), Screen::Calculator);
     }
 
     #[test]
