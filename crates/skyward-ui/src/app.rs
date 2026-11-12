@@ -2518,10 +2518,8 @@ const BACK_SWIPE_DP: f32 = 56.0;
 /// to pull the page off, or the desktop's tasks up: the strip a phone
 /// keeps for its gesture bar.
 const FOOT_DP: f32 = 24.0;
-/// How far, in dp, such a pull comes before it counts as asking for what
-/// it leads to rather than meaning nothing.
-const FOOT_MARK_DP: f32 = 44.0;
-/// How far up, in dp, the desktop's tasks stand when they are up.
+/// How far up, in dp, the tasks stand when they are up: the strip they take
+/// at the foot of the screen, and how far a page is left standing above it.
 const TASKS_DP: f32 = 172.0;
 /// How dim the page goes while the tasks stand over it.
 const TASKS_DIM: f32 = 0.42;
@@ -6712,13 +6710,16 @@ impl App {
                 }
                 Drag::Foot { from } => {
                     self.tracker.add(now, y);
-                    let mark = m.dp(FOOT_MARK_DP);
+                    // The mark is where the pull would come to rest at the
+                    // tasks' height rather than sink back: let go past it and
+                    // they stay up.
+                    let mark = m.dp(TASKS_DP) * 0.5;
                     if let Some(foot) = self.foot.as_mut() {
                         let cap = if foot.tasks { m.dp(TASKS_DP) } else { self.h as f32 };
                         foot.pull = (from - y).clamp(0.0, cap);
                         let armed = foot.pull > mark;
-                        // A tap of the motor as what the pull leads to comes
-                        // within reach: the page's leaving, or the tasks.
+                        // A tap of the motor as the tasks come within reach,
+                        // which is the moment they would stay up if let go.
                         if armed && !foot.armed && self.state.vibrate {
                             fx.push(Effect::Haptic);
                         }
@@ -8856,7 +8857,7 @@ mod tests {
     fn the_tasks_tap_the_motor_once_as_they_come_within_reach() {
         let f = fonts();
         let mut app = App::new(Screen::Desktop, W, H, PPD);
-        let (foot, mark) = (foot_y(&app), app.theme().m.dp(FOOT_MARK_DP));
+        let (foot, mark) = (foot_y(&app), app.theme().m.dp(TASKS_DP) * 0.5);
         app.touch(Touch::Down(720.0, foot), &f, 0);
         app.touch(Touch::Move(720.0, foot - 20.0), &f, 16);
         assert!(app.touch(Touch::Move(720.0, foot - mark - 20.0), &f, 32).contains(&Effect::Haptic), "a tap as they come within reach");
