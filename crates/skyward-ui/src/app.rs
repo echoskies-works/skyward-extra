@@ -1117,6 +1117,17 @@ pub enum Target {
 
 pub const TARGETS: [Target; 6] = [Target::System, Target::Recovery, Target::Fastboot, Target::Bootloader, Target::Edl, Target::PowerOff];
 
+/// What the power menu offers, in the order it lists them, for the phone to
+/// be restarted or turned off from anywhere: the power key held down, or
+/// the power and volume up keys together, brings it up. Wipe and EDL are
+/// left out — too much to set off with a thumb by accident.
+pub const POWER_MENU: [(Target, Text); 4] = [
+    (Target::PowerOff, ["关机", "關機", "Power off"]),
+    (Target::System, ["重启", "重啟", "Restart"]),
+    (Target::Recovery, ["重启到 Recovery", "重啟到 Recovery", "Restart to recovery"]),
+    (Target::Bootloader, ["重启到 Bootloader", "重啟到 Bootloader", "Restart to bootloader"]),
+];
+
 /// Where the fastboot page goes, in the order it lists them: the volume
 /// keys move between them and the power key takes one.
 pub const FASTBOOT_CHOICES: [(Text, Action); 4] = [
@@ -2403,8 +2414,32 @@ enum Press {
     /// its track at `track` from `at` while the key is held; let go once
     /// it has slid far enough, the control confirms.
     Slide { which: Confirm, track: Rect, at: u64 },
+    /// The power key held with nothing lit: let go before it has been held
+    /// long enough, the panel goes off as a press of the key has always
+    /// turned it off; held longer, the power menu comes up.
+    PowerIdle { at: u64 },
     /// Done with: nothing more comes of it until it is let go.
     Spent,
+}
+
+/// The power menu as it shows: the entry lit, and when it came up, for the
+/// dim and the card to come in over a frame or two.
+struct PowerMenu {
+    chosen: usize,
+    since: u64,
+}
+
+/// The card the power menu shows in, and the rows it lists, on a screen of
+/// the metrics `t` carries: the card in the middle of the screen, one row
+/// for each entry of [`POWER_MENU`].
+fn power_menu_layout(t: &Theme) -> (Rect, [Rect; 4]) {
+    let m = &t.m;
+    let (pad, item) = (m.dp(8.0), m.dp(56.0));
+    let w = m.dp(288.0);
+    let h = item * POWER_MENU.len() as f32 + pad * 2.0;
+    let (x, y) = ((m.w as f32 - w) / 2.0, (m.h as f32 - h) / 2.0);
+    let rows = std::array::from_fn(|i| Rect::new(x + pad, y + pad + item * i as f32, w - pad * 2.0, item));
+    (Rect::new(x, y, w, h), rows)
 }
 
 const TOAST_MS: u64 = 2000;
@@ -2539,6 +2574,12 @@ const NEAR_SCREENS: f32 = 0.5;
 /// its square.
 const DARKEN: Ease = Ease::Out(365, 3);
 const BRIGHTEN: Ease = Ease::Out(520, 2);
+/// The power menu comes up over the page as a phone's own does: over this
+/// long, the page dims to `POWER_MENU_DIM` of itself and the card rises the
+/// last few dp into place.
+const POWER_MENU_MS: u64 = 170;
+const POWER_MENU_IN: Ease = Ease::Out(POWER_MENU_MS, 2);
+const POWER_MENU_DIM: f32 = 0.45;
 /// The charging screen comes over the page as the phone's own does, over
 /// 420 ms slowing as the square of the time left, shows this long from
 /// when the cable went in, and goes in 300 ms.
@@ -2782,6 +2823,9 @@ struct Turn {
     /// Going back: the page in front is the page left; else the page
     /// opened.
     back: bool,
+    /// The move is up and down rather than across: a page opened from the
+    /// desktop rises from the foot of the screen, and sinks back to it.
+    rise: bool,
     /// The page left, as it last showed.
     left: Canvas,
     /// How far from the left edge the page in front stands, in thousandths
@@ -2907,6 +2951,9 @@ pub struct App {
     /// The screen's content against black: it goes dark as the panel goes
     /// off, under the backlight held then, and comes up as the panel lights.
     curtain: Fade,
+    /// The power menu, over the page while the phone is being asked to
+    /// restart or go off.
+    power_menu: Option<PowerMenu>,
     darkening: Option<f32>,
     /// The charging screen, from when a cable goes in until it has gone,
     /// with the level and what the charger does drawn for it, and the
@@ -2967,6 +3014,7 @@ impl App {
             keys: start == Screen::Fastboot,
             button: None,
             chord: None,
+            power_menu: None,
             seek: None,
             knob: None,
             adjusting: false,
@@ -3087,11 +3135,13 @@ impl App {
         let repeat = match self.button {
             Some((_, Press::Volume { next, .. })) => Some(next),
             Some((_, Press::Power { spot: Spot { stop: Stop::Hit(Action::OpenEntry(_)), .. }, at })) => Some(at + LONG_PRESS_MS),
+            Some((_, Press::PowerIdle { at })) => Some(at + LONG_PRESS_MS),
             _ => None,
         };
         let blink = self.blink_at(now).filter(|_| self.display_on).map(|(_, next)| next);
         let chord = self.chord.map(|(_, at)| at + CHORD_MS);
-        [self.toast.as_ref().map(|t| t.1), easing, self.idle_due(), held, repeat, blink, darkens, chord].into_iter().flatten().min()
+        let menu = self.power_menu.as_ref().map(|m| m.since + POWER_MENU_MS);
+        [self.toast.as_ref().map(|t| t.1), easing, self.idle_due(), held, repeat, blink, darkens, chord, menu].into_iter().flatten().min()
     }
 
     /// Whether a text field's cursor shows at `now`, and when it next turns;
@@ -3135,7 +3185,7 @@ impl App {
         // The key waiting for its partner in a screenshot, left alone long
         // enough, does what it does alone.
         if self.chord.is_some_and(|(_, at)| now >= at + CHORD_MS) {
-            fx.extend(self.let_chord_go(now));
+            fx.extend(self.let_chord_go());
         }
         // An entry of the file manager held long enough, under a finger or
         // the power key, opens what can be done with it, a folder as much as
@@ -3150,6 +3200,13 @@ impl App {
             if now >= at + LONG_PRESS_MS {
                 self.button = Some((key, Press::Spent));
                 fx.extend(self.held_entry(i));
+            }
+        }
+        // The power key held with nothing lit brings the power menu up.
+        if let Some((key, Press::PowerIdle { at })) = self.button {
+            if now >= at + LONG_PRESS_MS {
+                self.button = Some((key, Press::Spent));
+                fx.extend(self.show_power_menu(now));
             }
         }
         let active = *self.active.get_or_insert(now);
@@ -3417,6 +3474,7 @@ impl App {
         self.darkening = self.panel(now);
         self.curtain.set(false, now);
         self.display_on = false;
+        self.power_menu = None;
         self.bright = full_brightness();
         match std::mem::replace(&mut self.drag, Drag::Idle) {
             Drag::Confirm { .. } => {
@@ -4456,7 +4514,36 @@ impl App {
         if charge > 0.0 {
             self.compose_charging(out, f, info, charge, now);
         }
+        self.compose_power_menu(out, f, now);
         out.dim(self.curtain.level(now));
+    }
+
+    /// The power menu over the page: the page dimmed under it, the card come
+    /// up into the middle of the screen with its entries listed and the one
+    /// the keys stand on lit.
+    fn compose_power_menu(&mut self, out: &mut Canvas, f: &Fonts, now: u64) {
+        let Some(menu) = self.power_menu.as_ref() else { return };
+        let t = self.theme();
+        let lang = self.state.lang;
+        let m = &t.m;
+        let along = POWER_MENU_IN.progress(now.saturating_sub(menu.since));
+        out.dim(1.0 - POWER_MENU_DIM * along);
+        let (card, rows) = power_menu_layout(&t);
+        let radius = m.dp(26.0);
+        // The card rises the last few dp into place rather than snapping
+        // there, as a phone's own menus do.
+        let rise = (1.0 - along) * m.dp(14.0);
+        let (x, y) = (card.x, card.y + rise);
+        out.shadow_round_rect(x, y, card.w, card.h, radius, m.dp(16.0), t.pal.shadow);
+        out.fill_round_rect(x, y, card.w, card.h, radius, t.pal.card);
+        for (i, (_, name)) in POWER_MENU.iter().enumerate() {
+            let row = Rect::new(rows[i].x, rows[i].y + rise, rows[i].w, rows[i].h);
+            if i == menu.chosen {
+                let inset = m.dp(3.0);
+                out.fill_round_rect(row.x, row.y + inset, row.w, row.h - inset * 2.0, m.dp(18.0), t.pal.track);
+            }
+            out.text_center(&f.label, lang.pick(*name), row.x + row.w / 2.0, row.y + row.h / 2.0, m.row_title_px, t.pal.text);
+        }
     }
 
     /// The charging screen, `level` of the way over the page drawn on `out`.
@@ -4537,8 +4624,11 @@ impl App {
             // While it slides in, that is its columns come in, and a
             // quarter of the screen more each frame, so it is drawn across
             // early in the slide; all of it once a row of it is held.
+            // The columns a page is drawn across: all of them but the ones a
+            // page sliding in from the right has yet to reach. A page rising
+            // is drawn across whole, since it comes up rather than in.
             let wide = match (slide, &self.turn) {
-                (Some((at, _, _)), Some(turn)) if !turn.back && self.row_press.is_none() => {
+                (Some((at, _, _)), Some(turn)) if !turn.back && !turn.rise && self.row_press.is_none() => {
                     (self.w - at.clamp(0, self.w as i32) as u32).max(self.cols + self.w / 4)
                 }
                 _ => self.w,
@@ -4572,14 +4662,24 @@ impl App {
         match slide {
             Some((at, shift, dim)) => {
                 // The page shown is drawn on its own canvas, once for as
-                // long as it shows the same, and slid from there with the
+                // long as it shows the same, and moved from there with the
                 // page left.
+                let (back, rise) = {
+                    let turn = self.turn.as_ref().expect("sliding");
+                    (turn.back, turn.rise)
+                };
                 // A page opened shows nothing of itself until its edge comes
-                // in from the right: the page left alone shows.
-                let back = self.turn.as_ref().expect("sliding").back;
-                if !back && at >= self.w as i32 {
+                // in from the right, or its top from the foot of the screen:
+                // the page left alone shows.
+                let off = if rise { self.h as i32 } else { self.w as i32 };
+                if !back && at >= off {
                     let left = &self.turn.as_ref().expect("sliding").left;
-                    out.slide(left, left, at, shift, dim, self.corners);
+                    if rise {
+                        out.put(left, 0);
+                        out.dim(dim);
+                    } else {
+                        out.slide(left, left, at, shift, dim, self.corners);
+                    }
                 } else {
                     let still = self.frame.as_ref().is_some_and(|fr| fr.hero.is_none());
                     let page = match self.layer.take() {
@@ -4592,7 +4692,11 @@ impl App {
                     };
                     let turn = self.turn.as_ref().expect("sliding");
                     let (front, behind) = if back { (&turn.left, &page) } else { (&page, &turn.left) };
-                    out.slide(front, behind, at, shift, dim, self.corners);
+                    if rise {
+                        out.rise(front, behind, at, dim, self.corners);
+                    } else {
+                        out.slide(front, behind, at, shift, dim, self.corners);
+                    }
                     self.layer = Some((view, page));
                 }
             }
@@ -4603,7 +4707,10 @@ impl App {
         }
         self.shown = Some(view);
 
-        widgets::status_bar(out, &t, f, &self.bar(clock, info), t.pal.status);
+        // The desktop's wallpaper is black whichever theme is on, so its bar
+        // takes the light ink; every other page's bar follows its own page.
+        let bar_ink = if self.screen() == Screen::Desktop { pages::DESKTOP_STATUS } else { t.pal.status };
+        widgets::status_bar(out, &t, f, &self.bar(clock, info), bar_ink);
         if let Some((text, _)) = &self.toast {
             widgets::toast(out, &t, f, text);
         }
@@ -4801,6 +4908,13 @@ impl App {
         // Where the page in front stands, in screen widths from the left
         // edge.
         let along = if turn.back { 1.0 + x / 1000.0 } else { x / 1000.0 };
+        if turn.rise {
+            // Up and down: the row of the screen the page's top edge stands
+            // on, from the foot of the screen to the head of it as it comes
+            // in, and back down again as it goes.
+            let h = self.h as f32;
+            return Some(((along * h).round() as i32, 0, BEHIND_DIM * (1.0 - along)));
+        }
         let w = self.w as f32;
         Some(((along * w).round() as i32, (BEHIND_SHIFT * w * (1.0 - along)).round() as i32, BEHIND_DIM * (1.0 - along)))
     }
@@ -4948,12 +5062,29 @@ impl App {
         self.refresh();
     }
 
+    /// Whether the move now under way goes up and down rather than across:
+    /// the desktop opens the pages over it, and they sink back down to it,
+    /// while pages opened one from another still go across.
+    fn rising(&self, back: bool) -> bool {
+        if back {
+            // The page going is the one shown; the page it goes back to is
+            // the one under it, or the desktop when there is none.
+            self.stack.len() < 2 || self.stack[self.stack.len() - 2].0 == Screen::Desktop
+        } else {
+            self.screen() == Screen::Desktop
+        }
+    }
+
     /// The page shown gives way to another, opened over it or, `back`, gone
     /// back to under it: draw it as it last showed, to slide away. Changes
     /// made before the slide's first frame keep the page that showed; a
     /// page rendered anew since it last showed gives way at once.
     fn leave(&mut self, back: bool) {
+        let rise = self.rising(back);
         if let Some(turn) = self.turn.as_mut().filter(|t| t.spring.is_none()) {
+            // The move already picked its way across the screen or up it:
+            // turning back mid-move keeps to that way rather than jumping
+            // from one axis to the other.
             turn.back = back;
             return;
         }
@@ -4969,7 +5100,7 @@ impl App {
         if let Some(fr) = self.frame.as_ref().filter(|_| self.cols < self.w) {
             left.fill_rect(self.cols as f32, 0.0, (self.w - self.cols) as f32, self.h as f32, fr.bg);
         }
-        self.turn = Some(Turn { back, left, spring: None });
+        self.turn = Some(Turn { back, rise, left, spring: None });
         self.dirty = true;
     }
 
@@ -6193,6 +6324,11 @@ impl App {
         if !self.display_on {
             return Vec::new();
         }
+        // The power menu takes the finger while it shows, over everything
+        // else on the panel.
+        if self.power_menu.is_some() {
+            return self.power_menu_touch(ev, now);
+        }
         // A finger on the charging screen sends it away for the page, and
         // does nothing else until it lifts.
         if self.charge_shown() {
@@ -6514,12 +6650,23 @@ impl App {
         // Any button stops a gliding page, and brings a sliding one to rest.
         self.fling = None;
         self.end_turn();
+        // The power menu takes every key while it shows: the volume keys
+        // move the light, the power key takes what is lit, back puts it away.
+        if self.power_menu.is_some() {
+            return self.power_menu_key(key, now);
+        }
         if let Some((first, at)) = self.chord {
-            if matches!((first, key), (Key::Power, Key::VolumeDown) | (Key::VolumeDown, Key::Power)) && now < at + CHORD_MS {
-                return self.screenshot(key, now);
+            if now < at + CHORD_MS {
+                // The two together do what neither does alone, whichever
+                // went down first.
+                match (first, key) {
+                    (Key::Power, Key::VolumeDown) | (Key::VolumeDown, Key::Power) => return self.screenshot(key, now),
+                    (Key::Power, Key::VolumeUp) | (Key::VolumeUp, Key::Power) => return self.show_power_menu(now),
+                    _ => {}
+                }
             }
         }
-        let mut fx = self.let_chord_go(now);
+        let mut fx = self.let_chord_go();
         if !self.display_on {
             // The power key lights the dark panel, and does only that, as on
             // the phone's own system; the other keys leave it dark.
@@ -6544,11 +6691,11 @@ impl App {
             return fx;
         }
         self.stir(now);
-        if matches!(key, Key::Power | Key::VolumeDown) {
+        if matches!(key, Key::Power | Key::VolumeDown | Key::VolumeUp) {
             self.chord = Some((key, now));
             return fx;
         }
-        fx.extend(self.key_down(key, now, now));
+        fx.extend(self.key_down(key, now));
         fx
     }
 
@@ -6567,18 +6714,90 @@ impl App {
         fx
     }
 
+    /// The power key and volume up went down together, or the power key was
+    /// held with nothing lit: the power menu comes up over the page, with a
+    /// tap of the motor.
+    fn show_power_menu(&mut self, now: u64) -> Vec<Effect> {
+        self.chord = None;
+        self.power_menu = Some(PowerMenu { chosen: 0, since: now });
+        self.dirty = true;
+        self.stir(now);
+        if self.state.vibrate { vec![Effect::Haptic] } else { Vec::new() }
+    }
+
+    /// The power menu goes, and the phone goes on as it was.
+    fn hide_power_menu(&mut self) {
+        self.power_menu = None;
+        self.dirty = true;
+    }
+
+    /// A finger on the power menu: a tap on an entry does what it says, a
+    /// tap beside the card puts the menu away and does nothing else.
+    fn power_menu_touch(&mut self, ev: Touch, now: u64) -> Vec<Effect> {
+        let Touch::Down(x, y) = ev else { return Vec::new() };
+        let t = self.theme();
+        // The card is drawn a few dp low on its way in; the rows come with
+        // it, and a finger landing that early finds them where they stood.
+        let rise = self.power_menu.as_ref().map_or(0.0, |m| {
+            let along = POWER_MENU_IN.progress(now.saturating_sub(m.since));
+            (1.0 - along) * t.m.dp(14.0)
+        });
+        let (card, rows) = power_menu_layout(&t);
+        for (i, row) in rows.iter().enumerate() {
+            if x >= row.x && x < row.x + row.w && y >= row.y + rise && y < row.y + rise + row.h {
+                self.power_menu = None;
+                self.dirty = true;
+                return vec![Effect::Reboot(POWER_MENU[i].0)];
+            }
+        }
+        if x < card.x || x >= card.x + card.w || y < card.y + rise || y >= card.y + rise + card.h {
+            self.hide_power_menu();
+        }
+        Vec::new()
+    }
+
+    /// The keys while the power menu shows: the volume keys move the light
+    /// down the list and up it, the power key does what the lit entry says,
+    /// and back puts the menu away.
+    fn power_menu_key(&mut self, key: Key, now: u64) -> Vec<Effect> {
+        let Some(menu) = self.power_menu.as_mut() else { return Vec::new() };
+        let last = POWER_MENU.len() - 1;
+        menu.chosen = match key {
+            Key::VolumeUp => menu.chosen.checked_sub(1).unwrap_or(last),
+            Key::VolumeDown => (menu.chosen + 1) % POWER_MENU.len(),
+            _ => menu.chosen,
+        };
+        let chosen = menu.chosen;
+        self.dirty = true;
+        match key {
+            Key::Power => {
+                self.power_menu = None;
+                vec![Effect::Reboot(POWER_MENU[chosen].0)]
+            }
+            Key::Back => {
+                self.power_menu = None;
+                Vec::new()
+            }
+            _ => {
+                self.stir(now);
+                Vec::new()
+            }
+        }
+    }
+
     /// The key waiting for its partner in a screenshot does what it does
-    /// alone `now`, as pressed when it went down.
-    fn let_chord_go(&mut self, now: u64) -> Vec<Effect> {
+    /// alone, as pressed when it went down.
+    fn let_chord_go(&mut self) -> Vec<Effect> {
         match self.chord.take() {
-            Some((key, at)) => self.key_down(key, at, now),
+            Some((key, at)) => self.key_down(key, at),
             None => Vec::new(),
         }
     }
 
-    /// What a button that went down `at` does on its own, `now`: a key
-    /// held is timed from when it went down, the screen goes off from now.
-    fn key_down(&mut self, key: Key, at: u64, now: u64) -> Vec<Effect> {
+    /// What a button that went down `at` does on its own: a key held is
+    /// timed from when it went down, and the panel goes off when it is let
+    /// go, so a press meant to turn it off still does, at once.
+    fn key_down(&mut self, key: Key, at: u64) -> Vec<Effect> {
         match key {
             Key::Back => {
                 self.button = Some((key, Press::Spent));
@@ -6604,12 +6823,10 @@ impl App {
                         self.button = Some((key, Press::Slide { which, track: rect, at }))
                     }
                     Some(spot) => self.button = Some((key, Press::Power { spot, at })),
-                    // Turning the screen off, the key ticks the motor.
-                    None => {
-                        self.button = Some((key, Press::Spent));
-                        self.sleep(now);
-                        return vec![Effect::Ticks];
-                    }
+                    // Nothing lit: the key waits to see whether it is held,
+                    // so what comes of it — the panel going off, or the
+                    // power menu — comes as it is let go or held long enough.
+                    None => self.button = Some((key, Press::PowerIdle { at })),
                 }
                 Vec::new()
             }
@@ -6622,7 +6839,7 @@ impl App {
     /// it does alone.
     pub fn key_up(&mut self, key: Key, now: u64) -> Vec<Effect> {
         let mut fx = match self.chord {
-            Some((first, _)) if first == key => self.let_chord_go(now),
+            Some((first, _)) if first == key => self.let_chord_go(),
             _ => Vec::new(),
         };
         let Some((down, press)) = self.button else { return fx };
@@ -6641,6 +6858,14 @@ impl App {
                 } else {
                     self.say(self.state.lang.pick(["请按住电源键", "請按住電源鍵", "Hold the power key"]), now);
                 }
+            }
+            // Let go before it was held long enough: the panel goes off,
+            // which is what a press of the key has always done, with the
+            // motor's two ticks. Held long enough it is already spent, and
+            // the power menu has taken its place.
+            Press::PowerIdle { .. } => {
+                self.sleep(now);
+                fx.push(Effect::Ticks);
             }
             Press::Volume { .. } | Press::Spent => {}
         }
@@ -7908,6 +8133,73 @@ mod tests {
         for y in [H / 3, H / 2, H - 200] {
             check_slide(&first, &mount, &home, y, (0, W / 4, ((1.0 - BEHIND_DIM) * 256.0).round() as u32));
             check_slide(&mid, &mount, &home, y, slid(true, 60));
+        }
+    }
+
+    /// How a page rising from the foot of the screen, or going `back` down
+    /// to it, stands `ms` into the move: the row its top edge is on, and how
+    /// much of its light the page under it keeps, in 256ths.
+    fn risen(back: bool, ms: u64) -> (u32, u32) {
+        let (x, _) = if back { Spring::new(0, -1000.0, 0.0, BACK_PERIOD) } else { Spring::new(0, 1000.0, -OPEN_SPEED * 1000.0, OPEN_PERIOD) }.at(ms);
+        let along = if back { 1.0 + x / 1000.0 } else { x / 1000.0 };
+        let top = (along * H as f32).round() as u32;
+        let keep = ((1.0 - BEHIND_DIM * (1.0 - along)) * 256.0).round() as u32;
+        (top, keep)
+    }
+
+    /// Check column `x` of `mid`, past the status bar the compose draws over
+    /// every page: the page `ahead` from row `top` on, and above it the page
+    /// `under`, keeping `keep` 256ths of its light.
+    fn check_rise(mid: &Canvas, ahead: &Canvas, under: &Canvas, x: u32, (top, keep): (u32, u32)) {
+        for y in 200..H {
+            let at = |c: &Canvas, y: u32| c.data[((y * W + x) * 4) as usize] as u32;
+            let want = if y >= top { at(ahead, y - top) } else { (at(under, y) * keep) >> 8 };
+            let got = at(mid, y);
+            assert!(got.abs_diff(want) <= 1, "row {y} of column {x}: {got}, not {want} (top {top})");
+        }
+    }
+
+    #[test]
+    fn the_desktop_opens_a_page_rising_from_the_foot_and_sinks_it_back() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Desktop, W, H, PPD);
+        let mut c = Canvas::new(W, H);
+        app.compose(&mut c, &f, &i, "12:00", 0);
+        let desk = shot(&c);
+        tap_at(&mut app, &f, &i, Action::Open(Screen::Home), 1000);
+        assert_eq!(app.screen(), Screen::Home);
+        assert!(app.turn.as_ref().is_some_and(|t| t.rise), "the desktop opens its pages upwards");
+        assert_eq!(app.deadline(1000), Some(0), "it rises frame by frame");
+        // Off it goes with its first frame, the page opened still past the
+        // foot of the screen.
+        app.compose(&mut c, &f, &i, "12:00", 1000);
+        let first = shot(&c);
+        app.compose(&mut c, &f, &i, "12:00", 1050);
+        let mid = shot(&c);
+        app.compose(&mut c, &f, &i, "12:00", 3000);
+        assert!(app.turn.is_none(), "come to rest, the page left is let go");
+        assert_ne!(app.deadline(3000), Some(0));
+        let home = shot(&c);
+        for x in [W / 4, W / 2, W * 3 / 4] {
+            check_rise(&first, &home, &desk, x, (H, 256));
+            check_rise(&mid, &home, &desk, x, risen(false, 50));
+        }
+        let (top, _) = risen(false, 50);
+        assert!(top > H / 2 && top < H, "well up the screen after 50 ms: {top}");
+
+        tap_back(&mut app, &f, &i, 4000);
+        assert_eq!(app.screen(), Screen::Desktop);
+        assert!(app.turn.as_ref().is_some_and(|t| t.rise && t.back), "it goes back down the way it came");
+        app.compose(&mut c, &f, &i, "12:00", 4000);
+        let first = shot(&c);
+        app.compose(&mut c, &f, &i, "12:00", 4060);
+        let mid = shot(&c);
+        app.compose(&mut c, &f, &i, "12:00", 6000);
+        assert!(app.turn.is_none());
+        let back = shot(&c);
+        for x in [W / 4, W / 2, W * 3 / 4] {
+            check_rise(&first, &home, &back, x, (0, 256));
+            check_rise(&mid, &home, &back, x, risen(true, 60));
         }
     }
 
@@ -11440,15 +11732,103 @@ mod tests {
         assert!(app.key(Key::Power, 0).is_empty());
         assert_eq!(app.panel(0), Some(SLIDER_START), "it waits for volume down first");
         assert_eq!(app.deadline(0), Some(CHORD_MS));
-        assert_eq!(app.tick(CHORD_MS), vec![Effect::Ticks], "held on alone, it turns the panel off, ticking the motor");
+        // Alone, it waits to see whether it is held: a press meant to turn
+        // the panel off is let go long before the menu's time comes.
+        assert!(app.tick(CHORD_MS).is_empty(), "no partner, so it waits to see whether it is held");
+        assert!(app.display_on(), "the panel stays lit while the key is down");
+        assert_eq!(app.deadline(CHORD_MS), Some(LONG_PRESS_MS), "held past this, the power menu comes up");
+        assert_eq!(app.key_up(Key::Power, CHORD_MS + 50), vec![Effect::Ticks], "let go sooner, it turns the panel off, ticking the motor");
         assert!(!app.display_on());
-        assert!(app.key_up(Key::Power, CHORD_MS + 50).is_empty());
         assert!(app.key(Key::Power, CHORD_MS + 60).is_empty());
         assert_eq!(app.panel(CHORD_MS + 60), Some(SLIDER_START));
         assert!(app.key_up(Key::Power, CHORD_MS + 100).is_empty());
         assert!(app.key(Key::Power, 1000).is_empty());
         assert_eq!(app.key_up(Key::Power, 1050), vec![Effect::Ticks]);
         assert!(!app.display_on(), "let go sooner, it turns the panel off then");
+    }
+
+    #[test]
+    fn the_power_key_held_brings_the_power_menu_up() {
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        assert!(app.key(Key::Power, 1000).is_empty());
+        // Alone, it waits the chord's time first, and then the long press's.
+        assert!(app.tick(1000 + CHORD_MS).is_empty());
+        assert!(app.power_menu.is_none(), "no menu yet");
+        assert_eq!(app.deadline(1000 + CHORD_MS), Some(1000 + LONG_PRESS_MS));
+        assert_eq!(app.tick(1000 + LONG_PRESS_MS), vec![Effect::Haptic], "held long enough, the menu comes up with a tap of the motor");
+        assert!(app.power_menu.is_some());
+        assert!(app.display_on(), "and the panel stays lit under it");
+        assert!(app.key_up(Key::Power, 1000 + LONG_PRESS_MS + 40).is_empty());
+        assert!(app.power_menu.is_some(), "let go after, the menu stays up");
+        assert!(app.display_on(), "and the panel does not go off");
+    }
+
+    #[test]
+    fn the_power_key_and_volume_up_bring_the_power_menu_up() {
+        // Whichever goes down first waits for the other, as the screenshot's
+        // pair does.
+        for (first, second) in [(Key::Power, Key::VolumeUp), (Key::VolumeUp, Key::Power)] {
+            let mut app = App::new(Screen::Home, W, H, PPD);
+            app.tick(0);
+            assert!(app.key(first, 1000).is_empty(), "{first:?} waits for its partner");
+            assert_eq!(app.key(second, 1010), vec![Effect::Haptic], "{first:?} then {second:?}");
+            assert!(app.power_menu.is_some());
+            assert!(app.display_on());
+        }
+    }
+
+    #[test]
+    fn the_power_menu_takes_the_keys_while_it_shows() {
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        assert!(app.key(Key::Power, 1000).is_empty());
+        assert_eq!(app.key(Key::VolumeUp, 1010), vec![Effect::Haptic]);
+        assert_eq!(app.power_menu.as_ref().map(|m| m.chosen), Some(0), "the light starts at the top");
+        assert!(app.key(Key::VolumeDown, 1100).is_empty());
+        assert_eq!(app.power_menu.as_ref().map(|m| m.chosen), Some(1), "the light moves down the list");
+        assert!(app.key(Key::VolumeUp, 1200).is_empty());
+        assert_eq!(app.power_menu.as_ref().map(|m| m.chosen), Some(0), "and back up it");
+        assert!(app.key(Key::VolumeUp, 1300).is_empty());
+        assert_eq!(app.power_menu.as_ref().map(|m| m.chosen), Some(POWER_MENU.len() - 1), "round the end of the list");
+        // Back puts it away and the phone goes on as it was.
+        assert!(app.key(Key::Back, 1400).is_empty());
+        assert!(app.power_menu.is_none());
+        assert!(app.display_on());
+    }
+
+    #[test]
+    fn the_power_key_takes_what_the_power_menu_has_lit() {
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        assert!(app.key(Key::Power, 1000).is_empty());
+        assert_eq!(app.key(Key::VolumeUp, 1010), vec![Effect::Haptic]);
+        assert!(app.key(Key::VolumeDown, 1100).is_empty());
+        assert_eq!(app.key(Key::Power, 1200), vec![Effect::Reboot(Target::System)], "the power key takes the entry lit");
+        assert!(app.power_menu.is_none(), "and the menu goes with it");
+    }
+
+    #[test]
+    fn a_tap_on_the_power_menu_takes_the_entry_it_lands_on() {
+        let f = fonts();
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        assert!(app.key(Key::Power, 1000).is_empty());
+        assert_eq!(app.key(Key::VolumeUp, 1010), vec![Effect::Haptic]);
+        let (card, rows) = power_menu_layout(&app.theme());
+        app.tick(1010 + POWER_MENU_MS);
+        let fx = app.touch(Touch::Down(rows[2].x + 10.0, rows[2].y + 10.0), &f, 1200);
+        assert_eq!(fx, vec![Effect::Reboot(POWER_MENU[2].0)]);
+        assert!(app.power_menu.is_none());
+
+        // A tap beside the card puts it away and does nothing else.
+        assert!(app.key(Key::Power, 2000).is_empty());
+        assert_eq!(app.key(Key::VolumeUp, 2010), vec![Effect::Haptic]);
+        assert!(app.power_menu.is_some());
+        let fx = app.touch(Touch::Down(card.x - 20.0, card.y), &f, 2100);
+        assert!(fx.is_empty(), "a tap outside the card does nothing else");
+        assert!(app.power_menu.is_none());
+        assert!(app.display_on());
     }
 
     #[test]

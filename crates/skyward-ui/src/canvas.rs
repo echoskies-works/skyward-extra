@@ -428,6 +428,54 @@ impl Canvas {
         }
     }
 
+    /// Show a page rising over another from the foot of the screen, as a
+    /// phone opens an app from its desktop: the page `front` with its top
+    /// edge on row `at` and its top corners rounded to `radius`, over the
+    /// page `behind`, black laid over it `dim` deep. Back down again is the
+    /// same move with `at` further along. Both pages are as big as this
+    /// canvas, and each of its pixels is written once.
+    pub fn rise(&mut self, front: &Canvas, behind: &Canvas, at: i32, dim: f32, radius: f32) {
+        assert!((front.w, front.h) == (self.w, self.h) && (behind.w, behind.h) == (self.w, self.h), "the pages are one size");
+        assert!(self.whole() && front.whole() && behind.whole(), "pages rise whole");
+        let (w, h) = (self.w as i32, self.h as i32);
+        let at = at.clamp(0, h);
+        let keep = ((1.0 - dim.clamp(0.0, 1.0)) * 256.0).round() as u32;
+        let row = w as usize * 4;
+        for y in 0..h {
+            let rows = y as usize * row..(y as usize + 1) * row;
+            let line = self.data[rows.clone()].as_chunks_mut::<4>().0;
+            let ahead = front.data[rows.clone()].as_chunks::<4>().0;
+            let back = behind.data[rows].as_chunks::<4>().0;
+            // Above the page in front only the page behind shows, darkened.
+            if y < at {
+                for (d, s) in line.iter_mut().zip(back) {
+                    *d = darken(*s, keep);
+                }
+                continue;
+            }
+            // Its own row, whole once past the corners it rounds off.
+            let src = (y - at) as usize * w as usize;
+            if (y - at) as f32 >= radius {
+                line.copy_from_slice(&ahead[src..src + w as usize]);
+                continue;
+            }
+            for (x, d) in line.iter_mut().enumerate() {
+                let cover = rise_cover(x as i32, y, at, w, radius);
+                let over = ahead[src + x];
+                let under = darken(back[x], keep);
+                *d = if cover >= 1.0 {
+                    over
+                } else if cover <= 0.0 {
+                    under
+                } else {
+                    let a = (cover * 256.0).round() as u32;
+                    let mix = |f: u8, b: u8| ((f as u32 * a + b as u32 * (256 - a) + 128) >> 8) as u8;
+                    [mix(over[0], under[0]), mix(over[1], under[1]), mix(over[2], under[2]), 255]
+                };
+            }
+        }
+    }
+
     /// A copy of the `w` × `h` pixels from (`x`, `y`), which lie in the rows
     /// this canvas holds.
     pub fn crop(&self, x: u32, y: u32, w: u32, h: u32) -> Canvas {
@@ -1100,6 +1148,17 @@ fn front_cover(x: i32, y: i32, front: i32, h: i32, radius: f32) -> f32 {
     let (px, py, half) = (x as f32 + 0.5, y as f32 + 0.5, h as f32 / 2.0);
     let qx = front as f32 + radius - px;
     let qy = (py - half).abs() - (half - radius);
+    let d = if qx > 0.0 && qy > 0.0 { qx.hypot(qy) - radius } else { qx.max(qy) - radius };
+    (0.5 - d).clamp(0.0, 1.0)
+}
+
+/// How much of pixel (`x`, `y`) a page whose top edge stands on row `at`
+/// covers, its top corners rounded to `radius`: the same test as
+/// [`front_cover`], taken down the screen rather than across it.
+fn rise_cover(x: i32, y: i32, at: i32, w: i32, radius: f32) -> f32 {
+    let (px, py, half) = (x as f32 + 0.5, y as f32 + 0.5, w as f32 / 2.0);
+    let qx = (px - half).abs() - (half - radius);
+    let qy = at as f32 + radius - py;
     let d = if qx > 0.0 && qy > 0.0 { qx.hypot(qy) - radius } else { qx.max(qy) - radius };
     (0.5 - d).clamp(0.0, 1.0)
 }

@@ -1019,7 +1019,24 @@ fn main() -> Result<()> {
     }
 
     // The panel mid-gesture, to set beside recordings of the same moves.
-    let moments: [Moment; 27] = [
+    let moments: [Moment; 29] = [
+        // The power menu over the desktop, brought up the way the panel
+        // brings it: the power key and volume up together, then the card
+        // coming in over the page dimmed behind it.
+        ("00e-power-menu-light", Screen::Desktop, false, &|app, _| {
+            let _ = app.key(Key::Power, 1000);
+            let _ = app.key(Key::VolumeUp, 1100);
+            1400
+        }),
+        // The same menu with the light moved down it, as the volume key
+        // does, to show an entry other than the first lit.
+        ("00f-power-menu-dark", Screen::Desktop, true, &|app, _| {
+            let _ = app.key(Key::Power, 1000);
+            let _ = app.key(Key::VolumeUp, 1100);
+            let _ = app.key(Key::VolumeDown, 1200);
+            let _ = app.key(Key::VolumeDown, 1260);
+            1500
+        }),
         ("08-about-light", Screen::About, false, &|_, _| 2000),
         ("08-about-dark", Screen::About, true, &|_, _| 2000),
         ("08-about-light-later", Screen::About, false, &|_, _| 9000),
@@ -1551,7 +1568,9 @@ fn whole_page(app: &mut App, f: &Fonts, info: &DeviceInfo) -> Canvas {
     if frame.header {
         widgets::big_title(&t, f, frame.title).draw(&mut c, 0.0, 0.0, t.pal.text, 1.0);
     }
-    widgets::status_bar(&mut c, &t, f, &app.bar(CLOCK, info), t.pal.status);
+    // The desktop's black wallpaper takes the light bar, as it does on the phone.
+    let ink = if screen == Screen::Desktop { pages::DESKTOP_STATUS } else { t.pal.status };
+    widgets::status_bar(&mut c, &t, f, &app.bar(CLOCK, info), ink);
     c
 }
 

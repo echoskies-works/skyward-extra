@@ -7,7 +7,7 @@
 //! stock WLAN arcs and round at their ends.
 
 use crate::canvas::Canvas;
-use crate::color::Rgba;
+use crate::color::{mix, Rgba};
 use crate::theme::Theme;
 use std::sync::{Arc, Mutex};
 use svgtypes::{SimplePathSegment, SimplifyingPathParser};
@@ -406,6 +406,32 @@ pub fn tile(c: &mut Canvas, t: &Theme, x: f32, y: f32, color: Rgba, icon: Icon) 
     let (cx, cy) = (x + s / 2.0, y + s / 2.0);
     draw(c, Art::Tile, cx, cy, s, color);
     glyph(c, icon, cx, cy, s, Rgba::rgb(255, 255, 255));
+}
+
+/// The stock tile on its own, `size` across with its top-left corner at
+/// (`x`, `y`), shading from `top` to `bottom` down it: the tile a row's
+/// icon sits on, laid as a desktop tile the light falls on. It is the same
+/// outline either way, so a desktop tile and a row's tile read as one
+/// shape rather than as two takes on a rounded square.
+pub fn tile_graded(c: &mut Canvas, x: f32, y: f32, size: f32, top: Rgba, bottom: Rgba) {
+    let (left, up) = (x.round() as i32, y.round() as i32);
+    let side = size.ceil() as i32;
+    let (rows, cols) = (c.held(), c.cols());
+    let (y0, y1) = (up.max(rows.start as i32), (up + side).min(rows.end as i32));
+    let (x0, x1) = (left.max(cols.start as i32), (left + side).min(cols.end as i32));
+    if y0 >= y1 || x0 >= x1 {
+        return;
+    }
+    let cover = coverage(Art::Tile, size);
+    for y in y0..y1 {
+        let ink = mix(top, bottom, ((y - up) as f32 + 0.5) / size);
+        for x in x0..x1 {
+            let a = cover.alpha[((y - up) as u32 * cover.side + (x - left) as u32) as usize];
+            if a > 0 {
+                c.blend(x, y, ink, a as f32 / 255.0);
+            }
+        }
+    }
 }
 
 /// What is drawn from outlines: a tile, or a glyph.

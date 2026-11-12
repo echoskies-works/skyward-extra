@@ -7,7 +7,7 @@ use crate::app::{
     USB_DRIVE_WANTED, WIPES, installs, starting,
 };
 use crate::canvas::Canvas;
-use crate::color::Rgba;
+use crate::color::{mix, Rgba};
 use crate::editor;
 use crate::files;
 use crate::fmt::{self, Verb};
@@ -258,22 +258,31 @@ const DESKTOP_APPS: [DeskApp; 4] = [
 /// How many icons one row of the desktop holds.
 const DESKTOP_COLS: usize = 4;
 
-/// The simple desktop Project Aether starts on: a plain black wallpaper with
-/// the apps laid over it in a grid, four to a row, as a phone's desktop lays
-/// its own out. The status bar is drawn over the desktop as it is over every
+/// The desktop's wallpaper: black whichever theme is on, since a desktop
+/// carries a picture of its own rather than a page of the system.
+const DESKTOP_BG: Rgba = Rgba::rgb(0, 0, 0);
+
+/// The ink of the status bar over that wallpaper: the light set, taken from
+/// the dark theme's, because the page under it never turns light. Without
+/// this the light theme's grey bar would sit unread on the black.
+pub const DESKTOP_STATUS: Rgba = Rgba::rgb(224, 224, 224);
+
+/// The simple desktop Project Aether starts on: a black wallpaper with the
+/// apps laid over it in a grid, four to a row, as a phone's desktop lays its
+/// own out. The status bar is drawn over the desktop as it is over every
 /// page, so the time, the battery and the WLAN stay in view.
 pub fn desktop(cx: &Ctx) -> Frame {
     let (t, f, l) = (cx.t, cx.f, cx.state.lang);
     let m = &t.m;
     // The wallpaper: plain black for now.
-    let mut c = Canvas::filled(m.w, m.h, Rgba::rgb(0, 0, 0));
+    let mut c = Canvas::filled(m.w, m.h, DESKTOP_BG);
     let mut out = Vec::new();
 
     let cell = m.w as f32 / DESKTOP_COLS as f32;
-    let tile = m.dp(56.0);
-    let row_h = m.dp(96.0);
+    let tile = m.dp(58.0);
+    let row_h = m.dp(104.0);
     // The first row clears the status bar.
-    let top = widgets::bar_bottom(t) + m.dp(24.0);
+    let top = widgets::bar_bottom(t) + m.dp(28.0);
     let ink = Rgba::rgb(255, 255, 255);
 
     for (i, app) in DESKTOP_APPS.iter().enumerate() {
@@ -282,17 +291,23 @@ pub fn desktop(cx: &Ctx) -> Frame {
         let x = cell * (col + 0.5);
         let y = top + row * row_h;
         let cy = y + tile / 2.0;
-        // A rounded tile holding the glyph, its name under it.
-        c.fill_round_rect(x - tile / 2.0, cy - tile / 2.0, tile, tile, m.dp(14.0), app.color);
-        icons::glyph(&mut c, app.icon, x, cy, tile * 0.58, ink);
-        c.text_center(&f.label, l.pick(app.name), x, cy + tile / 2.0 + m.dp(15.0), m.sub_px, ink);
+        let (x0, y0) = (x - tile / 2.0, cy - tile / 2.0);
+        // A tile holding the glyph, its name under it. The tile is the very
+        // one a row's icon sits on, so the desktop and the pages under it
+        // agree on what a tile looks like; the colour grades from a lit top
+        // to a deeper bottom, so a flat square reads as a key that catches
+        // the light.
+        let (lit, deep) = (mix(app.color, ink, 0.14), mix(app.color, DESKTOP_BG, 0.10));
+        icons::tile_graded(&mut c, x0, y0, tile, lit, deep);
+        icons::glyph(&mut c, app.icon, x, cy, tile * 0.64, ink);
+        c.text_center(&f.label, l.pick(app.name), x, cy + tile / 2.0 + m.dp(17.0), m.sub_px, ink);
         // The whole cell answers a touch, as a phone's desktop icon does.
         if let Some(screen) = app.opens {
             out.push(Hit { rect: Rect::new(x - cell / 2.0, y, cell, row_h), action: Action::Open(screen) });
         }
     }
 
-    Frame { back: false, header: false, bg: Rgba::rgb(0, 0, 0), ..Frame::new(t, c, out, l.pick(DESKTOP_TITLE), 0.0) }
+    Frame { back: false, header: false, bg: DESKTOP_BG, ..Frame::new(t, c, out, l.pick(DESKTOP_TITLE), 0.0) }
 }
 
 /// How many keys a calculator's row holds, and how many rows it holds.
