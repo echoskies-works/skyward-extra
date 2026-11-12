@@ -204,7 +204,7 @@ impl Transfer {
         let device = skyward_mtp::Device {
             manufacturer: cfg.device.brand.clone(),
             model: info.model.clone(),
-            version: format!("Skyward-Extra {}", skyward_ui::pages::SWEX_VERSION),
+            version: format!("Skyward-Extra {}", skyward_info::SWEX_VERSION),
             serial: skyward_sys::prop("ro.serialno").unwrap_or_default(),
             name: info.model.clone(),
             battery: Box::new(|| skyward_info::battery_now().ok().flatten().map(|b| b.level)),

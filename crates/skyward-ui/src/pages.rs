@@ -20,7 +20,7 @@ use crate::theme::Theme;
 use crate::tr;
 use crate::icons::{self, Icon};
 use crate::widgets::{self, Caption, Detail, Fact, Outline, Row, Spec, SystemCard, SystemMark, Tone, Trail};
-use skyward_info::{DeviceInfo, VERSION};
+use skyward_info::{DeviceInfo, VERSION, version_text};
 use skyward_install::{Outcome, Reflash, Refusal, Stage};
 use skyward_net::download::Progress;
 use skyward_net::supplicant::Security;
@@ -146,17 +146,6 @@ pub fn confirm_label(which: Confirm, s: &State) -> (&'static str, bool) {
 
 /// The home page's large title.
 pub const HOME_TITLE: &str = "Skyward-Extra";
-
-/// This extension's own version. It moves on its own schedule: the
-/// workspace version tracks the Skyward release the code was last brought
-/// up to, which is a different clock.
-pub const SWEX_VERSION: &str = "0.1.0";
-
-/// The version as the About page says it: this extension's, and in brackets
-/// the Skyward release underneath.
-pub fn version_text() -> String {
-    format!("SWEX v{SWEX_VERSION} (v{VERSION})")
-}
 pub const SEARCH_HINT: Text = ["搜索功能与分区", "搜尋功能與分割區", "Search features and partitions"];
 
 /// The desktop's title, never shown large but kept for the page's records.

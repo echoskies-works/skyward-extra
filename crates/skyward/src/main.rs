@@ -702,7 +702,7 @@ fn recovery() -> Result<()> {
         skyward_sys::kmsg(&format!(
             "{} {} recovery up, misc command {:?} args {:?}, asking for {:?}",
             cfg.device.codename,
-            skyward_ui::pages::version_text(),
+            skyward_info::version_text(),
             message.command,
             message.args,
             request.work
@@ -814,7 +814,7 @@ fn info(config: &str) -> Result<()> {
     println!("storage       = {} bytes, free {:?}", i.storage.total, i.storage.free);
     println!("battery       = {:?}", i.battery);
     println!("boot          = {:?}", i.boot);
-    println!("recovery      = {}", skyward_ui::pages::version_text());
+    println!("recovery      = {}", skyward_info::version_text());
     match i.slot {
         Some(s) => println!("current_slot  = {}", s.suffix()),
         None => println!("current_slot  = (not A/B)"),

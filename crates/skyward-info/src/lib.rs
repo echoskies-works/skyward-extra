@@ -10,8 +10,20 @@ use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::str::FromStr;
 
-/// Version of this build, shown on the About page.
+/// Version of the Skyward release this build sits on, shown on the About
+/// page in brackets.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// This extension's own version. It moves on its own schedule: `VERSION`
+/// tracks the Skyward release the code was last brought up to, which is a
+/// different clock.
+pub const SWEX_VERSION: &str = "0.1.0";
+
+/// The version as the About page says it: this extension's, and in
+/// brackets the Skyward release underneath.
+pub fn version_text() -> String {
+    format!("SWEX v{SWEX_VERSION} (v{VERSION})")
+}
 
 const CPU: &str = "/sys/devices/system/cpu";
 const POWER_SUPPLY: &str = "/sys/class/power_supply";
