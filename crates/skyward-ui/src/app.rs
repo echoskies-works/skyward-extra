@@ -6650,12 +6650,10 @@ impl App {
                         }
                         // A finger pulled up from the foot of the screen
                         // takes the page off for the desktop, or brings the
-                        // desktop's own tasks up over it.
-                        _ if dy < -slop
-                            && dy.abs() > dx.abs()
-                            && y0 > m.h as f32 - m.dp(FOOT_DP)
-                            && (self.screen() == Screen::Desktop || self.stack.len() > 1) =>
-                        {
+                        // desktop's own tasks up over it. The desktop is the
+                        // home of every page, so this asks nothing of what
+                        // lies under the one shown.
+                        _ if dy < -slop && dy.abs() > dx.abs() && y0 > m.h as f32 - m.dp(FOOT_DP) => {
                             let tasks = self.screen() == Screen::Desktop;
                             let cap = if tasks { m.dp(TASKS_DP) } else { self.h as f32 };
                             // Whatever the page was doing under the finger

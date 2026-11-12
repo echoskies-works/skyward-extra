@@ -1019,7 +1019,29 @@ fn main() -> Result<()> {
     }
 
     // The panel mid-gesture, to set beside recordings of the same moves.
-    let moments: [Moment; 29] = [
+    let moments: [Moment; 31] = [
+        // A page on its way off the screen by its foot, the desktop come in
+        // under it. The finger is still down, so it stands where it got to:
+        // the strip at the foot is 24 dp tall and the mark is a quarter of
+        // the screen, both as the panel has them.
+        ("00g-pulling-the-page-off-light", Screen::Calculator, false, &|app, f| {
+            let m = app.theme().m;
+            let foot = m.h as f32 - m.dp(24.0) + 2.0;
+            app.touch(Touch::Down(600.0, foot), f, 0);
+            app.touch(Touch::Move(600.0, foot - 40.0), f, 16);
+            app.touch(Touch::Move(600.0, foot - m.h as f32 * 0.42), f, 200);
+            240
+        }),
+        // The tasks up over the desktop, the desktop dimmed under them, with
+        // the strip still saying what is to come there.
+        ("00h-tasks-up-dark", Screen::Desktop, true, &|app, f| {
+            let m = app.theme().m;
+            let foot = m.h as f32 - m.dp(24.0) + 2.0;
+            app.touch(Touch::Down(600.0, foot), f, 0);
+            app.touch(Touch::Move(600.0, foot - 40.0), f, 16);
+            app.touch(Touch::Move(600.0, foot - m.dp(172.0)), f, 200);
+            240
+        }),
         // The power menu over the desktop, brought up the way the panel
         // brings it: the power key and volume up together, then the card
         // coming in over the page dimmed behind it.
