@@ -1040,18 +1040,18 @@ fn main() -> Result<()> {
             let by = app.theme().m.h as f32 * 0.93;
             pull_up(app, f, by)
         }),
-        // The tasks up over the desktop, the desktop dimmed under them, with
-        // the strip still saying what is to come there.
+        // The tasks up over the desktop, the desktop dimmed under them, and
+        // the foot of the screen saying there is nothing running yet.
         ("00k-tasks-up-dark", Screen::Desktop, true, &|app, f| {
-            let by = app.theme().m.dp(172.0);
+            let by = app.theme().m.dp(120.0);
             pull_up(app, f, by)
         }),
         // The same over a page, the way a touch stays put instead of going
         // on: the page has gone up as far as the tasks are tall and dimmed
-        // with them, and the strip stands in what it left, so the foot of
-        // the screen is the tasks rather than the desktop under the page.
+        // with them, and the strip they stand in is the desktop's own black,
+        // left bare by the page rather than covered by a card.
         ("00l-tasks-over-a-page-light", Screen::Calculator, false, &|app, f| {
-            let by = app.theme().m.dp(172.0);
+            let by = app.theme().m.dp(120.0);
             pull_up(app, f, by)
         }),
         // The power menu over the desktop, brought up the way the panel

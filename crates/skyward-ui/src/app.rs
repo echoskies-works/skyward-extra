@@ -2520,9 +2520,14 @@ const BACK_SWIPE_DP: f32 = 56.0;
 const FOOT_DP: f32 = 24.0;
 /// How far up, in dp, the tasks stand when they are up: the strip they take
 /// at the foot of the screen, and how far a page is left standing above it.
-const TASKS_DP: f32 = 172.0;
+/// Enough for the row of them, no more: they are icons on the desktop's own
+/// black, not a card raised over it.
+const TASKS_DP: f32 = 120.0;
 /// How dim the page goes while the tasks stand over it.
 const TASKS_DIM: f32 = 0.42;
+/// The ink of what the tasks' strip says, taken from the dark theme's light
+/// set: the desktop under it never turns light, so neither does this.
+const TASKS_INK: Rgba = Rgba::rgb(150, 150, 150);
 /// How fast, in dp a second, a pull let go carries on to what it leads to.
 const FOOT_FLING_DP: f32 = 600.0;
 /// How long a pull let go takes to settle, in seconds.
@@ -4567,32 +4572,33 @@ impl App {
         out.dim(self.curtain.level(now));
     }
 
-    /// The tasks up over the page: the page dimmed, and the strip of them
-    /// standing over the foot of the screen. Nothing is listed there yet,
-    /// so the strip says what is to come.
+    /// The tasks up over the page: the page dimmed, and a line said at the
+    /// foot of the screen where they will stand. Nothing is listed there
+    /// yet, so the strip says so. No card is raised under it: the strip is
+    /// the desktop's own black, come clear as the page is pulled off.
     fn compose_tasks(&mut self, out: &mut Canvas, f: &Fonts) {
         let Some(foot) = self.foot.as_ref() else { return };
         let t = self.theme();
         let m = t.m;
         // They stand no higher than their own height, however far the pull
         // has gone: past that it is the page that is going.
-        let pull = foot.pull.min(m.dp(TASKS_DP));
+        let stand = m.dp(TASKS_DP);
+        let pull = foot.pull.min(stand);
         if pull <= 0.5 {
             return;
         }
-        let (w, h) = (m.w as f32, self.h as f32);
-        let top = h - pull;
         // The page goes as dim as the tasks are up over it.
-        out.dim(TASKS_DIM * (pull / m.dp(TASKS_DP)).min(1.0));
-        // The strip: a card with its top corners round, reaching past both
-        // sides so its foot is cut by the screen's own.
-        let over = m.dp(24.0);
-        out.fill_round_rect(-over, top, w + over * 2.0, pull + over, m.dp(26.0), t.pal.card);
-        // A handle to say it may be put down again.
-        let cx = w / 2.0;
-        out.fill_round_rect(cx - m.dp(18.0), top + m.dp(14.0), m.dp(36.0), m.dp(4.0), m.dp(2.0), t.pal.track);
-        let said = self.state.lang.pick(["后台功能还没做好，敬请期待", "後台功能還沒做好，敬請期待", "The tasks are still to come"]);
-        out.text_center(&f.label, said, cx, top + m.dp(58.0), m.sub_px, t.pal.subtitle);
+        out.dim(TASKS_DIM * (pull / stand).min(1.0));
+        // Nothing of them shows until the strip they stand in is clear
+        // enough to read on, and then it comes in rather than snapping on.
+        let shown = ((pull - stand * 0.35) / (stand * 0.55)).clamp(0.0, 1.0);
+        if shown <= 0.0 {
+            return;
+        }
+        let said = self.state.lang.pick(["没有后台进行中", "沒有後台進行中", "Nothing running"]);
+        let ink = TASKS_INK.with_alpha((shown * 255.0) as u8);
+        let (w, h) = (m.w as f32, self.h as f32);
+        out.text_center(&f.label, said, w / 2.0, h - stand / 2.0, m.sub_px, ink);
     }
 
     /// The desktop drawn on its own, status bar and all: what a page pulled
@@ -8811,9 +8817,10 @@ mod tests {
         let mut app = opened(Screen::Calculator, &f, &i);
         let foot = foot_y(&app);
         app.touch(Touch::Down(720.0, foot), &f, 0);
-        app.touch(Touch::Move(720.0, foot - 60.0), &f, 16);
-        // Held still before the lift, so the pull is not read as a fling.
-        app.touch(Touch::Move(720.0, foot - 60.0), &f, 200);
+        app.touch(Touch::Move(720.0, foot - 30.0), &f, 16);
+        // Held still before the lift, so the pull is not read as a fling,
+        // and short of the half of the tasks' height that keeps them.
+        app.touch(Touch::Move(720.0, foot - 30.0), &f, 200);
         app.touch(Touch::Up, &f, 210);
         app.tick(3000);
         assert_eq!(app.screen(), Screen::Calculator, "not far enough to go");
