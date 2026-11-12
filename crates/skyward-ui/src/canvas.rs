@@ -444,7 +444,6 @@ impl Canvas {
         for y in 0..h {
             let rows = y as usize * row..(y as usize + 1) * row;
             let line = self.data[rows.clone()].as_chunks_mut::<4>().0;
-            let ahead = front.data[rows.clone()].as_chunks::<4>().0;
             let back = behind.data[rows].as_chunks::<4>().0;
             // Above the page in front only the page behind shows, darkened.
             if y < at {
@@ -453,15 +452,18 @@ impl Canvas {
                 }
                 continue;
             }
+            // The page's own row, which stands as many rows above this one as
+            // the page has come up: its foot is on row `at`.
+            let from = (y - at) as usize;
+            let ahead = front.data[from * row..(from + 1) * row].as_chunks::<4>().0;
             // Its own row, whole once past the corners it rounds off.
-            let src = (y - at) as usize * w as usize;
             if (y - at) as f32 >= radius {
-                line.copy_from_slice(&ahead[src..src + w as usize]);
+                line.copy_from_slice(ahead);
                 continue;
             }
             for (x, d) in line.iter_mut().enumerate() {
                 let cover = rise_cover(x as i32, y, at, w, radius);
-                let over = ahead[src + x];
+                let over = ahead[x];
                 let under = darken(back[x], keep);
                 *d = if cover >= 1.0 {
                     over
@@ -494,7 +496,6 @@ impl Canvas {
         for y in 0..h {
             let rows = y as usize * row..(y as usize + 1) * row;
             let line = self.data[rows.clone()].as_chunks_mut::<4>().0;
-            let ahead = front.data[rows.clone()].as_chunks::<4>().0;
             let back = behind.data[rows].as_chunks::<4>().0;
             // Below the page's foot only the page behind shows, darkened.
             if y >= at {
@@ -503,15 +504,18 @@ impl Canvas {
                 }
                 continue;
             }
+            // The page's own row, which stands as far below this one as the
+            // page has left to go: its foot is on row `at`.
+            let from = (y + h - at) as usize;
+            let ahead = front.data[from * row..(from + 1) * row].as_chunks::<4>().0;
             // Its own row, whole once past the corners it rounds off.
-            let src = (y + h - at) as usize * w as usize;
             if (at - y) as f32 >= radius {
-                line.copy_from_slice(&ahead[src..src + w as usize]);
+                line.copy_from_slice(ahead);
                 continue;
             }
             for (x, d) in line.iter_mut().enumerate() {
                 let cover = lift_cover(x as i32, y, at, w, radius);
-                let over = ahead[src + x];
+                let over = ahead[x];
                 let under = darken(back[x], keep);
                 *d = if cover >= 1.0 {
                     over
@@ -1447,6 +1451,22 @@ mod tests {
             assert_eq!(at(5 + 6, y), 50 + 60, "past the corner the page is whole");
         }
         assert!(at(6, 2) > 0 && at(6, 2) < 60, "the curve is smoothed: {}", at(6, 2));
+    }
+
+    #[test]
+    fn a_page_rising_covers_the_one_below_it_from_the_foot() {
+        let mut behind = Canvas::new(2, 4);
+        for row in behind.data.chunks_mut(8) {
+            row.copy_from_slice(&[9, 9, 9, 255, 9, 9, 9, 255]);
+        }
+        let mut c = Canvas::new(2, 4);
+        // The page has come up two rows: its top stands on the screen's
+        // third, so the screen's first two show the page below, darkened.
+        c.rise(&graded(4), &behind, 2, 0.0, 0.0);
+        assert_eq!(greys(&c), [9, 9, 0, 1], "the page's first rows stand below the page left");
+        // Up whole, the page covers the screen.
+        c.rise(&graded(4), &behind, 0, 0.0, 0.0);
+        assert_eq!(greys(&c), [0, 1, 2, 3]);
     }
 
     #[test]

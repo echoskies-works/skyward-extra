@@ -1019,28 +1019,32 @@ fn main() -> Result<()> {
     }
 
     // The panel mid-gesture, to set beside recordings of the same moves.
-    let moments: [Moment; 31] = [
-        // A page on its way off the screen by its foot, the desktop come in
-        // under it. The finger is still down, so it stands where it got to:
-        // the strip at the foot is 24 dp tall and the mark is a quarter of
-        // the screen, both as the panel has them.
-        ("00g-pulling-the-page-off-light", Screen::Calculator, false, &|app, f| {
-            let m = app.theme().m;
-            let foot = m.h as f32 - m.dp(24.0) + 2.0;
-            app.touch(Touch::Down(600.0, foot), f, 0);
-            app.touch(Touch::Move(600.0, foot - 40.0), f, 16);
-            app.touch(Touch::Move(600.0, foot - m.h as f32 * 0.42), f, 200);
-            240
+    let moments: [Moment; 34] = [
+        // A page pulled off the screen by its foot, the desktop come in
+        // under it: four frames of the one move, the page gone up by about a
+        // quarter, a half, three quarters and all but its last strip. The
+        // finger is still down in each, so each stands where it got to.
+        ("00g-going-home-1-light", Screen::Calculator, false, &|app, f| {
+            let by = app.theme().m.h as f32 * 0.22;
+            pull_up(app, f, by)
+        }),
+        ("00h-going-home-2-light", Screen::Calculator, false, &|app, f| {
+            let by = app.theme().m.h as f32 * 0.48;
+            pull_up(app, f, by)
+        }),
+        ("00i-going-home-3-light", Screen::Calculator, false, &|app, f| {
+            let by = app.theme().m.h as f32 * 0.74;
+            pull_up(app, f, by)
+        }),
+        ("00j-going-home-4-light", Screen::Calculator, false, &|app, f| {
+            let by = app.theme().m.h as f32 * 0.93;
+            pull_up(app, f, by)
         }),
         // The tasks up over the desktop, the desktop dimmed under them, with
         // the strip still saying what is to come there.
-        ("00h-tasks-up-dark", Screen::Desktop, true, &|app, f| {
-            let m = app.theme().m;
-            let foot = m.h as f32 - m.dp(24.0) + 2.0;
-            app.touch(Touch::Down(600.0, foot), f, 0);
-            app.touch(Touch::Move(600.0, foot - 40.0), f, 16);
-            app.touch(Touch::Move(600.0, foot - m.dp(172.0)), f, 200);
-            240
+        ("00k-tasks-up-dark", Screen::Desktop, true, &|app, f| {
+            let by = app.theme().m.dp(172.0);
+            pull_up(app, f, by)
         }),
         // The power menu over the desktop, brought up the way the panel
         // brings it: the power key and volume up together, then the card
@@ -1151,23 +1155,44 @@ fn main() -> Result<()> {
             type_keys(app, f, &info, &keys, 300)
         }),
     ];
+    // Each moment is drawn on its own, and one that breaks the page while
+    // drawing it is said so and left out rather than taking the rest of the
+    // sheet with it: a sheet of thirty is not worth losing to one bad move.
+    let mut missed = Vec::new();
     for (name, screen, dark, act) in moments {
-        let mut app = opened(screen, w, h, ppd);
-        app.set_screen_corners(cfg.display.corner_radius as f32);
-        app.state.dark = dark;
-        app.frame(&fonts, &info);
-        app.tick(0);
-        let now = act(&mut app, &fonts);
-        // Time passes frame by frame, as on the panel.
-        for ms in (0..now).step_by(16) {
-            app.tick(ms);
+        let drew = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+            let mut app = opened(screen, w, h, ppd);
+            app.set_screen_corners(cfg.display.corner_radius as f32);
+            app.state.dark = dark;
+            app.frame(&fonts, &info);
+            app.tick(0);
+            let now = act(&mut app, &fonts);
+            // Time passes frame by frame, as on the panel.
+            for ms in (0..now).step_by(16) {
+                app.tick(ms);
+            }
+            app.tick(now);
+            let mut c = Canvas::new(w, h);
+            app.compose(&mut c, &fonts, &info, CLOCK, now);
+            let path = out.join(format!("{name}.png"));
+            write_png(&path, &c)?;
+            println!("wrote {}", path.display());
+            Ok(())
+        }));
+        match drew {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                eprintln!("{name}: not drawn: {e:#}");
+                missed.push(name);
+            }
+            Err(_) => {
+                eprintln!("{name}: not drawn: the page broke while drawing it");
+                missed.push(name);
+            }
         }
-        app.tick(now);
-        let mut c = Canvas::new(w, h);
-        app.compose(&mut c, &fonts, &info, CLOCK, now);
-        let path = out.join(format!("{name}.png"));
-        write_png(&path, &c)?;
-        println!("wrote {}", path.display());
+    }
+    if !missed.is_empty() {
+        eprintln!("{} of the moments were not drawn: {}", missed.len(), missed.join(", "));
     }
 
     // The home page's card with each notice it gives: a battery too low to
@@ -1228,6 +1253,19 @@ fn drag(app: &mut App, f: &Fonts, y0: f32, y1: f32) -> u64 {
         app.tick(ms);
     }
     2000
+}
+
+/// A finger down in the strip at the foot of the screen and pulled `by`
+/// pixels up it, kept down: a page on its way off the screen, or the
+/// desktop's tasks on their way up. Returns a time after the pull is drawn,
+/// so the frame shows where it got to rather than where it will settle.
+fn pull_up(app: &mut App, f: &Fonts, by: f32) -> u64 {
+    let m = app.theme().m;
+    let foot = m.h as f32 - m.dp(24.0) + 2.0;
+    app.touch(Touch::Down(600.0, foot), f, 0);
+    app.touch(Touch::Move(600.0, foot - 40.0), f, 16);
+    app.touch(Touch::Move(600.0, foot - by), f, 200);
+    240
 }
 
 /// Put a finger down at `at` on the control doing `action`, on the page
