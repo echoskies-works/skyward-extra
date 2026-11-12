@@ -136,7 +136,12 @@ fn main() -> Result<()> {
 
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let font_path = font_path()?;
-    let fonts = Fonts::load(&font_path, 0, root.join("resources/fonts/KirkMono-Regular.ttf"))?;
+    let fonts = Fonts::load(
+        &font_path,
+        0,
+        root.join("resources/fonts/KirkMono-Regular.ttf"),
+        root.join("resources/fonts/LexendDeca-VariableFont_wght.ttf"),
+    )?;
     eprintln!("font: {}", font_path.display());
     for (tag, min, def, max) in fonts.axes() {
         eprintln!("axis {tag}: {min}..{max} (default {def})");
@@ -1528,6 +1533,23 @@ fn whole_page(app: &mut App, f: &Fonts, info: &DeviceInfo) -> Canvas {
     }
     if let Some(d) = &frame.dock {
         c.put(&d.canvas, (c.h - d.canvas.h) as i32);
+    }
+    // The bar the page carries: its `<`, its round button, and the large
+    // title in the place an unscrolled page gives them. The panel draws
+    // these over the page as it composes; a long screenshot has to lay
+    // them down here, or the picture is missing them.
+    if frame.back {
+        let (chip, x, y) = widgets::back_chip(&t);
+        c.lay(&chip, x, y, 1.0);
+        widgets::back_arrow(&mut c, &t, t.pal.text);
+    }
+    if let Some((glyph, _)) = &frame.button {
+        let (chip, x, y) = widgets::button_chip(&t);
+        c.lay(&chip, x, y, 1.0);
+        widgets::button_glyph(&mut c, &t, *glyph, t.pal.text);
+    }
+    if frame.header {
+        widgets::big_title(&t, f, frame.title).draw(&mut c, 0.0, 0.0, t.pal.text, 1.0);
     }
     widgets::status_bar(&mut c, &t, f, &app.bar(CLOCK, info), t.pal.status);
     c

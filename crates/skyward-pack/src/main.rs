@@ -67,6 +67,12 @@ enum Cmd {
         /// The monospaced typeface's licence, which goes with it.
         #[arg(long)]
         mono_license: PathBuf,
+        /// The brand typeface the About page sets its wordmark in.
+        #[arg(long)]
+        brand: PathBuf,
+        /// The brand typeface's licence, which goes with it.
+        #[arg(long)]
+        brand_license: PathBuf,
         #[arg(long)]
         out: PathBuf,
     },
@@ -105,7 +111,18 @@ fn main() -> Result<()> {
             img.kernel = BootImage::read(&kernel)?.kernel;
             write(&out, &img, &img.to_bytes()?)
         }
-        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, out } => {
+        Cmd::Recovery {
+            stock,
+            binary,
+            system_init,
+            config,
+            font,
+            mono,
+            mono_license,
+            brand,
+            brand_license,
+            out,
+        } => {
             let size = partition_size(&stock)?;
             let mut img = BootImage::read(&stock)?;
             let mut rd = Ramdisk::decode(&img.ramdisk)?;
@@ -129,6 +146,8 @@ fn main() -> Result<()> {
             rd.add(paths::FONT, 0o644, read(&font)?)?;
             rd.add(paths::MONO, 0o644, read(&mono)?)?;
             rd.add(paths::MONO_LICENSE, 0o644, read(&mono_license)?)?;
+            rd.add(paths::BRAND, 0o644, read(&brand)?)?;
+            rd.add(paths::BRAND_LICENSE, 0o644, read(&brand_license)?)?;
             // A stock ramdisk may run logd without any scheduling profiles,
             // and logd stops as soon as it cannot find the one it asks for.
             if rd.find(paths::TASK_PROFILES).is_none() {

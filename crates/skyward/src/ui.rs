@@ -204,7 +204,7 @@ impl Transfer {
         let device = skyward_mtp::Device {
             manufacturer: cfg.device.brand.clone(),
             model: info.model.clone(),
-            version: format!("Skyward {}", skyward_info::VERSION),
+            version: format!("Skyward-Extra {}", skyward_ui::pages::SWEX_VERSION),
             serial: skyward_sys::prop("ro.serialno").unwrap_or_default(),
             name: info.model.clone(),
             battery: Box::new(|| skyward_info::battery_now().ok().flatten().map(|b| b.level)),
@@ -1045,12 +1045,20 @@ fn wait(fds: &[i32], timeout_ms: i32) -> Result<()> {
 
 /// Run the pages. What `request`, read from misc, asks for decides the
 /// first of them; asking for nothing, they start at `start`.
-pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, start: Screen, dump: Option<&Path>) -> Result<()> {
+pub fn run(
+    cfg: &DeviceConfig,
+    font: &Path,
+    mono: &Path,
+    brand: &Path,
+    request: bcb::Request,
+    start: Screen,
+    dump: Option<&Path>,
+) -> Result<()> {
     if cfg.display.density == 0 {
         return Err(anyhow!("{}: [display] density is required to lay out the UI", cfg.device.codename));
     }
     let mut info = skyward_info::collect(cfg)?;
-    let fonts = Fonts::load(font, 0, mono)?;
+    let fonts = Fonts::load(font, 0, mono, brand)?;
     let mut surface = KmsSurface::open("/dev/dri/card0")?;
     let (w, h) = surface.size();
     eprintln!("display {}", surface.describe());

@@ -20,14 +20,20 @@ const MOVES: [&str; 12] = ["press", "open", "drag", "fold", "fling", "back", "se
 
 /// Times what the UI draws: whole pages rendered, and every frame of the
 /// moves people make, driven the way the runtime drives the app. Run with
-/// the directory holding MiSansVF.ttf and KirkMono-Regular.ttf, then the
-/// moves to time (all of them if none is named) and, after `x`, how many
-/// times over to make each; `renders` times the pages rendered, and
-/// `renders:Settings` one of them.
+/// the directory holding MiSansVF.ttf, KirkMono-Regular.ttf and
+/// LexendDeca-VariableFont_wght.ttf, then the moves to time (all of them
+/// if none is named) and, after `x`, how many times over to make each;
+/// `renders` times the pages rendered, and `renders:Settings` one of them.
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let dir = args.get(1).expect("the directory holding MiSansVF.ttf and KirkMono-Regular.ttf");
-    let f = Fonts::load(format!("{dir}/MiSansVF.ttf"), 0, format!("{dir}/KirkMono-Regular.ttf")).expect("load the fonts");
+    let dir = args.get(1).expect("the directory holding the fonts");
+    let f = Fonts::load(
+        format!("{dir}/MiSansVF.ttf"),
+        0,
+        format!("{dir}/KirkMono-Regular.ttf"),
+        format!("{dir}/LexendDeca-VariableFont_wght.ttf"),
+    )
+    .expect("load the fonts");
     let i = info();
     let mut named: Vec<&str> = Vec::new();
     let mut times = 1;

@@ -8,9 +8,10 @@ Skyward-Extra 是一个基于 Skyward（一个从零开始、用 Rust 编写的 
 此项目不但包含 Skyward 的所有功能，还附加了一些其他扩展功能。
 
 <p align="center">
-  <img src="assets/home.png" width="30%" alt="首页">
-  <img src="assets/settings-dark.png" width="30%" alt="深色模式下的设置">
-  <img src="assets/time-zone.png" width="30%" alt="时区">
+  <img src="assets/desktop.png" width="24%" alt="桌面">
+  <img src="assets/home.png" width="24%" alt="首页">
+  <img src="assets/settings-dark.png" width="24%" alt="深色模式下的设置">
+  <img src="assets/time-zone.png" width="24%" alt="时区">
 </p>
 
 ## 功能

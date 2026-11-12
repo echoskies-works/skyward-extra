@@ -1578,9 +1578,6 @@ impl Frame {
     }
 }
 
-/// Choices the pages show and the user changes, and where installing
-/// stands.
-#[derive(Clone, Debug, PartialEq)]
 /// The four sums the calculator works.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CalcOp {
@@ -1644,7 +1641,7 @@ fn calc_number(v: f64) -> String {
 
 /// The calculator's sum so far: the number being typed, the number the
 /// operator waiting works on, and the answer last reached.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Calc {
     /// The number being typed, as the keys wrote it; empty before the
     /// first key is pressed.
@@ -1796,6 +1793,9 @@ impl Calc {
     }
 }
 
+/// Choices the pages show and the user changes, and where installing
+/// stands.
+#[derive(Clone, Debug, PartialEq)]
 pub struct State {
     /// The language the pages speak.
     pub lang: Lang,

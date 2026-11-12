@@ -15,6 +15,10 @@ pub mod ramdisk {
     /// The monospaced typeface's licence, which travels with every copy of
     /// it.
     pub const MONO_LICENSE: &str = "skyward/KirkMono-OFL.txt";
+    /// The brand typeface the About page sets its wordmark in.
+    pub const BRAND: &str = "skyward/LexendDeca-VariableFont_wght.ttf";
+    /// The brand typeface's licence, which travels with every copy of it.
+    pub const BRAND_LICENSE: &str = "skyward/LexendDeca-OFL.txt";
     /// The recovery service binary init starts.
     pub const RECOVERY: &str = "system/bin/recovery";
     /// The first program of a system installed beside the installed one,

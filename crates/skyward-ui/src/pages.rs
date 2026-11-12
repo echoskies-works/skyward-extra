@@ -144,9 +144,19 @@ pub fn confirm_label(which: Confirm, s: &State) -> (&'static str, bool) {
     (s.lang.pick(label), danger)
 }
 
-/// The home page's large title, and what its search bar and the search
-/// page's field say while nothing is typed.
-pub const HOME_TITLE: &str = "Skyward";
+/// The home page's large title.
+pub const HOME_TITLE: &str = "Skyward-Extra";
+
+/// This extension's own version. It moves on its own schedule: the
+/// workspace version tracks the Skyward release the code was last brought
+/// up to, which is a different clock.
+pub const SWEX_VERSION: &str = "0.1.0";
+
+/// The version as the About page says it: this extension's, and in brackets
+/// the Skyward release underneath.
+pub fn version_text() -> String {
+    format!("SWEX v{SWEX_VERSION} (v{VERSION})")
+}
 pub const SEARCH_HINT: Text = ["搜索功能与分区", "搜尋功能與分割區", "Search features and partitions"];
 
 /// The desktop's title, never shown large but kept for the page's records.
@@ -576,7 +586,9 @@ pub fn settings(cx: &Ctx) -> Frame {
     let debug = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(TERMINAL)).icon(SLATE, Icon::Terminal)]);
     out.extend(hits(&debug.rows, &[Action::Open(Screen::Terminal)]));
     y = widgets::section(&mut c, t, f, debug.bottom, l.pick(["关于", "關於", "About"]));
-    let mut rows = vec![Row::new(l.pick(ABOUT)).trail(Trail::Value(VERSION))];
+    // The row borrows the version, so it outlives the list drawn from it.
+    let version = version_text();
+    let mut rows = vec![Row::new(l.pick(ABOUT)).trail(Trail::Value(version.as_str()))];
     let mut opens = vec![Action::Open(Screen::About)];
     if s.offers(Screen::SkywardUpdate) {
         let row = Row::new(l.pick(SKYWARD_UPDATE));
@@ -699,8 +711,9 @@ pub fn mount(cx: &Ctx) -> Frame {
     Frame::new(t, fit(c, t, bottom), out, l.pick(["挂载", "掛載", "Mount"]), top)
 }
 
-/// Who made the recovery, as the About page names them under its version.
-const AUTHOR: &str = "© 2026 Kirk Lin";
+/// Who made the recovery and who keeps this extension, as the About page
+/// names them under its version.
+const AUTHOR: &str = "© 2026 Kirk Lin & 天某人";
 
 /// About this device, modelled on the stock「我的设备」: the wordmark, the
 /// version and its author over a moving colour field, and the summary,
@@ -716,8 +729,8 @@ pub fn about(cx: &Ctx) -> Frame {
     let (out, summary_top, bottom) = about_cards(cx, &mut c);
     let canvas = fit(c, t, bottom);
     let art = HeroArt {
-        wordmark: widgets::wordmark(t, f, "Skyward", m.dp(233.7), m.dp(37.8)),
-        version: widgets::version_line(t, f, VERSION),
+        wordmark: widgets::wordmark(t, f, "Skyward-Extra", m.dp(233.7), m.dp(37.8)),
+        version: widgets::version_line(t, f, &version_text()),
         author: widgets::author_line(t, f, AUTHOR),
         runs: canvas.runs(),
     };
@@ -816,7 +829,7 @@ pub fn specs(cx: &Ctx) -> Frame {
         y = widgets::info_card(&mut c, t, f, y + gap, &[(l.pick(ANDROID_VERSION), fmt::android(l, r, i.security_patch.as_ref()))]);
     }
     y = widgets::info_card(&mut c, t, f, y + gap, &[
-        (l.pick(["Recovery 版本", "Recovery 版本", "Recovery version"]), format!("Skyward {VERSION}")),
+        (l.pick(["Recovery 版本", "Recovery 版本", "Recovery version"]), version_text()),
         (l.pick(["内核版本", "核心版本", "Kernel version"]), i.kernel.clone()),
     ]);
 
@@ -860,7 +873,7 @@ pub fn specs(cx: &Ctx) -> Frame {
     y = widgets::info_card(&mut c, t, f, y + gap, &[(l.pick(["机身存储", "內建儲存空間", "Internal storage"]), storage)]);
     let links = widgets::list(&mut c, t, f, y + gap, &[
         Row::new(l.pick(LICENSE)).trail(Trail::Value("GPL-3.0")),
-        Row::new(l.pick(FONTS)).trail(Trail::Value("MiSans")),
+        Row::new(l.pick(FONTS)).trail(Trail::Value("MiSans · Lexend Deca")),
     ]);
     out.extend(hits(&links.rows, &[Action::Open(Screen::License), Action::Open(Screen::FontLicense)]));
     Frame::new(t, fit(c, t, links.bottom), out, l.pick(SPECS), top)
@@ -3748,6 +3761,10 @@ pub fn license(cx: &Ctx) -> Frame {
 /// its first lines; the image carries the same file beside the font.
 const MONO_LICENSE: &str = include_str!("../../../resources/fonts/KirkMono-OFL.txt");
 
+/// The brand typeface's licence, which names its copyright holders on its
+/// first line; the image carries the same file beside the font.
+const BRAND_LICENSE: &str = include_str!("../../../resources/fonts/LexendDeca-OFL.txt");
+
 /// The typefaces, as they name themselves, and the terms each is used under.
 pub fn font_license(cx: &Ctx) -> Frame {
     let (t, f, l) = (cx.t, cx.f, cx.state.lang);
@@ -3766,6 +3783,20 @@ pub fn font_license(cx: &Ctx) -> Frame {
         "The interface text is set in Xiaomi's MiSans, used free of charge under the MiSans Font Intellectual Property License Agreement. The font files are unchanged, and come with Skyward alone, never on their own.\n\nThe agreement in full is on the MiSans website.",
     ]);
     let y = widgets::paragraph(&mut c, t, f, y + t.m.dp(4.0), misans);
+    let y = widgets::section(&mut c, t, f, y, l.pick(["品牌字标", "品牌字標", "Brand wordmark"]));
+    let brand_holders: Vec<&str> = BRAND_LICENSE.lines().take_while(|l| l.starts_with("Copyright")).collect();
+    let y = widgets::info_card(&mut c, t, f, y, &[
+        (typeface, f.brand_info.family.clone()),
+        (version, f.brand_info.version.clone()),
+        (copyright, brand_holders.join("\n")),
+        (l.pick(LICENSE_TERMS), l.pick(["SIL 开源字体许可证 1.1 版（OFL-1.1）", "SIL 開放字型授權條款 1.1 版（OFL-1.1）", "SIL Open Font License, version 1.1 (OFL-1.1)"]).to_string()),
+    ]);
+    let brand = l.pick([
+        "关于页的字标使用 Lexend Deca 字体，依据 SIL 开源字体许可证 1.1 版免费使用。字体文件未经修改，仅随本镜像提供，不单独分发。\n\n许可证全文位于 /skyward/LexendDeca-OFL.txt，也可在 openfontlicense.org 查看。",
+        "關於頁的字標使用 Lexend Deca 字型，依據 SIL 開放字型授權條款 1.1 版免費使用。字型檔案未經修改，僅隨本映像檔提供，不單獨散布。\n\n授權條款全文位於 /skyward/LexendDeca-OFL.txt，也可在 openfontlicense.org 查看。",
+        "The About page's wordmark is set in Lexend Deca, used free of charge under the SIL Open Font License, version 1.1. The font file is unchanged, and comes with this image alone, never on its own.\n\nThe license in full is at /skyward/LexendDeca-OFL.txt, and on openfontlicense.org.",
+    ]);
+    let y = widgets::paragraph(&mut c, t, f, y + t.m.dp(4.0), brand);
     let y = widgets::section(&mut c, t, f, y, l.pick(["终端文字", "終端機文字", "Terminal text"]));
     let holders: Vec<&str> = MONO_LICENSE.lines().take_while(|l| l.starts_with("Copyright")).collect();
     let y = widgets::info_card(&mut c, t, f, y, &[
