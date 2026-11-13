@@ -38,6 +38,9 @@ pub enum Screen {
     Desktop,
     /// The calculator the desktop opens.
     Calculator,
+    /// The clock the desktop opens: the time counted up and the time counted
+    /// down, one face at a time, switched by the bar at the foot of the page.
+    Clock,
     Home,
     Settings,
     Reboot,
@@ -1247,6 +1250,17 @@ pub enum Action {
     Type(Cap),
     /// A key of the calculator.
     Calc(CalcKey),
+    /// Show this face of the clock: the stopwatch, or the timer.
+    ClockFace(ClockFace),
+    /// Start the face shown counting, or stop it where it is.
+    ClockGo,
+    /// Put the face shown back: the stopwatch to nothing with its paper
+    /// thrown away, the timer to the length it is set for.
+    ClockReset,
+    /// Take an entry on the stopwatch's paper.
+    ClockLap,
+    /// Set the timer for this many minutes, from one to sixty.
+    ClockSpan(u64),
     /// A key of the row above the keyboard, the terminal's or the editor's.
     TermKey(TermKey),
     /// Empty the search field.
@@ -1675,6 +1689,98 @@ impl Default for Calc {
     }
 }
 
+/// The two faces of the clock: the time counted up from nothing, and the
+/// time counted down to nothing. The bar at the foot of the page shows one
+/// at a time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClockFace {
+    Stopwatch,
+    Timer,
+}
+
+/// One entry on the stopwatch's paper: how long the run since the entry
+/// before took, and how long the watch had run when it was taken.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Lap {
+    pub split: u64,
+    pub total: u64,
+}
+
+/// How many entries the paper keeps. The page shows as many as fit and
+/// lets the rest go as the newest come in.
+const CLOCK_LAPS: usize = 50;
+
+/// How long the timer is set for before anyone sets it: five minutes.
+const CLOCK_SPAN: u64 = 5 * 60_000;
+
+/// The longest the timer is set for, and the least: the hour Smartisan's
+/// clock gives it, and the one minute it can be set by.
+const CLOCK_MOST: u64 = 60;
+const CLOCK_LEAST: u64 = 1;
+
+/// The clock's own state, as its page last left it. The readings are not
+/// kept: both counts are worked out from the clock the page is given, so
+/// the stopwatch goes on while the page is elsewhere, and so does the
+/// timer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Clock {
+    /// The face the page shows.
+    pub face: ClockFace,
+    /// The stopwatch: how long it had run when it was last stopped, and
+    /// when it went on again since.
+    pub stop: u64,
+    pub stop_since: Option<u64>,
+    /// The entries taken, the newest last.
+    pub laps: Vec<Lap>,
+    /// The timer: how long it is set for, how much of it was left when it
+    /// was last stopped, and when it went on again since.
+    pub span: u64,
+    pub left: u64,
+    pub left_since: Option<u64>,
+}
+
+impl Default for Clock {
+    fn default() -> Self {
+        Clock {
+            face: ClockFace::Stopwatch,
+            stop: 0,
+            stop_since: None,
+            laps: Vec::new(),
+            span: CLOCK_SPAN,
+            left: CLOCK_SPAN,
+            left_since: None,
+        }
+    }
+}
+
+impl Clock {
+    /// What the stopwatch reads at `now`.
+    pub fn stopwatch(&self, now: u64) -> u64 {
+        self.stop + self.stop_since.map_or(0, |since| now.saturating_sub(since))
+    }
+
+    /// What the timer has left at `now`.
+    pub fn timer(&self, now: u64) -> u64 {
+        self.left_since.map_or(self.left, |since| self.left.saturating_sub(now.saturating_sub(since)))
+    }
+
+    /// Whether either count is going.
+    pub fn running(&self) -> bool {
+        self.stop_since.is_some() || self.left_since.is_some()
+    }
+
+    /// The timer has run out: it stops at nothing, waiting to be started
+    /// again. Told so once, as it gets there.
+    fn arrive(&mut self, now: u64) -> bool {
+        if self.left_since.is_some() && self.timer(now) == 0 {
+            self.left = 0;
+            self.left_since = None;
+            return true;
+        }
+        false
+    }
+}
+
 impl Calc {
     /// What the display reads.
     pub fn shown(&self) -> String {
@@ -1985,6 +2091,8 @@ pub struct State {
     pub traffic: Traffic,
     /// The calculator's sum, as the keys last left it.
     pub calc: Calc,
+    /// The clock's own state: which of its two faces the page shows.
+    pub clock: Clock,
 }
 
 impl Default for State {
@@ -2071,6 +2179,7 @@ impl Default for State {
             skyward_job: None,
             traffic: Traffic::default(),
             calc: Calc::default(),
+            clock: Clock::default(),
         }
     }
 }
@@ -3004,6 +3113,9 @@ pub struct App {
     /// while other pages show.
     term: Option<Term>,
     display_on: bool,
+    /// The time last told: the pages read the clock's counts by it, so a
+    /// count that goes on while the page is elsewhere shows where it is.
+    now: u64,
     /// When the screen was last touched or a key pressed; set on the first
     /// tick, so the time before the UI started does not count.
     active: Option<u64>,
@@ -3109,6 +3221,7 @@ impl App {
             glow: None,
             term: None,
             display_on: true,
+            now: 0,
             active: None,
             woke_at: None,
             bright: full_brightness(),
@@ -3251,6 +3364,7 @@ impl App {
     /// deadline goes away.
     pub fn tick(&mut self, now: u64) -> Vec<Effect> {
         let mut fx = Vec::new();
+        self.now = now;
         // The key waiting for its partner in a screenshot, left alone long
         // enough, does what it does alone.
         if self.chord.is_some_and(|(_, at)| now >= at + CHORD_MS) {
@@ -3315,6 +3429,18 @@ impl App {
         }
         if self.blink_at(now).is_some_and(|(on, _)| on != self.caret_shown) || self.morph.is_some() || self.turn.is_some() {
             self.dirty = true;
+        }
+        // The clock's counts go on of their own accord: while either goes,
+        // the page is drawn again each frame so the reading follows, and a
+        // timer that reaches its end stops there with a tap of the motor.
+        if self.state.clock.running() {
+            if self.display_on {
+                self.dirty = true;
+            }
+            if self.state.clock.arrive(now) {
+                self.dirty = true;
+                fx.push(Effect::Haptic);
+            }
         }
         // A pull at the foot of the screen, let go, carries on to where it
         // leads or back where it came from.
@@ -3583,6 +3709,11 @@ impl App {
     /// Something laid over the page changed (the clock): compose again.
     pub fn redraw(&mut self) {
         self.dirty = true;
+    }
+
+    /// The time last told: the clock's counts read by it.
+    pub fn now(&self) -> u64 {
+        self.now
     }
 
     /// The settings the pages show, as they are kept between starts.
@@ -4453,7 +4584,7 @@ impl App {
             let screen = self.screen();
             for rows in std::mem::take(&mut self.stale) {
                 let band = Band { rows, cols: (0, self.cols) };
-                let cx = Ctx { t: &t, f, info, state: &self.state, term: self.term.as_ref(), band: Some(band) };
+                let cx = Ctx { t: &t, f, info, state: &self.state, term: self.term.as_ref(), band: Some(band), now: self.now };
                 let fresh = pages::render(screen, &cx);
                 let mut canvas = self.frame.take().expect("checked above").canvas;
                 assert_eq!(canvas.h, fresh.canvas.h, "a page drawn again in part is as tall as it was");
@@ -4466,7 +4597,7 @@ impl App {
             let screen = self.screen();
             let first = self.top().1.max(0.0) as u32;
             let band = Band { rows: (first, first + self.h), cols: (0, wide.min(self.w)) };
-            let cx = Ctx { t: &t, f, info, state: &self.state, term: self.term.as_ref(), band: Some(band) };
+            let cx = Ctx { t: &t, f, info, state: &self.state, term: self.term.as_ref(), band: Some(band), now: self.now };
             let mut frame = pages::render(screen, &cx);
             // A page drawn in part across holds its rows whole, the columns
             // of them drawn on as they are needed.
@@ -4527,7 +4658,7 @@ impl App {
         let held = frame.canvas.held();
         let t = self.theme();
         let band = Band { rows: (held.start, held.end), cols: (self.cols, wide) };
-        let cx = Ctx { t: &t, f, info, state: &self.state, term: self.term.as_ref(), band: Some(band) };
+        let cx = Ctx { t: &t, f, info, state: &self.state, term: self.term.as_ref(), band: Some(band), now: self.now };
         let part = pages::render(self.screen(), &cx).canvas;
         self.frame.as_mut().expect("drawn above").canvas.replace(&part);
         self.cols = wide;
@@ -4558,7 +4689,7 @@ impl App {
         let screen = self.screen();
         for rows in bands {
             let band = Band { rows, cols: (0, self.w) };
-            let cx = Ctx { t: &t, f, info, state: &self.state, term: self.term.as_ref(), band: Some(band) };
+            let cx = Ctx { t: &t, f, info, state: &self.state, term: self.term.as_ref(), band: Some(band), now: self.now };
             let part = pages::render(screen, &cx).canvas;
             self.frame.as_mut().expect("drawn above").canvas.join(&part);
         }
@@ -4579,6 +4710,7 @@ impl App {
     /// while a cable has just gone in, both as dark as the content stands
     /// as the panel goes off or comes up.
     pub fn compose(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, clock: &str, now: u64) {
+        self.now = now;
         let charge = self.charging.as_ref().map_or(0.0, |c| c.shown.level(now));
         if charge < 1.0 {
             self.compose_page(out, f, info, clock, now);
@@ -4635,7 +4767,7 @@ impl App {
     /// off the screen leaves showing.
     fn desktop_canvas(&mut self, f: &Fonts, info: &DeviceInfo, clock: &str) -> Canvas {
         let t = self.theme();
-        let cx = Ctx { t: &t, f, info, state: &self.state, term: self.term.as_ref(), band: None };
+        let cx = Ctx { t: &t, f, info, state: &self.state, term: self.term.as_ref(), band: None, now: self.now };
         let mut c = pages::render(Screen::Desktop, &cx).canvas;
         let bar = self.bar(clock, info);
         widgets::status_bar(&mut c, &t, f, &bar, pages::DESKTOP_STATUS);
@@ -4768,7 +4900,7 @@ impl App {
             let (x, y, w, h) = row_part(press.rect, page);
             let pressed = t.pressed();
             let band = Band { rows: (y, y + h), cols: (x, x + w) };
-            let cx = Ctx { t: &pressed, f, info, state: &self.state, term: self.term.as_ref(), band: Some(band) };
+            let cx = Ctx { t: &pressed, f, info, state: &self.state, term: self.term.as_ref(), band: Some(band), now: self.now };
             let down = pages::render(screen, &cx).canvas;
             assert_eq!((down.w, down.h), (page.w, page.h), "a page held down is laid out as it was");
             self.row_art = Some((page.crop(x, y, w, h), down.crop(x, y, w, h)));
@@ -4950,7 +5082,7 @@ impl App {
                             let (f, info) = fresh.expect("a page drawn again as it last showed has its rows in view drawn");
                             let mut c = self.spare.pop().unwrap_or_else(|| Canvas::new(out.w, 0));
                             c.resize((rows.edges[i + 1] - rows.edges[i]) as u32);
-                            let cx = Ctx { t, f, info, state: &self.state, term: self.term.as_ref(), band: None };
+                            let cx = Ctx { t, f, info, state: &self.state, term: self.term.as_ref(), band: None, now: self.now };
                             pages::row(screen, &cx, i, &mut c);
                             self.drawn.push((i, c));
                             self.drawn.len() - 1
@@ -5761,6 +5893,80 @@ impl App {
                 self.state.calc.press(key);
                 self.refresh();
             }
+            // The clock keeps one face at a time; the one shown takes the
+            // page from the top, as a page opened afresh does.
+            Action::ClockFace(face) => {
+                self.state.clock.face = face;
+                self.refresh();
+            }
+            // The face shown goes on counting, or stops where it is. The
+            // stopwatch keeps what it counted; the timer keeps what it has
+            // left, and one that has run out starts again from its length.
+            Action::ClockGo => {
+                let clock = &mut self.state.clock;
+                match clock.face {
+                    ClockFace::Stopwatch => match clock.stop_since {
+                        Some(_) => {
+                            clock.stop = clock.stopwatch(now);
+                            clock.stop_since = None;
+                        }
+                        None => clock.stop_since = Some(now),
+                    },
+                    ClockFace::Timer => match clock.left_since {
+                        Some(_) => {
+                            clock.left = clock.timer(now);
+                            clock.left_since = None;
+                        }
+                        None => {
+                            if clock.left == 0 {
+                                clock.left = clock.span;
+                            }
+                            clock.left_since = Some(now);
+                        }
+                    },
+                }
+                self.refresh();
+            }
+            Action::ClockReset => {
+                let clock = &mut self.state.clock;
+                match clock.face {
+                    ClockFace::Stopwatch => {
+                        clock.stop = 0;
+                        clock.stop_since = None;
+                        clock.laps.clear();
+                    }
+                    ClockFace::Timer => {
+                        clock.left = clock.span;
+                        clock.left_since = None;
+                    }
+                }
+                self.refresh();
+            }
+            // A running stopwatch takes an entry: the run since the entry
+            // before, and the whole of what it has counted.
+            Action::ClockLap => {
+                let clock = &mut self.state.clock;
+                if clock.stop_since.is_some() {
+                    let total = clock.stopwatch(now);
+                    let split = total - clock.laps.last().map_or(0, |lap| lap.total);
+                    if clock.laps.len() == CLOCK_LAPS {
+                        clock.laps.remove(0);
+                    }
+                    clock.laps.push(Lap { split, total });
+                    self.refresh();
+                }
+            }
+            // The timer is set by the minute, within the hour it is given,
+            // while it is stopped; what it has left follows the length set.
+            Action::ClockSpan(minutes) => {
+                let minutes = minutes.clamp(CLOCK_LEAST, CLOCK_MOST);
+                let clock = &mut self.state.clock;
+                clock.span = minutes * 60_000;
+                if clock.left_since.is_none() {
+                    clock.left = clock.span;
+                }
+                self.refresh();
+            }
             // The switch moves at once; the runtime then tells how the WLAN
             // came up, or went off.
             Action::Toggle(Switch::Wlan) => {
@@ -6566,6 +6772,7 @@ impl App {
     }
 
     pub fn touch(&mut self, ev: Touch, f: &Fonts, now: u64) -> Vec<Effect> {
+        self.now = now;
         // A finger on the dark panel lights nothing, as on the phone's own
         // system, where the power key lights it.
         if !self.display_on {
@@ -6963,6 +7170,7 @@ impl App {
     /// goes down first waits [`CHORD_MS`] for the other, or until it is let
     /// go, and then does what it does alone, as pressed when it went down.
     pub fn key(&mut self, key: Key, now: u64) -> Vec<Effect> {
+        self.now = now;
         // Any button stops a gliding page, and brings a sliding one to rest.
         self.fling = None;
         self.end_turn();
@@ -7887,7 +8095,7 @@ mod tests {
         ];
         for t in [Theme::light(W, H, PPD), Theme::dark(W, H, PPD).pressed()] {
             for screen in screens {
-                let cx = |band| Ctx { t: &t, f: &f, info: &i, state: &state, term: None, band };
+                let cx = |band| Ctx { t: &t, f: &f, info: &i, state: &state, term: None, band, now: 0 };
                 let whole = pages::render(screen, &cx(None)).canvas;
                 let row = whole.w as usize * 4;
                 let differs = |c: &Canvas| c.data.chunks(row).zip(whole.data.chunks(row)).position(|(a, b)| a != b);
@@ -7932,7 +8140,7 @@ mod tests {
             bands += 1;
         }
         let t = app.theme();
-        let whole = pages::render(Screen::Settings, &Ctx { t: &t, f: &f, info: &i, state: &app.state, term: None, band: None }).canvas;
+        let whole = pages::render(Screen::Settings, &Ctx { t: &t, f: &f, info: &i, state: &app.state, term: None, band: None, now: 0 }).canvas;
         let page = &app.frame.as_ref().unwrap().canvas;
         assert!(whole.h > H + H / 4, "a page well over a screen long, drawn in {bands} more bands");
         assert!(page.whole() && page.data == whole.data, "the page drawn a band at a time is the page drawn whole");
@@ -7946,7 +8154,7 @@ mod tests {
         app.compose(&mut out, &f, &i, "12:00", 0);
         let anew = |app: &App| {
             let t = app.theme();
-            pages::render(Screen::Search, &Ctx { t: &t, f: &f, info: &i, state: &app.state, term: None, band: None })
+            pages::render(Screen::Search, &Ctx { t: &t, f: &f, info: &i, state: &app.state, term: None, band: None, now: 0 })
         };
         for cap in [Cap::Char('b'), Cap::Char('f'), Cap::Space, Cap::Backspace, Cap::Shift, Cap::Char('q')] {
             let (x, y) = spot(&mut app, &f, &i, Action::Type(cap));
@@ -8840,6 +9048,90 @@ mod tests {
         let mut app = App::new(Screen::Desktop, W, H, PPD);
         tap(&mut app, f, i, Action::Open(screen));
         app
+    }
+
+    #[test]
+    fn the_clock_shows_one_face_at_a_time_and_the_bar_at_its_foot_switches_them() {
+        let (f, i) = (fonts(), info());
+        let mut app = opened_on_the_desktop(Screen::Clock, &f, &i);
+        assert_eq!(app.screen(), Screen::Clock, "the desktop's clock icon opens it");
+        assert_eq!(app.state.clock.face, ClockFace::Stopwatch, "the stopwatch shows first");
+        let mut c = Canvas::new(W, H);
+        app.compose(&mut c, &f, &i, "12:00", 3000);
+        let stopwatch = shot(&c);
+        // An app, not a page of the recovery: it carries no `<` of its own.
+        assert!(!app.frame(&f, &i).back, "the clock leaves by a swipe up");
+
+        tap_at(&mut app, &f, &i, Action::ClockFace(ClockFace::Timer), 4000);
+        assert_eq!(app.state.clock.face, ClockFace::Timer);
+        assert_eq!(app.screen(), Screen::Clock, "the bar switches faces rather than opening a page");
+        assert!(app.turn.is_none(), "and it does not turn the page over to do it");
+        app.compose(&mut c, &f, &i, "12:00", 4000);
+        let timer = shot(&c);
+        assert_ne!(stopwatch.data, timer.data, "the two faces read differently");
+    }
+
+    #[test]
+    fn the_stopwatch_counts_on_the_clock_it_is_given_and_keeps_where_it_was_stopped() {
+        let (f, i) = (fonts(), info());
+        let mut app = opened_on_the_desktop(Screen::Clock, &f, &i);
+        tap_at(&mut app, &f, &i, Action::ClockGo, 1_000);
+        assert!(app.state.clock.running(), "the start key sets it going");
+        assert_eq!(app.state.clock.stopwatch(3_500), 2_500, "it reads the time it was started from");
+        // Stopped, it keeps what it counted while the clock goes on.
+        tap_at(&mut app, &f, &i, Action::ClockGo, 3_500);
+        assert!(!app.state.clock.running());
+        assert_eq!(app.state.clock.stopwatch(9_000), 2_500, "a stopped watch does not count on");
+        // Started again, it counts on from where it was stopped.
+        tap_at(&mut app, &f, &i, Action::ClockGo, 4_000);
+        assert_eq!(app.state.clock.stopwatch(5_000), 3_500);
+    }
+
+    #[test]
+    fn the_stopwatch_takes_an_entry_only_while_it_goes_and_reset_throws_the_paper_away() {
+        let (f, i) = (fonts(), info());
+        let mut app = opened_on_the_desktop(Screen::Clock, &f, &i);
+        assert!(
+            !app.frame(&f, &i).hits.iter().any(|h| h.action == Action::ClockLap),
+            "a watch at rest has nothing to take an entry of"
+        );
+        tap_at(&mut app, &f, &i, Action::ClockGo, 1_000);
+        tap_at(&mut app, &f, &i, Action::ClockLap, 2_000);
+        tap_at(&mut app, &f, &i, Action::ClockLap, 3_500);
+        let laps = app.state.clock.laps.clone();
+        assert_eq!(laps.len(), 2, "each press of the key takes one");
+        assert_eq!((laps[0].split, laps[0].total), (1_000, 1_000));
+        assert_eq!((laps[1].split, laps[1].total), (1_500, 2_500), "the second entry runs from the first");
+        tap_at(&mut app, &f, &i, Action::ClockReset, 4_000);
+        assert!(app.state.clock.laps.is_empty(), "reset takes the paper with the count");
+        assert_eq!(app.state.clock.stopwatch(5_000), 0);
+    }
+
+    #[test]
+    fn the_timer_is_set_by_the_minute_within_its_hour_and_stops_at_nothing() {
+        let (f, i) = (fonts(), info());
+        let mut app = opened_on_the_desktop(Screen::Clock, &f, &i);
+        tap_at(&mut app, &f, &i, Action::ClockFace(ClockFace::Timer), 1_000);
+        assert_eq!(app.state.clock.span, 5 * 60_000, "five minutes before anyone sets it");
+        app.act(Action::ClockSpan(7), 0);
+        assert_eq!(app.state.clock.span, 7 * 60_000, "set by the minute, any minute of the hour");
+        app.act(Action::ClockSpan(60), 0);
+        assert_eq!(app.state.clock.timer(0), 60 * 60_000);
+        app.act(Action::ClockSpan(90), 0);
+        assert_eq!(app.state.clock.span, 60 * 60_000, "an hour is the most it is set for");
+        app.act(Action::ClockSpan(0), 0);
+        assert_eq!(app.state.clock.span, 60_000, "a minute is the least");
+        // Going, it counts down; at nothing it stops, and taps the motor.
+        app.act(Action::ClockSpan(1), 0);
+        app.act(Action::ClockGo, 2_000);
+        assert_eq!(app.state.clock.timer(22_000), 40_000);
+        let fx = app.tick(62_000);
+        assert!(fx.iter().any(|fx| matches!(fx, Effect::Haptic)), "the timer taps the motor as it runs out");
+        assert!(!app.state.clock.running(), "it waits at nothing to be started again");
+        assert_eq!(app.state.clock.timer(999_999), 0);
+        // Started again, it runs the whole of its length once more.
+        app.act(Action::ClockGo, 300_000);
+        assert_eq!(app.state.clock.timer(300_000), 60_000);
     }
 
     #[test]
@@ -10659,7 +10951,7 @@ mod tests {
             let mut app = App::new(Screen::Home, W, H, PPD);
             (app.state.dual_boot, app.state.systems) = (true, Some(Ok(systems)));
             let t = app.theme();
-            let cx = Ctx { t: &t, f: &f, info: &i, state: &app.state, term: None, band: None };
+            let cx = Ctx { t: &t, f: &f, info: &i, state: &app.state, term: None, band: None, now: 0 };
             pages::render(Screen::Home, &cx).canvas.data.clone()
         };
         assert!(named(two_systems()) != named(Overview { other_starts: true, ..two_systems() }), "the home page names the one that starts");

@@ -1,5 +1,6 @@
 use crate::app::{
-    Action, BackupAt, BackupEnd, BackupJob, CalcKey, CalcOp, Check, ClashChoice, Confirm, Damage, Data, Dock, DownloadEnd,
+    Action, BackupAt, BackupEnd, BackupJob, CalcKey, CalcOp, Check, ClashChoice, ClockFace, Confirm, Damage, Data, Dock,
+    DownloadEnd,
     EraseStop, Field, FileKind,
     FileOp, FileTask, Fold, Folder, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, Pick, Place, Rows, Screen,
     SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, Switch, SystemsWork, Target, UsbDrive, UsbLink, Wipe, ADDABLE,
@@ -51,6 +52,8 @@ pub struct Ctx<'a> {
     /// The part of the page to draw; all of it if none is given. The page
     /// is laid out whole either way.
     pub band: Option<Band>,
+    /// The time the page is drawn at: what the clock's counts read by.
+    pub now: u64,
 }
 
 /// Rows `rows` of a page, and of them the columns `cols`, each from the
@@ -66,6 +69,7 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::Decrypt => decrypt(cx),
         Screen::Desktop => desktop(cx),
         Screen::Calculator => calculator(cx),
+        Screen::Clock => clock(cx),
         Screen::Home => home(cx),
         Screen::Settings => settings(cx),
         Screen::Reboot => reboot(cx),
@@ -152,6 +156,8 @@ pub const SEARCH_HINT: Text = ["搜索功能与分区", "搜尋功能與分割�
 pub const DESKTOP_TITLE: Text = ["桌面", "桌面", "Desktop"];
 /// The calculator's title, and the name of its icon on the desktop.
 pub const CALC_TITLE: Text = ["计算器", "計算機", "Calculator"];
+/// The clock's title, and the name of its icon on the desktop.
+pub const CLOCK_TITLE: Text = ["时钟", "時鐘", "Clock"];
 
 const REBOOT_TARGETS: [(Text, Option<Text>); 6] = [
     (["系统", "系統", "System"], None),
@@ -245,7 +251,7 @@ const DESKTOP_APPS: [DeskApp; 4] = [
         name: ["时钟", "時鐘", "Clock"],
         icon: Icon::Clock,
         color: Rgba::rgb(0x11, 0xb8, 0x81),
-        opens: None,
+        opens: Some(Screen::Clock),
     },
     DeskApp {
         name: ["计算器", "計算機", "Calculator"],
@@ -411,6 +417,174 @@ pub fn calculator(cx: &Ctx) -> Frame {
     // No `<` here: an app opened from the desktop leaves it the way the
     // desktop's own apps do, by a swipe up from the foot of the screen.
     Frame { back: false, ..Frame::new(t, c, out, l.pick(CALC_TITLE), m.content_top) }
+}
+
+/// The clock's two faces, in the order the bar at its foot lays them out.
+const CLOCK_FACES: [(ClockFace, Text); 2] =
+    [(ClockFace::Stopwatch, ["秒表", "碼錶", "Stopwatch"]), (ClockFace::Timer, ["计时器", "計時器", "Timer"])];
+
+/// The keys under the reading: the stopwatch's are the one that puts it
+/// back to nothing with its paper thrown away, the one that takes an entry
+/// on the paper, and the one that starts and stops it. The timer's are the
+/// minute it is set fewer, the key that starts and stops it, and the minute
+/// more.
+const CLOCK_RESET: Text = ["复位", "歸零", "Reset"];
+const CLOCK_LAP: Text = ["打点", "打點", "Lap"];
+const CLOCK_START: Text = ["开始", "開始", "Start"];
+const CLOCK_PAUSE: Text = ["暂停", "暫停", "Pause"];
+
+/// A count of milliseconds as a stopwatch reads it: `MM:SS.cc`, and
+/// `H:MM:SS.cc` once it has run an hour. It stops at 999 hours, 59
+/// minutes, 59 seconds and 99 hundredths, as Smartisan's does.
+fn stopwatch_text(ms: u64) -> String {
+    let cs = ms / 10 % 100;
+    let s = ms / 1_000 % 60;
+    let m = ms / 60_000;
+    if m >= 60 {
+        format!("{}:{:02}:{:02}.{:02}", m / 60, m % 60, s, cs)
+    } else {
+        format!("{m:02}:{s:02}.{cs:02}")
+    }
+}
+
+/// What a timer has left, rounded up to the second it is shown by, so a
+/// timer with a moment left reads `00:01` rather than nothing.
+fn timer_text(ms: u64) -> String {
+    let s = ms.div_ceil(1_000);
+    format!("{:02}:{:02}", s / 60, s % 60)
+}
+
+/// The clock: the reading large in the middle of the page, the keys that
+/// work it under that, and a bar at the foot that switches between the time
+/// counted up and the time counted down. The stopwatch's entries are kept
+/// on a slip under the reading, the newest at its foot as a till's paper
+/// comes out.
+pub fn clock(cx: &Ctx) -> Frame {
+    let (t, f, l) = (cx.t, cx.f, cx.state.lang);
+    let (m, clock) = (&t.m, &cx.state.clock);
+    let mut c = page(cx);
+    let mut out = Vec::new();
+
+    let left = m.margin;
+    let avail = m.w as f32 - m.margin * 2.0;
+    let mid = m.w as f32 / 2.0;
+
+    // The bar at the foot: one key for each face, the one shown filled with
+    // the accent and the other left on the page's card colour.
+    let tab_h = m.dp(46.0);
+    let tab_gap = m.dp(10.0);
+    let tab_w = (avail - tab_gap) / CLOCK_FACES.len() as f32;
+    let tab_top = m.h as f32 - m.margin - tab_h;
+    for (k, (face, name)) in CLOCK_FACES.iter().enumerate() {
+        let x = left + (tab_w + tab_gap) * k as f32;
+        let shown = *face == cx.state.clock.face;
+        let (fill, ink) = if shown { (t.pal.accent, Rgba::rgb(255, 255, 255)) } else { (t.pal.card, t.pal.text) };
+        c.fill_round_rect(x, tab_top, tab_w, tab_h, tab_h / 2.0, fill);
+        c.text_center(&f.heading, l.pick(*name), x + tab_w / 2.0, tab_top + tab_h / 2.0, m.row_title_px, ink);
+        out.push(Hit { rect: Rect::new(x, tab_top, tab_w, tab_h), action: Action::ClockFace(*face) });
+    }
+
+    // The keys, a row of three with the one that starts and stops the count
+    // in the middle of it: the stopwatch's either side of it, the timer's
+    // under it.
+    let d = m.dp(74.0);
+    let gap = m.dp(30.0);
+    let cy = tab_top - m.dp(52.0) - d / 2.0;
+    let top = cy - d / 2.0;
+    let at = |k: usize| mid + (k as f32 - 1.0) * (d + gap) - d / 2.0;
+
+    // The reading. The stopwatch keeps it high, with its paper under it; the
+    // timer has nothing under it, so it takes the middle of the room the
+    // title and the keys leave.
+    let read_cy = match clock.face {
+        ClockFace::Stopwatch => m.content_top + m.dp(126.0),
+        ClockFace::Timer => (m.content_top + top) / 2.0,
+    };
+    let reading = match clock.face {
+        ClockFace::Stopwatch => stopwatch_text(clock.stopwatch(cx.now)),
+        ClockFace::Timer => timer_text(clock.timer(cx.now)),
+    };
+    // The timer's reading is the whole of the page under the title; the
+    // stopwatch's is set narrower, and narrower again once it runs long.
+    let px = match (clock.face, reading.chars().count() > 8) {
+        (_, true) => m.dp(40.0),
+        (ClockFace::Timer, false) => m.dp(76.0),
+        (ClockFace::Stopwatch, false) => m.dp(60.0),
+    };
+    c.text_center(&f.heading, &reading, mid, read_cy, px, t.pal.text);
+
+    // The stopwatch's paper: as many entries as the room between the
+    // reading and the keys takes, the newest at the foot of it.
+    if clock.face == ClockFace::Stopwatch {
+        let paper_top = read_cy + m.dp(54.0);
+        let paper_bottom = top - m.dp(22.0);
+        let row_h = m.dp(32.0);
+        let room = ((paper_bottom - paper_top) / row_h).max(0.0) as usize;
+        let shown = clock.laps.len().min(room);
+        if shown > 0 {
+            let first = clock.laps.len() - shown;
+            // The entries come up from the foot, the newest last, and the
+            // rule goes over the topmost of them rather than over the
+            // reading: a slip with a few entries still reads as one piece.
+            let oldest = paper_bottom - (shown - 1) as f32 * row_h - row_h / 2.0;
+            c.fill_rect(left, oldest - row_h / 2.0 - m.dp(10.0), avail, 1.0, t.pal.chevron);
+            for (k, lap) in clock.laps[first..].iter().enumerate() {
+                let y = paper_bottom - (shown - k - 1) as f32 * row_h - row_h / 2.0;
+                let n = format!("#{}", first + k + 1);
+                c.text_vc(&f.heading, &n, left + m.dp(8.0), y, m.dp(19.0), t.pal.text, None);
+                c.text_center(&f.heading, &stopwatch_text(lap.split), mid, y, m.dp(19.0), t.pal.text);
+                let total = stopwatch_text(lap.total);
+                let w = c.text_width(&f.heading, &total, m.dp(19.0));
+                c.text_vc(&f.heading, &total, left + avail - m.dp(8.0) - w, y, m.dp(19.0), t.pal.text, None);
+            }
+        }
+    }
+
+    let mut key = |k: usize, name: &str, action: Option<Action>, main: bool| {
+        let x = at(k);
+        let (fill, ink) = match (main, action.is_some()) {
+            (true, _) => (t.pal.accent, Rgba::rgb(255, 255, 255)),
+            (false, true) => (t.pal.card, t.pal.text),
+            (false, false) => (t.pal.track, t.pal.text),
+        };
+        c.fill_round_rect(x, top, d, d, d / 2.0, fill);
+        c.text_center(&f.heading, name, x + d / 2.0, cy, m.dp(20.0), ink);
+        if let Some(a) = action {
+            out.push(Hit { rect: Rect::new(x, top, d, d), action: a });
+        }
+    };
+
+    match clock.face {
+        ClockFace::Stopwatch => {
+            let going = clock.stop_since.is_some();
+            key(0, l.pick(CLOCK_RESET), Some(Action::ClockReset), false);
+            // No entry is taken of a watch that is not going.
+            key(1, l.pick(CLOCK_LAP), going.then_some(Action::ClockLap), false);
+            let (name, action) = if going {
+                (l.pick(CLOCK_PAUSE), Action::ClockGo)
+            } else {
+                (l.pick(CLOCK_START), Action::ClockGo)
+            };
+            key(2, name, Some(action), true);
+        }
+        ClockFace::Timer => {
+            let going = clock.left_since.is_some();
+            // The length is set while the timer is stopped, by the minute,
+            // within the hour it is given.
+            let minutes = clock.span / 60_000;
+            key(0, "-", (minutes > 1 && !going).then_some(Action::ClockSpan(minutes - 1)), false);
+            key(1, "+", (minutes < 60 && !going).then_some(Action::ClockSpan(minutes + 1)), false);
+            let (name, action) = if going {
+                (l.pick(CLOCK_PAUSE), Action::ClockGo)
+            } else {
+                (l.pick(CLOCK_START), Action::ClockGo)
+            };
+            key(2, name, Some(action), true);
+        }
+    }
+
+    // No `<` here either: the clock leaves the way the desktop's own apps do.
+    Frame { back: false, ..Frame::new(t, c, out, l.pick(CLOCK_TITLE), m.content_top) }
 }
 
 /// Recovery home, laid out like the Settings root: title, search, a device

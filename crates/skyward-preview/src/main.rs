@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use skyward_config::DeviceConfig;
 use skyward_info::{Battery, Boot, Charge, Cpu, DeviceInfo, PatchLevel, Storage};
 use skyward_install::{Failure, ImageKind, Outcome, Ramdisk, Reflash, Refusal, Stage};
@@ -10,8 +10,10 @@ use skyward_net::supplicant::Security;
 use skyward_net::wlan::{Bands, Joined, Link, Network, Power, Stage as Joining, Traffic, Wlan};
 use skyward_systems::{Named, Other, Overview, Who};
 use skyward_ui::app::{
-    Action, Adding, App, Asked, BackupAt, BackupEnd, BackupEntry, BackupJob, BackupRefusal, Choice, Clip, Damage, Data, DownloadEnd,
+    Action, Adding, App, Asked, BackupAt, BackupEnd, BackupEntry, BackupJob, BackupRefusal, Choice, Clip, ClockFace, Damage, Data,
+    DownloadEnd,
     DownloadJob, EraseStop, Field, FileKind, FileOp, FileRow, FileTask, FsAction, FsRow, Have, Held, Install, ItemEnd, JobEnd, Key, Keys,
+    Lap,
     MountFailure, MountRow, Part, PartKind, PartStop, Pick, Place, Screen, SkywardEnd, SkywardJob, SkywardStage, Source, SystemChoice,
     SystemsWork, TermEnd, Touch, UsbDrive, UsbLink, SCREEN_OFF,
 };
@@ -200,9 +202,43 @@ fn main() -> Result<()> {
         println!("wrote {}", path.display());
     }
 
+    // The clock's two faces as they are worked: the stopwatch going with a
+    // few entries on its paper, and the timer counting down from the
+    // twenty-five minutes it was set for.
+    let clock: [(&str, bool, ClockFace); 3] = [
+        ("00m-clock-stopwatch-light", false, ClockFace::Stopwatch),
+        ("00n-clock-stopwatch-dark", true, ClockFace::Stopwatch),
+        ("00o-clock-timer-light", false, ClockFace::Timer),
+    ];
+    for (name, dark, face) in clock {
+        let mut app = opened(Screen::Clock, w, h, ppd);
+        app.state.dark = dark;
+        app.state.clock.face = face;
+        match face {
+            ClockFace::Stopwatch => {
+                app.state.clock.stop_since = Some(0);
+                app.state.clock.laps = vec![
+                    Lap { split: 30_000, total: 30_000 },
+                    Lap { split: 31_000, total: 61_000 },
+                    Lap { split: 22_450, total: 83_450 },
+                ];
+                app.tick(83_450);
+            }
+            ClockFace::Timer => {
+                let length = 25 * 60_000;
+                app.state.clock.span = length;
+                app.state.clock.left = length;
+                app.state.clock.left_since = Some(0);
+                app.tick(38_000);
+            }
+        }
+        let path = out.join(format!("{name}.png"));
+        write_png(&path, &whole_page(&mut app, &fonts, &info))?;
+        println!("wrote {}", path.display());
+    }
+
     // The screen kept on, which warns about burn-in.
-    let mut app = opened(Screen::ScreenOff, w, h, ppd);
-    app.state.dark = true;
+    let mut app = opened(Screen::ScreenOff, w, h, ppd);    app.state.dark = true;
     app.state.screen_off = SCREEN_OFF.iter().position(Option::is_none).expect("one choice keeps the screen on");
     let path = out.join("14-screen-off-never-dark.png");
     write_png(&path, &whole_page(&mut app, &fonts, &info))?;
@@ -1597,7 +1633,7 @@ fn opened(screen: Screen, w: u32, h: u32, ppd: f32) -> App {
 /// places an unscrolled page gives them.
 fn whole_page(app: &mut App, f: &Fonts, info: &DeviceInfo) -> Canvas {
     let t = app.theme();
-    let (screen, state) = (app.screen(), app.state.clone());
+    let (screen, state, now) = (app.screen(), app.state.clone(), app.now());
     let frame = app.whole_frame(f, info);
     let mut c = Canvas::new(frame.canvas.w, frame.height(&t) as u32);
     c.clear(frame.bg);
@@ -1606,7 +1642,7 @@ fn whole_page(app: &mut App, f: &Fonts, info: &DeviceInfo) -> Canvas {
         fold.draw(&mut c, &t, &widgets::search_words(&t, f, fold.bar, fold.hint), 0.0);
     }
     if let Some(rows) = &frame.rows {
-        let cx = Ctx { t: &t, f, info, state: &state, term: None, band: None };
+        let cx = Ctx { t: &t, f, info, state: &state, term: None, band: None, now };
         for k in 0..rows.count() {
             let mut row = Canvas::new(c.w, (rows.edges[k + 1] - rows.edges[k]) as u32);
             pages::row(screen, &cx, k, &mut row);
@@ -1723,11 +1759,15 @@ fn font_path() -> Result<PathBuf> {
 }
 
 fn write_png(path: &Path, canvas: &Canvas) -> Result<()> {
-    let file = File::create(path)?;
-    let w = BufWriter::new(file);
-    let mut enc = png::Encoder::new(w, canvas.w, canvas.h);
+    let (w, h, bytes) = (canvas.w, canvas.h, canvas.data.len() as u64);
+    let shown = path.display();
+    if w == 0 || h == 0 || bytes != u64::from(w) * u64::from(h) * 4 {
+        return Err(anyhow!("{shown}: a {w}x{h} canvas of {bytes} bytes is not a picture"));
+    }
+    let file = File::create(path).with_context(|| format!("open {shown}"))?;
+    let mut enc = png::Encoder::new(BufWriter::new(file), w, h);
     enc.set_color(png::ColorType::Rgba);
     enc.set_depth(png::BitDepth::Eight);
-    enc.write_header()?.write_image_data(&canvas.data)?;
+    enc.write_header().with_context(|| format!("write the head of {shown}"))?.write_image_data(&canvas.data).with_context(|| format!("write the body of {shown}"))?;
     Ok(())
 }
