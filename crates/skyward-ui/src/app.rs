@@ -8509,7 +8509,9 @@ mod tests {
         let (top, _) = risen(false, 50);
         assert!(top > H / 2 && top < H, "well up the screen after 50 ms: {top}");
 
-        tap_back(&mut app, &f, &i, 4000);
+        // The recovery page carries no `<` of its own: the desktop is under
+        // it, and the back key is what a phone leaves a page by.
+        app.key(Key::Back, 4000);
         assert_eq!(app.screen(), Screen::Desktop);
         assert!(app.turn.as_ref().is_some_and(|t| t.rise && t.back), "it goes back down the way it came");
         app.compose(&mut c, &f, &i, "12:00", 4000);
@@ -8832,10 +8834,18 @@ mod tests {
         H as f32 - app.theme().m.dp(FOOT_DP) + 2.0
     }
 
+    /// A page opened from the desktop's own icons, as a finger on one does:
+    /// the calculator is there rather than on the recovery's home page.
+    fn opened_on_the_desktop(screen: Screen, f: &Fonts, i: &DeviceInfo) -> App {
+        let mut app = App::new(Screen::Desktop, W, H, PPD);
+        tap(&mut app, f, i, Action::Open(screen));
+        app
+    }
+
     #[test]
     fn a_pull_up_from_the_foot_of_a_page_leaves_it_for_the_desktop() {
         let (f, i) = (fonts(), info());
-        let mut app = opened(Screen::Calculator, &f, &i);
+        let mut app = opened_on_the_desktop(Screen::Calculator, &f, &i);
         let foot = foot_y(&app);
         app.touch(Touch::Down(720.0, foot), &f, 0);
         app.touch(Touch::Move(720.0, foot - 60.0), &f, 16);
@@ -8851,7 +8861,7 @@ mod tests {
     #[test]
     fn a_pull_up_from_the_foot_of_a_page_comes_to_rest_as_the_tasks() {
         let (f, i) = (fonts(), info());
-        let mut app = opened(Screen::Calculator, &f, &i);
+        let mut app = opened_on_the_desktop(Screen::Calculator, &f, &i);
         let (foot, tasks) = (foot_y(&app), app.theme().m.dp(TASKS_DP));
         app.touch(Touch::Down(720.0, foot), &f, 0);
         app.touch(Touch::Move(720.0, foot - 60.0), &f, 16);
@@ -8874,7 +8884,7 @@ mod tests {
     #[test]
     fn a_short_pull_up_leaves_the_page_where_it_was() {
         let (f, i) = (fonts(), info());
-        let mut app = opened(Screen::Calculator, &f, &i);
+        let mut app = opened_on_the_desktop(Screen::Calculator, &f, &i);
         let foot = foot_y(&app);
         app.touch(Touch::Down(720.0, foot), &f, 0);
         app.touch(Touch::Move(720.0, foot - 30.0), &f, 16);
@@ -8955,9 +8965,11 @@ mod tests {
         let mut app = App::new(Screen::Desktop, W, H, PPD);
         let (foot, mark) = (foot_y(&app), app.theme().m.dp(TASKS_DP) * TASKS_MARK);
         app.touch(Touch::Down(720.0, foot), &f, 0);
-        app.touch(Touch::Move(720.0, foot - 20.0), &f, 16);
-        assert!(app.touch(Touch::Move(720.0, foot - mark - 20.0), &f, 32).contains(&Effect::Haptic), "a tap as they come within reach");
-        assert!(app.touch(Touch::Move(720.0, foot - mark - 40.0), &f, 48).is_empty(), "and only the once");
+        // Past the touch slop first, which a move of 20 px is not: no pull
+        // has started yet, and nothing would be armed.
+        app.touch(Touch::Move(720.0, foot - 40.0), &f, 16);
+        assert!(app.touch(Touch::Move(720.0, foot - mark - 40.0), &f, 32).contains(&Effect::Haptic), "a tap as they come within reach");
+        assert!(app.touch(Touch::Move(720.0, foot - mark - 80.0), &f, 48).is_empty(), "and only the once");
     }
 
     #[test]
@@ -8975,7 +8987,7 @@ mod tests {
     #[test]
     fn a_finger_at_the_foot_does_not_work_the_controls_it_lands_on() {
         let (f, i) = (fonts(), info());
-        let mut app = opened(Screen::Calculator, &f, &i);
+        let mut app = opened_on_the_desktop(Screen::Calculator, &f, &i);
         let foot = foot_y(&app);
         // A key of the calculator sits in that strip; pulled up, it opens
         // nothing.
