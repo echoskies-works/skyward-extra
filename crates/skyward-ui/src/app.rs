@@ -5278,9 +5278,37 @@ impl App {
         fx
     }
 
+    /// Whether work that must not be cut short is under way: a partition
+    /// being written, a package installing or flashing, a backup being
+    /// restored, the filesystem or its labels made over, or Skyward going
+    /// back into the recovery partitions. Going back waits for such work to
+    /// end rather than leave it, so the pull from the foot of the screen,
+    /// which leaves any page for the desktop at once without asking what it
+    /// was doing, waits for it too.
+    ///
+    /// A package counts until it has ended, whatever its stage: left as
+    /// going back leaves it, the installer is told to stop, which a pull has
+    /// no way to do once the page is gone.
+    fn working(&self) -> bool {
+        let s = &self.state;
+        let installing = !matches!(&s.install, Install::Idle | Install::Ending | Install::Finished { .. } | Install::Wiped(_));
+        s.systems_work.is_some()
+            || s.job.as_ref().is_some_and(|j| j.outcome.is_none())
+            || s.relabel.as_ref().is_some_and(|j| j.outcome.is_none())
+            || s.part_work.as_ref().is_some_and(|w| w.outcome.is_none())
+            || s.backup_job.as_ref().is_some_and(|j| j.outcome.is_none())
+            || s.skyward_job.as_ref().is_some_and(|j| j.outcome.is_none())
+            || installing
+    }
+
     /// Leave whatever page is shown for the desktop, as a pull from the
     /// foot of the screen does: no page in between, the desktop at the top.
+    /// A page at work stays: the pull cuts nothing short that going back
+    /// waits for.
     fn leave_for_desktop(&mut self) {
+        if self.working() {
+            return;
+        }
         self.stack = vec![(Screen::Desktop, 0.0, Focus::Unset)];
         self.state.confirm = 0.0;
         self.settle_page();
@@ -6693,7 +6721,9 @@ impl App {
                         // thrown on past them, takes the page off for the
                         // desktop. The desktop is the home of every page, so
                         // this asks nothing of what lies under the one shown.
-                        _ if dy < -slop && dy.abs() > dx.abs() && y0 > m.h as f32 - m.dp(FOOT_DP) => {
+                        // A page at work is not pulled off, as the back key
+                        // will not leave it: the finger scrolls it instead.
+                        _ if dy < -slop && dy.abs() > dx.abs() && y0 > m.h as f32 - m.dp(FOOT_DP) && !self.working() => {
                             // Over the desktop there is nowhere further to go
                             // than the tasks themselves.
                             let tasks = self.screen() == Screen::Desktop;
@@ -8855,6 +8885,35 @@ mod tests {
         app.tick(3000);
         assert_eq!(app.screen(), Screen::Calculator, "not far enough to go");
         assert!(app.foot.is_none());
+    }
+
+    #[test]
+    fn a_page_at_work_is_not_pulled_off_for_the_desktop() {
+        let f = fonts();
+        let mut app = App::new(Screen::Installing, W, H, PPD);
+        app.state.install = Install::Flashing { partition: "boot", stage: None };
+        let foot = foot_y(&app);
+        app.touch(Touch::Down(720.0, foot), &f, 0);
+        app.touch(Touch::Move(720.0, foot - 60.0), &f, 16);
+        assert!(app.foot.is_none(), "a page that is writing is not pulled off");
+        app.touch(Touch::Move(720.0, foot - 1000.0), &f, 48);
+        app.touch(Touch::Up, &f, 64);
+        app.tick(3000);
+        assert_eq!(app.screen(), Screen::Installing, "it stays until the writing ends");
+    }
+
+    #[test]
+    fn a_page_whose_work_has_ended_is_pulled_off_as_any_other() {
+        let f = fonts();
+        let mut app = App::new(Screen::Installing, W, H, PPD);
+        app.state.install = Install::Idle;
+        let foot = foot_y(&app);
+        app.touch(Touch::Down(720.0, foot), &f, 0);
+        app.touch(Touch::Move(720.0, foot - 60.0), &f, 16);
+        app.touch(Touch::Move(720.0, foot - 1000.0), &f, 48);
+        app.touch(Touch::Up, &f, 64);
+        app.tick(3000);
+        assert_eq!(app.screen(), Screen::Desktop, "with nothing under way, the pull leaves it");
     }
 
     #[test]
