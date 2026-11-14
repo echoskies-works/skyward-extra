@@ -83,7 +83,10 @@ const SCREENSHOTS: &str = "DCIM/Screenshots";
 const HELD_SCREENSHOTS: &str = "/skyward/run/screenshots";
 
 /// The panel backlight under /sys/class/backlight.
-struct Backlight {
+///
+/// Shared with the supervisor, which has to light the panel after the pages
+/// have stopped: a failure screen nobody can see is no report at all.
+pub(crate) struct Backlight {
     path: PathBuf,
     /// The raw level at the top of the slider: the panel's normal maximum.
     top: u32,
@@ -92,7 +95,7 @@ struct Backlight {
 }
 
 impl Backlight {
-    fn open() -> Result<Self> {
+    pub(crate) fn open() -> Result<Self> {
         let mut dirs: Vec<PathBuf> = fs::read_dir("/sys/class/backlight")
             .context("read /sys/class/backlight")?
             .map(|e| e.map(|e| e.path()))
@@ -119,7 +122,7 @@ impl Backlight {
 
     /// Light the panel at `level` of its normal maximum, or turn it off
     /// with `None`. The file is written only when the raw level changes.
-    fn show(&mut self, level: Option<f32>) -> Result<()> {
+    pub(crate) fn show(&mut self, level: Option<f32>) -> Result<()> {
         let raw = level.map_or(0, |v| ((v.clamp(0.0, 1.0) * self.top as f32).round() as u32).max(1));
         if raw != self.level {
             fs::write(&self.path, raw.to_string()).with_context(|| format!("write {}", self.path.display()))?;
@@ -177,6 +180,28 @@ fn normal_max(max: u32) -> Result<u32> {
     let (normal, full) = (cell(normal)?, cell(full)?);
     ensure!(normal > 0 && normal <= full, "panel {name}: normal maximum {normal} out of {full}");
     Ok((f64::from(max) * f64::from(normal) / f64::from(full)).round() as u32)
+}
+
+/// Stop the system where it stands, leaving what it can behind for the parent
+/// that will report on it.
+///
+/// The pages have no way to say this themselves: what is wanted is not a page
+/// but the absence of the system, and the panel that can still be drawn on
+/// after it is gone belongs to the process that started it. So: the word for
+/// the app into the note, a line into the kernel log, and out — with the code
+/// the parent reads.
+fn stop(code: i32, reason: Option<&str>) -> Result<()> {
+    if let Some(tag) = reason {
+        let path = crate::supervise::note();
+        // A note that cannot be written costs the reason line, not the stop:
+        // the code still reaches the panel, and the app's name is the part
+        // that goes missing.
+        if let Err(e) = fs::write(&path, tag) {
+            skyward_sys::kmsg(&format!("the stop note at {} was not written: {e:#}", path.display()))?;
+        }
+    }
+    skyward_sys::kmsg(&format!("the system stops here, code {code}"))?;
+    std::process::exit(code)
 }
 
 /// Leave recovery for the chosen target.
@@ -1162,6 +1187,10 @@ struct Pages<'a> {
     /// Whether the panel's frame memory has been blacked out for an off
     /// panel; cleared once a real frame is shown again.
     blanked: bool,
+    /// Whether the parent has been told that a frame reached the panel. Said
+    /// once, on the first frame: it is what tells "it never started" from "it
+    /// stopped while running" when this process is gone.
+    said_up: bool,
     /// Started for fastboot, the port goes to the phone's own fastbootd. The
     /// page says whether it came up and how far a computer has the port;
     /// why it did not come up goes to the kernel log and on screen.
@@ -1416,6 +1445,7 @@ impl<'a> Pages<'a> {
             read_at,
             asked: None,
             blanked: false,
+            said_up: false,
             fastboot,
             port_at,
             transfer,
@@ -1732,6 +1762,15 @@ impl<'a> Pages<'a> {
                 eprintln!("frame {:?} in {} ms", self.app.screen(), t0.elapsed().as_millis());
                 if let Some(path) = self.dump {
                     fs::write(path, &self.screen.data).with_context(|| format!("write {}", path.display()))?;
+                }
+                // A frame is on the panel: from here on the phone has a
+                // system that can be said to have been running. Written once,
+                // and never worth stopping the pages over.
+                if !self.said_up {
+                    self.said_up = true;
+                    if let Err(e) = fs::write(crate::supervise::up(), b"") {
+                        skyward_sys::kmsg(&format!("could not say the panel came up: {e:#}"))?;
+                    }
                 }
                 shown = true;
             }
@@ -2518,6 +2557,12 @@ impl Pages<'_> {
                 power(target)?
             }
             Effect::Dismiss => self.done_with_request()?,
+            // The system stops because it was asked for something it has not
+            // got: an app on the desktop that is not built. The parent that
+            // started this process is the only thing left that can say so, so
+            // the word for the app goes into a note first — an exit code
+            // cannot carry a name — and then this process ends.
+            Effect::Stop { code, reason } => stop(code, reason)?,
             Effect::FactoryReset => self.reset_asked(now)?,
             Effect::Wipe(chosen) => self.wipe(chosen, now)?,
             Effect::Install => self.installer.as_ref().context("no installer holds an update")?.install(),

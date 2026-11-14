@@ -21,6 +21,7 @@ impl App {
                 }
                 return self.arrive_at(s);
             }
+            Action::NotReady(tag) => return vec![Effect::Stop { code: NOT_READY, reason: Some(tag) }],
             Action::OpenData => return self.open_data(),
             Action::Skip => {
                 self.leave(true);
@@ -965,5 +966,33 @@ mod tests {
         app.touch(Touch::Up, &f, 0);
         assert_eq!(app.state.held, None);
         assert_eq!(app.state.search, "q");
+    }
+
+    #[test]
+    fn an_icon_with_nothing_behind_it_stops_the_system_and_names_itself() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Desktop, 1080, 2400, 3.0);
+        // The three icons standing in for apps that are not built yet answer
+        // with the one code for all of them and their own word: the code says
+        // what kind of stop it was, the word says which app. Tapping one must
+        // not open anything first — there is nothing to open.
+        for (tag, name) in [("music", "音乐"), ("browser", "浏览器"), ("tasks", "任务管理器")] {
+            let fx = tap(&mut app, &f, &i, Action::NotReady(tag));
+            assert!(
+                matches!(fx.as_slice(), [Effect::Stop { code: NOT_READY, reason: Some(said) }] if *said == tag),
+                "{name}: {fx:?}"
+            );
+            assert_eq!(app.screen(), Screen::Desktop, "{name}: nothing is opened on the way");
+        }
+    }
+
+    #[test]
+    fn every_app_the_desktop_cannot_open_yet_says_which_one_it_is() {
+        // The words the desktop writes have to be the words the panel looks
+        // up: a tag the panel does not know loses the line in the middle of a
+        // crash screen, which is the one place it is needed.
+        let mut tags = crate::pages::not_built();
+        tags.sort();
+        assert_eq!(tags, ["browser", "music", "tasks"]);
     }
 }

@@ -244,6 +244,10 @@ pub enum Confirm {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Action {
     Open(Screen),
+    /// A desktop icon whose app is not built yet: the system stops rather
+    /// than pretending, and the panel says so. The word is the one the panel
+    /// looks the app up by.
+    NotReady(&'static str),
     /// Leave the decrypt page for the page it was opened from; the page
     /// the recovery started on, for the home page without keeping it
     /// behind.
@@ -440,10 +444,28 @@ pub enum Shot {
     Held,
 }
 
+/// The exit code of a system that stopped because an app on its desktop is
+/// not built yet.
+///
+/// Chosen rather than found: the codes around it are a process's — 101 for a
+/// panic, 128 plus a signal for one that was killed, 139 for a bad pointer —
+/// and none of them means "this was asked for and is not there yet". One code
+/// for all such apps: which app it was is said in words, and a number cannot
+/// carry a name.
+pub const NOT_READY: i32 = 67;
+
 /// Work the runtime carries out on the UI's behalf.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Effect {
     Reboot(Target),
+    /// Stop the system where it stands, with this exit code, because
+    /// something was asked of it that it cannot do.
+    ///
+    /// Nothing is drawn and nothing is put right here: the process ends, and
+    /// the panel that watched it says what happened. `reason` is the word for
+    /// the app, where there is one, which travels past the exit code in a
+    /// note rather than in it — a code cannot carry a name.
+    Stop { code: i32, reason: Option<&'static str> },
     /// A short tap of the vibration motor.
     Haptic,
     /// The motor's two quick ticks as the power key turns the screen off,

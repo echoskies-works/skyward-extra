@@ -222,15 +222,24 @@ fn hits(rects: &[Rect], actions: &[Action]) -> Vec<Hit> {
     rects.iter().zip(actions).map(|(&rect, &action)| Hit { rect, action }).collect()
 }
 
+/// What a touch on a desktop icon does.
+#[derive(Clone, Copy)]
+enum Opens {
+    /// The page it opens.
+    Page(Screen),
+    /// Nothing yet: the app is named on the desktop and not built, so a touch
+    /// stops the system where it stands and the panel says which app it
+    /// stopped for. The word is the one the panel looks the app up by.
+    NotYet(&'static str),
+}
+
 /// One icon on Project Aether's desktop: the name under it, the glyph on its
-/// tile, the colour of that tile, and the page a touch on it opens. A `None`
-/// page is a placeholder — the icon is drawn and named, but no page answers
-/// a touch yet.
+/// tile, the colour of that tile, and what a touch on it does.
 struct DeskApp {
     name: Text,
     icon: Icon,
     color: Rgba,
-    opens: Option<Screen>,
+    opens: Opens,
 }
 
 /// The desktop's icons, laid out four to a row in the order written here.
@@ -239,46 +248,48 @@ const DESKTOP_APPS: [DeskApp; 7] = [
         name: ["恢复模式", "恢復模式", "Recovery"],
         icon: Icon::Gear,
         color: Rgba::rgb(0x33, 0x82, 0xf5),
-        opens: Some(Screen::Home),
+        opens: Opens::Page(Screen::Home),
     },
     DeskApp {
         name: ["文件管理", "檔案管理", "Files"],
         icon: Icon::Folder,
         color: Rgba::rgb(0xf2, 0x9d, 0x22),
-        opens: Some(Screen::Files),
+        opens: Opens::Page(Screen::Files),
     },
     DeskApp {
         name: ["时钟", "時鐘", "Clock"],
         icon: Icon::Clock,
         color: Rgba::rgb(0x11, 0xb8, 0x81),
-        opens: Some(Screen::Clock),
+        opens: Opens::Page(Screen::Clock),
     },
     DeskApp {
         name: ["计算器", "計算機", "Calculator"],
         icon: Icon::Calculator,
         color: Rgba::rgb(0x67, 0x6e, 0x7a),
-        opens: Some(Screen::Calculator),
+        opens: Opens::Page(Screen::Calculator),
     },
-    // The three below are named and drawn, but no page answers a touch on
-    // them yet: the player, the browser and the tasks page are still to
-    // come, so their icons stand on the desktop as placeholders.
+    // The three below are named and drawn, but there is nothing behind them
+    // yet: the player, the browser and the tasks page are still to come. A
+    // touch on one stops the system with the code for an app that is not
+    // built, so the icon answers rather than doing nothing — and the panel
+    // that catches the stop says which of the three it was, in words.
     DeskApp {
         name: ["音乐", "音樂", "Music"],
         icon: Icon::Music,
         color: Rgba::rgb(0xf2, 0x6b, 0x3a),
-        opens: None,
+        opens: Opens::NotYet("music"),
     },
     DeskApp {
         name: ["浏览器", "瀏覽器", "Browser"],
         icon: Icon::Browser,
         color: Rgba::rgb(0x1f, 0xa8, 0xb8),
-        opens: None,
+        opens: Opens::NotYet("browser"),
     },
     DeskApp {
         name: ["任务管理器", "工作管理員", "Tasks"],
         icon: Icon::Tasks,
         color: Rgba::rgb(0x7a, 0x5c, 0xf0),
-        opens: None,
+        opens: Opens::NotYet("tasks"),
     },
 ];
 
@@ -297,6 +308,22 @@ const DESKTOP_PER_PAGE: usize = DESKTOP_COLS * DESKTOP_ROWS;
 /// is always showing.
 pub fn desk_pages() -> usize {
     DESKTOP_APPS.len().div_ceil(DESKTOP_PER_PAGE).max(1)
+}
+
+/// The apps the desktop names and cannot open yet, by the word the panel
+/// looks them up by.
+///
+/// Written out here and nowhere else: the words are what a stop note carries
+/// to a panel that has a line for each, so a word this returns and the panel
+/// does not know is a reason lost on the one screen that needed it.
+pub fn not_built() -> Vec<&'static str> {
+    DESKTOP_APPS
+        .iter()
+        .filter_map(|app| match app.opens {
+            Opens::NotYet(tag) => Some(tag),
+            Opens::Page(_) => None,
+        })
+        .collect()
 }
 
 /// The desktop's wallpaper: black whichever theme is on, since a desktop
@@ -360,10 +387,14 @@ pub fn desktop(cx: &Ctx) -> Frame {
         icons::tile_graded(&mut c, x0, y0, tile, lit, deep);
         icons::glyph(&mut c, app.icon, x, cy, tile * 0.64, ink);
         c.text_center(&f.label, l.pick(app.name), x, cy + tile / 2.0 + m.dp(17.0), m.sub_px, ink);
-        // The whole cell answers a touch, as a phone's desktop icon does.
-        if let Some(screen) = app.opens {
-            out.push(Hit { rect: Rect::new(x - cell / 2.0, y, cell, row_h), action: Action::Open(screen) });
-        }
+        // The whole cell answers a touch, as a phone's desktop icon does —
+        // including the ones with nothing behind them, which answer by
+        // stopping rather than by opening.
+        let action = match app.opens {
+            Opens::Page(screen) => Action::Open(screen),
+            Opens::NotYet(tag) => Action::NotReady(tag),
+        };
+        out.push(Hit { rect: Rect::new(x - cell / 2.0, y, cell, row_h), action });
     }
 
     // A dot a page, and the one showing lit. One page alone needs none: a

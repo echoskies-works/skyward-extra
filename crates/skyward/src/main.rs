@@ -38,6 +38,8 @@ mod settings;
 #[cfg(target_os = "android")]
 mod systems;
 #[cfg(target_os = "android")]
+mod supervise;
+#[cfg(target_os = "android")]
 mod ui;
 #[cfg(target_os = "android")]
 mod updates;
@@ -228,13 +230,15 @@ enum Cmd {
 
 /// The startup menu, when this binary is run as `startup`.
 ///
-/// Nothing starts it automatically yet. On the phone it is reached from a
-/// shell, which is what the first check needs anyway: whether the panel
-/// comes up this early, and whether the buttons are readable at this point.
+/// The menu is reached from the failure screen, now that there is a parent to
+/// show one — this name is the way in from a shell, which is still how the
+/// panel gets checked on a phone. "Continue" hands over to the same watching
+/// parent the recovery service starts through: a system started from the menu
+/// is no less able to fall over than one started by init.
 #[cfg(target_os = "android")]
 fn startup_menu() -> Result<()> {
     match skyward_startup::run()? {
-        skyward_startup::Choice::System => recovery(),
+        skyward_startup::Choice::System => supervise::run(),
         skyward_startup::Choice::PowerOff => skyward_sys::power(Power::Off),
         // The bootloader's own fastboot, not the recovery's userspace one:
         // this is the mode that can write an image when nothing on the phone
@@ -248,6 +252,18 @@ fn main() -> Result<()> {
     let started_as = std::env::args_os().next().unwrap_or_default();
     let name = Path::new(&started_as).file_name().unwrap_or_default();
     if name == "recovery" {
+        // On the phone the recovery service is the child half of a pair: the
+        // parent outlives it, and is what the panel has left to say what
+        // became of it. A shell trying the system out can ask for it with
+        // nothing watching.
+        #[cfg(target_os = "android")]
+        {
+            if std::env::var_os("SKYWARD_UNSUPERVISED").is_some() {
+                return recovery();
+            }
+            return supervise::run();
+        }
+        #[cfg(not(target_os = "android"))]
         return recovery();
     }
     // The menu, by its own name: reachable from a shell while nothing starts
