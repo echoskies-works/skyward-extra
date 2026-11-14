@@ -43,6 +43,10 @@ mod supervise;
 mod ui;
 #[cfg(target_os = "android")]
 mod updates;
+// The rule that decides what a broken phone says, kept where a desk build can
+// reach it: the process that gathers the numbers only exists on a phone.
+#[cfg(any(target_os = "android", test))]
+mod verdict;
 #[cfg(any(target_os = "android", test))]
 mod waveform;
 #[cfg(target_os = "android")]

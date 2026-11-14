@@ -197,10 +197,13 @@ fn stop(code: i32, reason: Option<&str>) -> Result<()> {
         // the code still reaches the panel, and the app's name is the part
         // that goes missing.
         if let Err(e) = fs::write(&path, tag) {
-            skyward_sys::kmsg(&format!("the stop note at {} was not written: {e:#}", path.display()))?;
+            let _ = skyward_sys::kmsg(&format!("the stop note at {} was not written: {e:#}", path.display()));
         }
     }
-    skyward_sys::kmsg(&format!("the system stops here, code {code}"))?;
+    // The log line is worth having and not worth the code: a stop whose code
+    // came back as 1 because a log could not be written would be a panel
+    // saying something the system never said.
+    let _ = skyward_sys::kmsg(&format!("the system stops here, code {code}"));
     std::process::exit(code)
 }
 
@@ -1191,6 +1194,10 @@ struct Pages<'a> {
     /// once, on the first frame: it is what tells "it never started" from "it
     /// stopped while running" when this process is gone.
     said_up: bool,
+    /// When the parent was last told that the loop is still turning. A loop
+    /// that stops turning is a system that is not there, and silence is the
+    /// only thing a stop without an exit can leave behind.
+    beat_at: u64,
     /// Started for fastboot, the port goes to the phone's own fastbootd. The
     /// page says whether it came up and how far a computer has the port;
     /// why it did not come up goes to the kernel log and on screen.
@@ -1446,6 +1453,7 @@ impl<'a> Pages<'a> {
             asked: None,
             blanked: false,
             said_up: false,
+            beat_at: 0,
             fastboot,
             port_at,
             transfer,
@@ -1613,9 +1621,20 @@ impl<'a> Pages<'a> {
     /// stands.
     fn turn(&mut self, sleeper: &Sleeper, uevents: &uevent::Listener) -> Result<()> {
         let now = monotonic_ms();
+        // A loop that keeps turning is a system that is still there, and this
+        // is how it says so: the parent is watching for silence, and a page
+        // waiting for a touch produces nothing else for it to watch. A beat
+        // that cannot be written costs one report of being alive, not the
+        // page.
+        if now.saturating_sub(self.beat_at) >= crate::supervise::BEAT_EVERY {
+            self.beat_at = now;
+            if let Err(e) = crate::supervise::beat() {
+                eprintln!("heartbeat: {e:#}");
+            }
+        }
         if self.leave_at.is_some_and(|at| now >= at) {
             self.leave_at = None;
-            power(self.leave)?;
+            self.leave_to(self.leave, now);
         }
         if !self.touch_known && self.started.elapsed() >= TOUCH_WAIT {
             self.touch_known = true;
@@ -1769,7 +1788,12 @@ impl<'a> Pages<'a> {
                 if !self.said_up {
                     self.said_up = true;
                     if let Err(e) = fs::write(crate::supervise::up(), b"") {
-                        skyward_sys::kmsg(&format!("could not say the panel came up: {e:#}"))?;
+                        // Losing this costs the difference between the two
+                        // failure screens, not the pages: a system that ran
+                        // and then stopped would be reported as one that
+                        // never started, which is one line of a panel that
+                        // is about to be drawn anyway.
+                        let _ = skyward_sys::kmsg(&format!("could not say the panel came up: {e:#}"));
                     }
                 }
                 shown = true;
@@ -2005,7 +2029,7 @@ impl Pages<'_> {
                     if again {
                         bcb::write(&self.misc, &bcb::Bcb { command: "boot-rescue".into(), args: Vec::new() })?;
                     }
-                    power(target)?;
+                    self.leave_to(target, now);
                 }
             }
         }
@@ -2545,6 +2569,20 @@ impl Pages<'_> {
         Ok(())
     }
 
+    /// Ask the phone to leave, and keep a restart that did not go through on
+    /// the page it was asked from.
+    ///
+    /// A property that will not take its write is not the system stopping:
+    /// the pages are still there and still answer, and a failure screen over
+    /// a restart that did not happen would be a report of something that did
+    /// not occur.
+    fn leave_to(&mut self, target: Target, now: u64) {
+        if let Err(e) = power(target) {
+            let said = format!("{e:#}");
+            self.app.report(&said, now);
+        }
+    }
+
     /// Do what a page asks for, and give what the pages ask for in answer
     /// to it.
     fn effect(&mut self, fx: Effect, now: u64) -> Result<Vec<Effect>> {
@@ -2554,7 +2592,7 @@ impl Pages<'_> {
             // still kept in misc asked.
             Effect::Reboot(target) => {
                 self.done_with_request()?;
-                power(target)?
+                self.leave_to(target, now);
             }
             Effect::Dismiss => self.done_with_request()?,
             // The system stops because it was asked for something it has not
