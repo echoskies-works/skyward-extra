@@ -86,7 +86,10 @@ pub fn glyph(c: char) -> Option<Glyph> {
 /// How many pixels `c` takes up, whether or not the font has it.
 ///
 /// Callers use this to keep the rest of a line where it belongs when one
-/// character had to be drawn as something else.
+/// character had to be drawn as something else. Nothing measures a line yet,
+/// the menu being drawn from its left edge, so it stands ready rather than
+/// in use.
+#[allow(dead_code)]
 pub fn width(c: char) -> u32 {
     glyph(c).map_or(NARROW_W, |glyph| glyph.width)
 }

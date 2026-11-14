@@ -476,9 +476,11 @@ impl App {
         let mut fx = self.let_chord_go();
         if !self.display_on {
             // The power key lights the dark panel, and does only that, as on
-            // the phone's own system; the other keys leave it dark.
+            // the phone's own system; the other keys leave it dark. Coming
+            // back to the phone, it comes back to the lock.
             if key == Key::Power {
                 self.wake(now);
+                self.lock_now();
             }
             self.button = Some((key, Press::Spent));
             return fx;

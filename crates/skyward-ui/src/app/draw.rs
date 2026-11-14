@@ -314,27 +314,27 @@ impl App {
         // Let go where the tasks stand, the page keeps that much of its
         // rise and the tasks fill what it has left, so what stands at the
         // foot is the tasks and not the desktop under it.
-        if slide.is_none() {
-            if let Some(off) = self.foot.as_ref().filter(|f| !f.tasks).map(|f| f.pull) {
-                let mut page = Canvas::new(out.w, out.h);
-                self.paint_page(&mut page, &t, Some((f, info)), &view);
-                let bar = self.bar(clock, info);
-                widgets::status_bar(&mut page, &t, f, &bar, t.pal.status, false);
-                if let Some((text, _)) = &self.toast {
-                    widgets::toast(&mut page, &t, f, text);
-                }
-                let desk = self.desktop_canvas(f, info, clock);
-                let foot = (self.h as f32 - off).round().clamp(0.0, self.h as f32) as i32;
-                // What lies under the page darkens as the tasks come up over
-                // it, while the page itself stays as bright as it was: the
-                // page's own rise and the darkening behind it are one motion,
-                // off one measure of how far the pull has come.
-                let dim = TASKS_DIM * tasks_up(off, t.m.dp(TASKS_DP));
-                out.lift(&page, &desk, foot, dim, self.corners);
-                self.shown = Some(view);
-                self.layer = None;
-                return;
+        if slide.is_none()
+            && let Some(off) = self.foot.as_ref().filter(|f| !f.tasks).map(|f| f.pull)
+        {
+            let mut page = Canvas::new(out.w, out.h);
+            self.paint_page(&mut page, &t, Some((f, info)), &view);
+            let bar = self.bar(clock, info);
+            widgets::status_bar(&mut page, &t, f, &bar, t.pal.status, false);
+            if let Some((text, _)) = &self.toast {
+                widgets::toast(&mut page, &t, f, text);
             }
+            let desk = self.desktop_canvas(f, info, clock);
+            let foot = (self.h as f32 - off).round().clamp(0.0, self.h as f32) as i32;
+            // What lies under the page darkens as the tasks come up over
+            // it, while the page itself stays as bright as it was: the
+            // page's own rise and the darkening behind it are one motion,
+            // off one measure of how far the pull has come.
+            let dim = TASKS_DIM * tasks_up(off, t.m.dp(TASKS_DP));
+            out.lift(&page, &desk, foot, dim, self.corners);
+            self.shown = Some(view);
+            self.layer = None;
+            return;
         }
         match slide {
             Some((at, shift, dim)) => {

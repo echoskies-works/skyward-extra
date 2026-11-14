@@ -178,11 +178,11 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = opened(Screen::Decrypt, &f, &i);
         tap(&mut app, &f, &i, Action::Skip);
-        assert_eq!((app.screen(), app.stack.len()), (Screen::Home, 1), "back on the home page, with no other behind it");
+        assert_eq!((app.screen(), app.stack.len()), (Screen::Home, 1), "back on the page it was opened from, with no other behind it");
         let mut first = App::new(Screen::Decrypt, W, H, PPD);
         first.arrive();
         tap(&mut first, &f, &i, Action::Skip);
-        assert_eq!((first.screen(), first.stack.len()), (Screen::Home, 1), "a recovery that started on the page goes on to the home page");
+        assert_eq!((first.screen(), first.stack.len()), (Screen::Desktop, 1), "a recovery that started on the page goes on to the desktop");
     }
 
     #[test]

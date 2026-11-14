@@ -72,6 +72,12 @@ impl App {
             self.dirty = true;
             self.darkening = None;
             self.curtain.set(true, now);
+            // A panel lit to tell something shows that thing, not the lock:
+            // erasing, installing and backing up all light the panel when
+            // they end, and what they end with is to be read and tapped at
+            // once. The lock is for coming back to the phone, so the two
+            // ways of coming back put it up again below.
+            self.lock = None;
         }
         self.woke_at = Some(now);
         self.stir(now);
@@ -97,7 +103,11 @@ impl App {
         if self.display_on {
             self.stir(now);
         } else {
+            // A cable coming in lights the dark panel the way the power key
+            // does, behind the lock as well: the charging screen stands over
+            // the lock, and the page waits behind both.
             self.wake(now);
+            self.lock_now();
         }
     }
 
@@ -285,12 +295,16 @@ mod tests {
         assert!(app.key(Key::Power, 0).is_empty());
         assert_eq!(app.panel(0), Some(SLIDER_START), "it waits for volume down first");
         assert_eq!(app.deadline(0), Some(CHORD_MS));
-        assert_eq!(app.tick(CHORD_MS), vec![Effect::Ticks], "held on alone, it turns the panel off, ticking the motor");
+        // Past the wait for its partner nothing has come of it yet: let go,
+        // the panel goes off; held the long press through, the power menu
+        // comes up instead.
+        assert!(app.tick(CHORD_MS).is_empty());
+        assert!(app.display_on());
+        assert_eq!(app.key_up(Key::Power, CHORD_MS + 50), vec![Effect::Ticks], "let go, it turns the panel off, ticking the motor");
         assert!(!app.display_on());
-        assert!(app.key_up(Key::Power, CHORD_MS + 50).is_empty());
         assert!(app.key(Key::Power, CHORD_MS + 60).is_empty());
-        assert_eq!(app.panel(CHORD_MS + 60), Some(SLIDER_START));
-        assert!(app.key_up(Key::Power, CHORD_MS + 100).is_empty());
+        assert!(app.display_on(), "and lights it again");
+        assert!(app.key_up(Key::Power, CHORD_MS + 100).is_empty(), "a press that only lit the panel does not put it out");
         assert!(app.key(Key::Power, 1000).is_empty());
         assert_eq!(app.key_up(Key::Power, 1050), vec![Effect::Ticks]);
         assert!(!app.display_on(), "let go sooner, it turns the panel off then");

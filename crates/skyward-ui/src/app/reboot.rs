@@ -143,15 +143,15 @@ mod tests {
     }
 
     #[test]
-    fn the_recovery_comes_up_from_fastboot_at_the_home_page() {
+    fn the_recovery_comes_up_from_fastboot_at_the_desktop() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Fastboot, W, H, PPD);
         app.frame(&f, &i);
         app.enter_recovery();
-        assert_eq!(app.screen(), Screen::Home);
+        assert_eq!(app.screen(), Screen::Desktop);
         app.key(Key::Back, 0);
-        assert_eq!(app.screen(), Screen::Home, "fastboot is not behind it");
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Search))), "the keys go on working the pages");
+        assert_eq!(app.screen(), Screen::Desktop, "fastboot is not behind it");
+        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Home))), "the keys go on working the pages");
         app.touch(Touch::Down(W as f32 / 2.0, 200.0), &f, 0);
         app.touch(Touch::Up, &f, 0);
         assert_eq!(press(&mut app, Key::Power, 0), vec![Effect::Ticks]);

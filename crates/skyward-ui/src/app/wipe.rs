@@ -145,9 +145,9 @@ mod tests {
         assert_eq!(tap(&mut app, &f, &i, Action::RebootTo(Target::System)), vec![Effect::Reboot(Target::System)]);
         assert_eq!(swipe(&mut app, &f, &i, Confirm::FactoryReset), vec![Effect::FactoryReset]);
         assert_eq!(tap(&mut app, &f, &i, Action::Dismiss), vec![Effect::Dismiss]);
-        assert_eq!(app.screen(), Screen::Home);
+        assert_eq!(app.screen(), Screen::Desktop);
         app.key(Key::Back, 0);
-        assert_eq!(app.screen(), Screen::Home, "the system's question is not behind it");
+        assert_eq!(app.screen(), Screen::Desktop, "the system's question is not behind it");
     }
 
     #[test]
@@ -169,7 +169,7 @@ mod tests {
         let later = 2000;
         assert_eq!(tap_at(&mut app, &f, &i, Action::RebootTo(Target::PowerOff), later), vec![Effect::Reboot(Target::PowerOff)]);
         assert_eq!(tap_at(&mut app, &f, &i, Action::Dismiss, later), vec![Effect::Dismiss]);
-        assert_eq!(app.screen(), Screen::Home);
+        assert_eq!(app.screen(), Screen::Desktop);
     }
 
     #[test]
@@ -237,7 +237,7 @@ mod tests {
         let later = 2000;
         assert_eq!(tap_at(&mut app, &f, &i, Action::RebootTo(Target::System), later), vec![Effect::Reboot(Target::System)]);
         assert_eq!(tap_at(&mut app, &f, &i, Action::Dismiss, later), vec![Effect::Dismiss]);
-        assert_eq!(app.screen(), Screen::Home);
+        assert_eq!(app.screen(), Screen::Desktop);
     }
 
     #[test]
@@ -250,8 +250,9 @@ mod tests {
         assert_eq!(app.state.erase.done, 0, "nothing was erased");
         assert_eq!(app.state.data, Data::Locked { user: 0, keys: Keys::Digits, checking: false }, "the partition stays as it was");
         assert_eq!(tap_at(&mut app, &f, &i, Action::Dismiss, 1000), vec![Effect::Dismiss]);
-        assert_eq!(app.screen(), Screen::Home);
-        assert_eq!(tap_at(&mut app, &f, &i, Action::Open(Screen::Decrypt), 1000), Vec::new(), "the screen lock is asked for at once");
+        assert_eq!(app.screen(), Screen::Desktop);
+        // The screen lock is asked for at once, not by a control on a page.
+        assert_eq!(app.act(Action::Open(Screen::Decrypt), 1000), Vec::<Effect>::new());
         assert_eq!(app.screen(), Screen::Decrypt);
     }
 
@@ -264,7 +265,11 @@ mod tests {
         app.erase_ended(Ok(()), 0);
         assert_eq!(app.state.data, Data::Erased);
         assert_eq!(tap_at(&mut app, &f, &i, Action::Dismiss, 1000), vec![Effect::Dismiss]);
-        assert!(tap_at(&mut app, &f, &i, Action::Open(Screen::Decrypt), 1000).is_empty(), "nothing opens until the system makes it afresh");
-        assert_eq!(app.screen(), Screen::Decrypt);
+        assert_eq!(app.screen(), Screen::Desktop);
+        // Nothing the desktop offers opens the partition again: it stays
+        // erased until the system makes it afresh, which the last screen
+        // before it said.
+        let opens: Vec<Action> = app.frame(&f, &i).hits.iter().map(|h| h.action).filter(|a| matches!(a, Action::Open(Screen::Decrypt) | Action::OpenData)).collect();
+        assert!(opens.is_empty(), "nothing opens the partition until the system makes it afresh: {opens:?}");
     }
 }

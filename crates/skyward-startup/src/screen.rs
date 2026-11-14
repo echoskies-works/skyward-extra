@@ -83,7 +83,9 @@ impl Screen {
     /// A sum over the characters, not the character count times a cell: the
     /// two languages on this panel are two different widths, and a reversed
     /// band that guessed would either stop short of the last word or run
-    /// past it.
+    /// past it. Nothing measures a line yet, so it stands ready rather than
+    /// in use.
+    #[allow(dead_code)]
     pub fn text_w(text: &str) -> u32 {
         text.chars().map(|c| font::width(c) * SCALE).sum()
     }

@@ -84,10 +84,10 @@ impl Buttons {
             match dev.fetch_events() {
                 Ok(events) => {
                     for event in events {
-                        if let EventSummary::Key(_, code, 1) = event.destructure() {
-                            if let Some(key) = as_menu_key(code) {
-                                out.push(key);
-                            }
+                        if let EventSummary::Key(_, code, 1) = event.destructure()
+                            && let Some(key) = as_menu_key(code)
+                        {
+                            out.push(key);
                         }
                     }
                 }

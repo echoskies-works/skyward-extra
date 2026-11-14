@@ -293,7 +293,10 @@ mod tests {
         let f = crate::font::bundled();
         let mut app = App::new(Screen::Desktop, 400, 800, 2.0);
         app.sleep(0);
+        // The power key lighting the dark panel: it lights, and the lock is
+        // what it lights onto.
         app.wake(0);
+        app.lock_now();
         assert!(app.locked(), "the panel going dark leaves the lock behind it");
         app.touch(Touch::Down(200.0, 700.0), &f, 0);
         app.touch(Touch::Move(200.0, 700.0 - 800.0 * LOCK_SWIPE * 0.6), &f, 0);
@@ -309,6 +312,7 @@ mod tests {
         let mut app = App::new(Screen::Desktop, 400, 800, 2.0);
         app.sleep(0);
         app.wake(0);
+        app.lock_now();
         app.touch(Touch::Down(200.0, 700.0), &f, 0);
         app.touch(Touch::Move(200.0, 700.0 - 800.0 * LOCK_SWIPE * 0.2), &f, 0);
         app.touch(Touch::Up, &f, 0);

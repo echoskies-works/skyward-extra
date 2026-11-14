@@ -1095,6 +1095,9 @@ fn job_end(end: filework::End) -> JobEnd {
 /// first of them; asking for nothing, they start at `start`. `programs`
 /// are the phone's own that the recovery keeps running: the
 /// configuration's, and those the phone's partitions name for its keys.
+// What this program is handed, in the order it is handed it: a struct for
+// them would move the same list into a struct's field.
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     cfg: &DeviceConfig,
     programs: &[Service],
@@ -1240,6 +1243,8 @@ impl<'a> Pages<'a> {
     /// Bring up the panel, the touchscreen and the pages, as the settings
     /// kept from the starts before leave them, with none of the work the
     /// request asks for started yet.
+    // The same list `run` is given, passed on whole.
+    #[allow(clippy::too_many_arguments)]
     fn open(
         cfg: &'a DeviceConfig,
         programs: &'a [Service],
