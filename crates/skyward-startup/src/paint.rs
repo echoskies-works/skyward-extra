@@ -13,7 +13,7 @@ use super::menu::{Action, Crash, View, ITEMS};
 use super::screen::{Screen, CELL_H, INK, LINE_H, LIT, SCALE};
 
 /// What the panel says at the top.
-pub(crate) const TITLE: [&str; 2] = ["Project Aether Startup Menu", "Project Aether 启动菜单"];
+pub(crate) const TITLE: [&str; 2] = ["Skyward-Extra Startup Menu", "Skyward-Extra 启动菜单"];
 
 /// What the two keys do, spelled out.
 ///
@@ -186,8 +186,8 @@ pub(crate) fn failure(crash: Crash, code: i32, lang: Lang) -> Vec<Line> {
     // problems, and whoever is holding it already knows which one happened —
     // so name it, rather than print one generic sentence for both.
     let what = match crash {
-        Crash::Startup => ["Project Aether has failed to startup.", "Project Aether 启动失败了。"],
-        Crash::Runtime => ["Project Aether stopped while running.", "Project Aether 已停止运行。"],
+        Crash::Startup => ["Skyward-Extra has failed to startup.", "Skyward-Extra 启动失败了。"],
+        Crash::Runtime => ["Skyward-Extra stopped while running.", "Skyward-Extra 已停止运行。"],
     };
     let mut lines = vec![
         Line::plain(lang.pick(what)),
@@ -402,8 +402,8 @@ mod tests {
     fn a_failure_says_what_happened_and_ends_with_the_way_out() {
         for lang in BOTH {
             for (crash, what) in [
-                (Crash::Startup, ["Project Aether has failed to startup.", "Project Aether 启动失败了。"]),
-                (Crash::Runtime, ["Project Aether stopped while running.", "Project Aether 已停止运行。"]),
+                (Crash::Startup, ["Skyward-Extra has failed to startup.", "Skyward-Extra 启动失败了。"]),
+                (Crash::Runtime, ["Skyward-Extra stopped while running.", "Skyward-Extra 已停止运行。"]),
             ] {
                 let lines = failure(crash, 139, lang);
                 assert_eq!(lines[0].text(), lang.pick(what), "{lang:?}: the screen names which case it was");
@@ -470,7 +470,7 @@ mod tests {
     ///
     /// The drawer falls back to `?` for a character it cannot find, which
     /// keeps the panel up but spells the line wrong — and a menu reading
-    /// "重置 Project Aether" as "?? Project Aether" is worse than no menu. So
+    /// "重置 Skyward-Extra" as "?? Skyward-Extra" is worse than no menu. So
     /// the coverage is checked here, on the strings themselves, instead of
     /// discovered on a phone.
     #[test]

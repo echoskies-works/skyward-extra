@@ -32,7 +32,7 @@ impl Action {
     pub fn label(self, lang: Lang) -> &'static str {
         lang.pick(match self {
             Action::Continue => ["Continue Startup", "继续启动"],
-            Action::Reset => ["Reset Project Aether", "重置 Project Aether"],
+            Action::Reset => ["Reset Skyward-Extra", "重置 Skyward-Extra"],
             Action::Troubleshoot => ["Troubleshoot", "疑难解答"],
             Action::Fastboot => ["Start Fastboot mode", "启动 Fastboot 模式"],
             Action::PowerOff => ["Power off", "关机"],
