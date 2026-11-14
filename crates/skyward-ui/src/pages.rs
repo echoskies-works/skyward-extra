@@ -1,12 +1,14 @@
 use crate::app::{
-    Action, BackupAt, BackupEnd, BackupJob, Check, ClashChoice, Confirm, Damage, Data, Dock, DownloadEnd, EraseStop, Field, FileKind,
+    Action, BackupAt, BackupEnd, BackupJob, CalcKey, CalcOp, Check, ClashChoice, ClockFace, Confirm, Damage, Data, Dock,
+    DownloadEnd,
+    EraseStop, Field, FileKind,
     FileOp, FileTask, Fold, Folder, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, Pick, Place, Rows, Screen,
     SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, Switch, SystemsWork, Target, UsbDrive, UsbLink, Wipe, ADDABLE,
     BACKUP_PARTS, DATA_ERASED, DATA_PARTITION, DOWNLOADS, FASTBOOT_CHOICES, SCREEN_OFF, TARGETS, TIME_ZONES, USB_DRIVE_UNREADABLE,
     USB_DRIVE_WANTED, WIPES, installs, starting,
 };
 use crate::canvas::Canvas;
-use crate::color::Rgba;
+use crate::color::{mix, Rgba};
 use crate::editor;
 use crate::files;
 use crate::fmt::{self, Verb};
@@ -19,7 +21,7 @@ use crate::theme::Theme;
 use crate::tr;
 use crate::icons::{self, Icon};
 use crate::widgets::{self, Caption, Detail, Fact, Outline, Row, Spec, SystemCard, SystemMark, Tone, Trail};
-use skyward_info::{DeviceInfo, VERSION};
+use skyward_info::{DeviceInfo, VERSION, version_text};
 use skyward_install::{Outcome, Reflash, Refusal, Stage};
 use skyward_net::download::Progress;
 use skyward_net::supplicant::Security;
@@ -50,6 +52,8 @@ pub struct Ctx<'a> {
     /// The part of the page to draw; all of it if none is given. The page
     /// is laid out whole either way.
     pub band: Option<Band>,
+    /// The time the page is drawn at: what the clock's counts read by.
+    pub now: u64,
 }
 
 /// Rows `rows` of a page, and of them the columns `cols`, each from the
@@ -63,6 +67,9 @@ pub struct Band {
 pub fn render(screen: Screen, cx: &Ctx) -> Frame {
     match screen {
         Screen::Decrypt => decrypt(cx),
+        Screen::Desktop => desktop(cx),
+        Screen::Calculator => calculator(cx),
+        Screen::Clock => clock(cx),
         Screen::Home => home(cx),
         Screen::Settings => settings(cx),
         Screen::Reboot => reboot(cx),
@@ -141,10 +148,16 @@ pub fn confirm_label(which: Confirm, s: &State) -> (&'static str, bool) {
     (s.lang.pick(label), danger)
 }
 
-/// The home page's large title, and what its search bar and the search
-/// page's field say while nothing is typed.
-pub const HOME_TITLE: &str = "Skyward";
+/// The home page's large title.
+pub const HOME_TITLE: &str = "Skyward-Extra";
 pub const SEARCH_HINT: Text = ["搜索功能与分区", "搜尋功能與分割區", "Search features and partitions"];
+
+/// The desktop's title, never shown large but kept for the page's records.
+pub const DESKTOP_TITLE: Text = ["桌面", "桌面", "Desktop"];
+/// The calculator's title, and the name of its icon on the desktop.
+pub const CALC_TITLE: Text = ["计算器", "計算機", "Calculator"];
+/// The clock's title, and the name of its icon on the desktop.
+pub const CLOCK_TITLE: Text = ["时钟", "時鐘", "Clock"];
 
 const REBOOT_TARGETS: [(Text, Option<Text>); 6] = [
     (["系统", "系統", "System"], None),
@@ -207,6 +220,371 @@ fn fit(c: Canvas, t: &Theme, bottom: f32) -> Canvas {
 
 fn hits(rects: &[Rect], actions: &[Action]) -> Vec<Hit> {
     rects.iter().zip(actions).map(|(&rect, &action)| Hit { rect, action }).collect()
+}
+
+/// One icon on Project Aether's desktop: the name under it, the glyph on its
+/// tile, the colour of that tile, and the page a touch on it opens. A `None`
+/// page is a placeholder — the icon is drawn and named, but no page answers
+/// a touch yet.
+struct DeskApp {
+    name: Text,
+    icon: Icon,
+    color: Rgba,
+    opens: Option<Screen>,
+}
+
+/// The desktop's icons, laid out four to a row in the order written here.
+const DESKTOP_APPS: [DeskApp; 4] = [
+    DeskApp {
+        name: ["恢复模式", "恢復模式", "Recovery"],
+        icon: Icon::Gear,
+        color: Rgba::rgb(0x33, 0x82, 0xf5),
+        opens: Some(Screen::Home),
+    },
+    DeskApp {
+        name: ["文件管理", "檔案管理", "Files"],
+        icon: Icon::Folder,
+        color: Rgba::rgb(0xf2, 0x9d, 0x22),
+        opens: Some(Screen::Files),
+    },
+    DeskApp {
+        name: ["时钟", "時鐘", "Clock"],
+        icon: Icon::Clock,
+        color: Rgba::rgb(0x11, 0xb8, 0x81),
+        opens: Some(Screen::Clock),
+    },
+    DeskApp {
+        name: ["计算器", "計算機", "Calculator"],
+        icon: Icon::Calculator,
+        color: Rgba::rgb(0x67, 0x6e, 0x7a),
+        opens: Some(Screen::Calculator),
+    },
+];
+
+/// How many icons one row of the desktop holds.
+const DESKTOP_COLS: usize = 4;
+
+/// The desktop's wallpaper: black whichever theme is on, since a desktop
+/// carries a picture of its own rather than a page of the system.
+const DESKTOP_BG: Rgba = Rgba::rgb(0, 0, 0);
+
+/// The ink of the status bar over that wallpaper: the light set, taken from
+/// the dark theme's, because the page under it never turns light. Without
+/// this the light theme's grey bar would sit unread on the black.
+pub const DESKTOP_STATUS: Rgba = Rgba::rgb(224, 224, 224);
+
+/// The simple desktop Project Aether starts on: a black wallpaper with the
+/// apps laid over it in a grid, four to a row, as a phone's desktop lays its
+/// own out. The status bar is drawn over the desktop as it is over every
+/// page, so the time, the battery and the WLAN stay in view.
+pub fn desktop(cx: &Ctx) -> Frame {
+    let (t, f, l) = (cx.t, cx.f, cx.state.lang);
+    let m = &t.m;
+    // The wallpaper: plain black for now.
+    let mut c = Canvas::filled(m.w, m.h, DESKTOP_BG);
+    let mut out = Vec::new();
+
+    let cell = m.w as f32 / DESKTOP_COLS as f32;
+    let tile = m.dp(58.0);
+    let row_h = m.dp(104.0);
+    // The first row clears the status bar.
+    let top = widgets::bar_bottom(t) + m.dp(28.0);
+    let ink = Rgba::rgb(255, 255, 255);
+
+    for (i, app) in DESKTOP_APPS.iter().enumerate() {
+        let col = (i % DESKTOP_COLS) as f32;
+        let row = (i / DESKTOP_COLS) as f32;
+        let x = cell * (col + 0.5);
+        let y = top + row * row_h;
+        let cy = y + tile / 2.0;
+        let (x0, y0) = (x - tile / 2.0, cy - tile / 2.0);
+        // A tile holding the glyph, its name under it. The tile is the very
+        // one a row's icon sits on, so the desktop and the pages under it
+        // agree on what a tile looks like; the colour grades from a lit top
+        // to a deeper bottom, so a flat square reads as a key that catches
+        // the light.
+        let (lit, deep) = (mix(app.color, ink, 0.14), mix(app.color, DESKTOP_BG, 0.10));
+        icons::tile_graded(&mut c, x0, y0, tile, lit, deep);
+        icons::glyph(&mut c, app.icon, x, cy, tile * 0.64, ink);
+        c.text_center(&f.label, l.pick(app.name), x, cy + tile / 2.0 + m.dp(17.0), m.sub_px, ink);
+        // The whole cell answers a touch, as a phone's desktop icon does.
+        if let Some(screen) = app.opens {
+            out.push(Hit { rect: Rect::new(x - cell / 2.0, y, cell, row_h), action: Action::Open(screen) });
+        }
+    }
+
+    Frame { back: false, header: false, bg: DESKTOP_BG, ..Frame::new(t, c, out, l.pick(DESKTOP_TITLE), 0.0) }
+}
+
+/// How many keys a calculator's row holds, and how many rows it holds.
+const CALC_COLS: usize = 4;
+
+/// The calculator's keys, in the order a calculator lays them out, with
+/// `=` where the right hand of the last row ends.
+const CALC_KEYS: [[CalcKey; CALC_COLS]; 5] = [
+    [CalcKey::Clear, CalcKey::Erase, CalcKey::Percent, CalcKey::Op(CalcOp::Div)],
+    [CalcKey::Digit(7), CalcKey::Digit(8), CalcKey::Digit(9), CalcKey::Op(CalcOp::Mul)],
+    [CalcKey::Digit(4), CalcKey::Digit(5), CalcKey::Digit(6), CalcKey::Op(CalcOp::Sub)],
+    [CalcKey::Digit(1), CalcKey::Digit(2), CalcKey::Digit(3), CalcKey::Op(CalcOp::Add)],
+    [CalcKey::Digit(0), CalcKey::Negate, CalcKey::Dot, CalcKey::Eq],
+];
+
+const CALC_DIGITS: [&str; 10] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+
+/// What a key reads. The signs are the ones every calculator uses, so they
+/// are the same in every language. Erase is the left arrow, since no font
+/// here draws the erase-to-the-left sign.
+fn calc_text(key: CalcKey) -> &'static str {
+    match key {
+        CalcKey::Digit(d) => CALC_DIGITS[d as usize],
+        CalcKey::Dot => ".",
+        CalcKey::Negate => "±",
+        CalcKey::Percent => "%",
+        CalcKey::Op(CalcOp::Add) => "+",
+        CalcKey::Op(CalcOp::Sub) => "−",
+        CalcKey::Op(CalcOp::Mul) => "×",
+        CalcKey::Op(CalcOp::Div) => "÷",
+        CalcKey::Eq => "=",
+        CalcKey::Clear => "AC",
+        CalcKey::Erase => "←",
+    }
+}
+
+/// The tile behind a key: the operator tiles take the page's accent, the
+/// ones that change the sum take its track, and the figures take a card.
+fn calc_fill(t: &Theme, key: CalcKey) -> Rgba {
+    match key {
+        CalcKey::Op(_) | CalcKey::Eq => t.pal.accent,
+        CalcKey::Clear | CalcKey::Erase | CalcKey::Percent | CalcKey::Negate => t.pal.track,
+        CalcKey::Digit(_) | CalcKey::Dot => t.pal.card,
+    }
+}
+
+/// The words on a key, white over the accent and the page's text colour
+/// elsewhere.
+fn calc_ink(t: &Theme, key: CalcKey) -> Rgba {
+    match key {
+        CalcKey::Op(_) | CalcKey::Eq => Rgba::rgb(255, 255, 255),
+        _ => t.pal.text,
+    }
+}
+
+/// The calculator: the sum so far across the page under the title, the
+/// keys laid out under it four to a row, as a phone's calculator lays its
+/// own out.
+pub fn calculator(cx: &Ctx) -> Frame {
+    let (t, f, l) = (cx.t, cx.f, cx.state.lang);
+    let m = &t.m;
+    let mut c = page(cx);
+    let mut out = Vec::new();
+
+    let left = m.margin;
+    let right = m.w as f32 - m.margin;
+    let avail = right - left;
+
+    // The keys take the bottom of the page, the last row down to the
+    // margin.
+    let gap = m.dp(12.0);
+    let rows = CALC_KEYS.len() as f32;
+    let key_h = m.dp(80.0);
+    let grid_h = key_h * rows + gap * (rows - 1.0);
+    let top = m.h as f32 - m.margin - grid_h;
+    let key_w = (avail - gap * (CALC_COLS as f32 - 1.0)) / CALC_COLS as f32;
+
+    // The sum so far sits over the keys, its figures shrunk to fit the
+    // line where there are many of them.
+    let shown = cx.state.calc.shown();
+    let mut px = m.dp(62.0);
+    let mut wide = c.text_width(&f.heading, &shown, px);
+    while wide > avail && px > m.dp(22.0) {
+        px -= m.dp(2.0);
+        wide = c.text_width(&f.heading, &shown, px);
+    }
+    let base = top - m.dp(52.0);
+    c.text(&f.heading, &shown, right - wide, base, px, t.pal.text, None);
+
+    for (r, row) in CALC_KEYS.iter().enumerate() {
+        for (k, key) in row.iter().enumerate() {
+            let x = left + (key_w + gap) * k as f32;
+            let y = top + (key_h + gap) * r as f32;
+            c.fill_round_rect(x, y, key_w, key_h, m.dp(18.0), calc_fill(t, *key));
+            c.text_center(&f.heading, calc_text(*key), x + key_w / 2.0, y + key_h / 2.0, m.dp(30.0), calc_ink(t, *key));
+            // The whole key answers a touch.
+            out.push(Hit { rect: Rect::new(x, y, key_w, key_h), action: Action::Calc(*key) });
+        }
+    }
+
+    // No `<` here: an app opened from the desktop leaves it the way the
+    // desktop's own apps do, by a swipe up from the foot of the screen.
+    Frame { back: false, ..Frame::new(t, c, out, l.pick(CALC_TITLE), m.content_top) }
+}
+
+/// The clock's two faces, in the order the bar at its foot lays them out.
+const CLOCK_FACES: [(ClockFace, Text); 2] =
+    [(ClockFace::Stopwatch, ["秒表", "碼錶", "Stopwatch"]), (ClockFace::Timer, ["计时器", "計時器", "Timer"])];
+
+/// The keys under the reading: the stopwatch's are the one that puts it
+/// back to nothing with its paper thrown away, the one that takes an entry
+/// on the paper, and the one that starts and stops it. The timer's are the
+/// minute it is set fewer, the key that starts and stops it, and the minute
+/// more.
+const CLOCK_RESET: Text = ["复位", "歸零", "Reset"];
+const CLOCK_LAP: Text = ["打点", "打點", "Lap"];
+const CLOCK_START: Text = ["开始", "開始", "Start"];
+const CLOCK_PAUSE: Text = ["暂停", "暫停", "Pause"];
+
+/// A count of milliseconds as a stopwatch reads it: `MM:SS.cc`, and
+/// `H:MM:SS.cc` once it has run an hour. It stops at 999 hours, 59
+/// minutes, 59 seconds and 99 hundredths, as Smartisan's does.
+fn stopwatch_text(ms: u64) -> String {
+    let cs = ms / 10 % 100;
+    let s = ms / 1_000 % 60;
+    let m = ms / 60_000;
+    if m >= 60 {
+        format!("{}:{:02}:{:02}.{:02}", m / 60, m % 60, s, cs)
+    } else {
+        format!("{m:02}:{s:02}.{cs:02}")
+    }
+}
+
+/// What a timer has left, rounded up to the second it is shown by, so a
+/// timer with a moment left reads `00:01` rather than nothing.
+fn timer_text(ms: u64) -> String {
+    let s = ms.div_ceil(1_000);
+    format!("{:02}:{:02}", s / 60, s % 60)
+}
+
+/// The clock: the reading large in the middle of the page, the keys that
+/// work it under that, and a bar at the foot that switches between the time
+/// counted up and the time counted down. The stopwatch's entries are kept
+/// on a slip under the reading, the newest at its foot as a till's paper
+/// comes out.
+pub fn clock(cx: &Ctx) -> Frame {
+    let (t, f, l) = (cx.t, cx.f, cx.state.lang);
+    let (m, clock) = (&t.m, &cx.state.clock);
+    let mut c = page(cx);
+    let mut out = Vec::new();
+
+    let left = m.margin;
+    let avail = m.w as f32 - m.margin * 2.0;
+    let mid = m.w as f32 / 2.0;
+
+    // The bar at the foot: one key for each face, the one shown filled with
+    // the accent and the other left on the page's card colour.
+    let tab_h = m.dp(46.0);
+    let tab_gap = m.dp(10.0);
+    let tab_w = (avail - tab_gap) / CLOCK_FACES.len() as f32;
+    let tab_top = m.h as f32 - m.margin - tab_h;
+    for (k, (face, name)) in CLOCK_FACES.iter().enumerate() {
+        let x = left + (tab_w + tab_gap) * k as f32;
+        let shown = *face == cx.state.clock.face;
+        let (fill, ink) = if shown { (t.pal.accent, Rgba::rgb(255, 255, 255)) } else { (t.pal.card, t.pal.text) };
+        c.fill_round_rect(x, tab_top, tab_w, tab_h, tab_h / 2.0, fill);
+        c.text_center(&f.heading, l.pick(*name), x + tab_w / 2.0, tab_top + tab_h / 2.0, m.row_title_px, ink);
+        out.push(Hit { rect: Rect::new(x, tab_top, tab_w, tab_h), action: Action::ClockFace(*face) });
+    }
+
+    // The keys, a row of three with the one that starts and stops the count
+    // in the middle of it: the stopwatch's either side of it, the timer's
+    // under it.
+    let d = m.dp(74.0);
+    let gap = m.dp(30.0);
+    let cy = tab_top - m.dp(52.0) - d / 2.0;
+    let top = cy - d / 2.0;
+    let at = |k: usize| mid + (k as f32 - 1.0) * (d + gap) - d / 2.0;
+
+    // The reading. The stopwatch keeps it high, with its paper under it; the
+    // timer has nothing under it, so it takes the middle of the room the
+    // title and the keys leave.
+    let read_cy = match clock.face {
+        ClockFace::Stopwatch => m.content_top + m.dp(126.0),
+        ClockFace::Timer => (m.content_top + top) / 2.0,
+    };
+    let reading = match clock.face {
+        ClockFace::Stopwatch => stopwatch_text(clock.stopwatch(cx.now)),
+        ClockFace::Timer => timer_text(clock.timer(cx.now)),
+    };
+    // The timer's reading is the whole of the page under the title; the
+    // stopwatch's is set narrower, and narrower again once it runs long.
+    let px = match (clock.face, reading.chars().count() > 8) {
+        (_, true) => m.dp(40.0),
+        (ClockFace::Timer, false) => m.dp(76.0),
+        (ClockFace::Stopwatch, false) => m.dp(60.0),
+    };
+    c.text_center(&f.heading, &reading, mid, read_cy, px, t.pal.text);
+
+    // The stopwatch's paper: as many entries as the room between the
+    // reading and the keys takes, the newest at the foot of it.
+    if clock.face == ClockFace::Stopwatch {
+        let paper_top = read_cy + m.dp(54.0);
+        let paper_bottom = top - m.dp(22.0);
+        let row_h = m.dp(32.0);
+        let room = ((paper_bottom - paper_top) / row_h).max(0.0) as usize;
+        let shown = clock.laps.len().min(room);
+        if shown > 0 {
+            let first = clock.laps.len() - shown;
+            // The entries come up from the foot, the newest last, and the
+            // rule goes over the topmost of them rather than over the
+            // reading: a slip with a few entries still reads as one piece.
+            let oldest = paper_bottom - (shown - 1) as f32 * row_h - row_h / 2.0;
+            c.fill_rect(left, oldest - row_h / 2.0 - m.dp(10.0), avail, 1.0, t.pal.chevron);
+            for (k, lap) in clock.laps[first..].iter().enumerate() {
+                let y = paper_bottom - (shown - k - 1) as f32 * row_h - row_h / 2.0;
+                let n = format!("#{}", first + k + 1);
+                c.text_vc(&f.heading, &n, left + m.dp(8.0), y, m.dp(19.0), t.pal.text, None);
+                c.text_center(&f.heading, &stopwatch_text(lap.split), mid, y, m.dp(19.0), t.pal.text);
+                let total = stopwatch_text(lap.total);
+                let w = c.text_width(&f.heading, &total, m.dp(19.0));
+                c.text_vc(&f.heading, &total, left + avail - m.dp(8.0) - w, y, m.dp(19.0), t.pal.text, None);
+            }
+        }
+    }
+
+    let mut key = |k: usize, name: &str, action: Option<Action>, main: bool| {
+        let x = at(k);
+        let (fill, ink) = match (main, action.is_some()) {
+            (true, _) => (t.pal.accent, Rgba::rgb(255, 255, 255)),
+            (false, true) => (t.pal.card, t.pal.text),
+            (false, false) => (t.pal.track, t.pal.text),
+        };
+        c.fill_round_rect(x, top, d, d, d / 2.0, fill);
+        c.text_center(&f.heading, name, x + d / 2.0, cy, m.dp(20.0), ink);
+        if let Some(a) = action {
+            out.push(Hit { rect: Rect::new(x, top, d, d), action: a });
+        }
+    };
+
+    match clock.face {
+        ClockFace::Stopwatch => {
+            let going = clock.stop_since.is_some();
+            key(0, l.pick(CLOCK_RESET), Some(Action::ClockReset), false);
+            // No entry is taken of a watch that is not going.
+            key(1, l.pick(CLOCK_LAP), going.then_some(Action::ClockLap), false);
+            let (name, action) = if going {
+                (l.pick(CLOCK_PAUSE), Action::ClockGo)
+            } else {
+                (l.pick(CLOCK_START), Action::ClockGo)
+            };
+            key(2, name, Some(action), true);
+        }
+        ClockFace::Timer => {
+            let going = clock.left_since.is_some();
+            // The length is set while the timer is stopped, by the minute,
+            // within the hour it is given.
+            let minutes = clock.span / 60_000;
+            key(0, "-", (minutes > 1 && !going).then_some(Action::ClockSpan(minutes - 1)), false);
+            key(1, "+", (minutes < 60 && !going).then_some(Action::ClockSpan(minutes + 1)), false);
+            let (name, action) = if going {
+                (l.pick(CLOCK_PAUSE), Action::ClockGo)
+            } else {
+                (l.pick(CLOCK_START), Action::ClockGo)
+            };
+            key(2, name, Some(action), true);
+        }
+    }
+
+    // No `<` here either: the clock leaves the way the desktop's own apps do.
+    Frame { back: false, ..Frame::new(t, c, out, l.pick(CLOCK_TITLE), m.content_top) }
 }
 
 /// Recovery home, laid out like the Settings root: title, search, a device
@@ -389,7 +767,9 @@ pub fn settings(cx: &Ctx) -> Frame {
     let debug = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(TERMINAL)).icon(SLATE, Icon::Terminal)]);
     out.extend(hits(&debug.rows, &[Action::Open(Screen::Terminal)]));
     y = widgets::section(&mut c, t, f, debug.bottom, l.pick(["关于", "關於", "About"]));
-    let mut rows = vec![Row::new(l.pick(ABOUT)).trail(Trail::Value(VERSION))];
+    // The row borrows the version, so it outlives the list drawn from it.
+    let version = version_text();
+    let mut rows = vec![Row::new(l.pick(ABOUT)).trail(Trail::Value(version.as_str()))];
     let mut opens = vec![Action::Open(Screen::About)];
     if s.offers(Screen::SkywardUpdate) {
         let row = Row::new(l.pick(SKYWARD_UPDATE));
@@ -512,8 +892,9 @@ pub fn mount(cx: &Ctx) -> Frame {
     Frame::new(t, fit(c, t, bottom), out, l.pick(["挂载", "掛載", "Mount"]), top)
 }
 
-/// Who made the recovery, as the About page names them under its version.
-const AUTHOR: &str = "© 2026 Kirk Lin";
+/// Who made the recovery and who keeps this extension, as the About page
+/// names them under its version.
+const AUTHOR: &str = "© 2026 Kirk Lin & 天某人";
 
 /// About this device, modelled on the stock「我的设备」: the wordmark, the
 /// version and its author over a moving colour field, and the summary,
@@ -529,8 +910,8 @@ pub fn about(cx: &Ctx) -> Frame {
     let (out, summary_top, bottom) = about_cards(cx, &mut c);
     let canvas = fit(c, t, bottom);
     let art = HeroArt {
-        wordmark: widgets::wordmark(t, f, "Skyward", m.dp(233.7), m.dp(37.8)),
-        version: widgets::version_line(t, f, VERSION),
+        wordmark: widgets::wordmark(t, f, "Skyward-Extra", m.dp(233.7), m.dp(37.8)),
+        version: widgets::version_line(t, f, &version_text()),
         author: widgets::author_line(t, f, AUTHOR),
         runs: canvas.runs(),
     };
@@ -629,7 +1010,7 @@ pub fn specs(cx: &Ctx) -> Frame {
         y = widgets::info_card(&mut c, t, f, y + gap, &[(l.pick(ANDROID_VERSION), fmt::android(l, r, i.security_patch.as_ref()))]);
     }
     y = widgets::info_card(&mut c, t, f, y + gap, &[
-        (l.pick(["Recovery 版本", "Recovery 版本", "Recovery version"]), format!("Skyward {VERSION}")),
+        (l.pick(["Recovery 版本", "Recovery 版本", "Recovery version"]), version_text()),
         (l.pick(["内核版本", "核心版本", "Kernel version"]), i.kernel.clone()),
     ]);
 
@@ -673,7 +1054,7 @@ pub fn specs(cx: &Ctx) -> Frame {
     y = widgets::info_card(&mut c, t, f, y + gap, &[(l.pick(["机身存储", "內建儲存空間", "Internal storage"]), storage)]);
     let links = widgets::list(&mut c, t, f, y + gap, &[
         Row::new(l.pick(LICENSE)).trail(Trail::Value("GPL-3.0")),
-        Row::new(l.pick(FONTS)).trail(Trail::Value("MiSans")),
+        Row::new(l.pick(FONTS)).trail(Trail::Value("MiSans · Lexend Deca")),
     ]);
     out.extend(hits(&links.rows, &[Action::Open(Screen::License), Action::Open(Screen::FontLicense)]));
     Frame::new(t, fit(c, t, links.bottom), out, l.pick(SPECS), top)
@@ -3561,6 +3942,10 @@ pub fn license(cx: &Ctx) -> Frame {
 /// its first lines; the image carries the same file beside the font.
 const MONO_LICENSE: &str = include_str!("../../../resources/fonts/KirkMono-OFL.txt");
 
+/// The brand typeface's licence, which names its copyright holders on its
+/// first line; the image carries the same file beside the font.
+const BRAND_LICENSE: &str = include_str!("../../../resources/fonts/LexendDeca-OFL.txt");
+
 /// The typefaces, as they name themselves, and the terms each is used under.
 pub fn font_license(cx: &Ctx) -> Frame {
     let (t, f, l) = (cx.t, cx.f, cx.state.lang);
@@ -3579,6 +3964,20 @@ pub fn font_license(cx: &Ctx) -> Frame {
         "The interface text is set in Xiaomi's MiSans, used free of charge under the MiSans Font Intellectual Property License Agreement. The font files are unchanged, and come with Skyward alone, never on their own.\n\nThe agreement in full is on the MiSans website.",
     ]);
     let y = widgets::paragraph(&mut c, t, f, y + t.m.dp(4.0), misans);
+    let y = widgets::section(&mut c, t, f, y, l.pick(["品牌字标", "品牌字標", "Brand wordmark"]));
+    let brand_holders: Vec<&str> = BRAND_LICENSE.lines().take_while(|l| l.starts_with("Copyright")).collect();
+    let y = widgets::info_card(&mut c, t, f, y, &[
+        (typeface, f.brand_info.family.clone()),
+        (version, f.brand_info.version.clone()),
+        (copyright, brand_holders.join("\n")),
+        (l.pick(LICENSE_TERMS), l.pick(["SIL 开源字体许可证 1.1 版（OFL-1.1）", "SIL 開放字型授權條款 1.1 版（OFL-1.1）", "SIL Open Font License, version 1.1 (OFL-1.1)"]).to_string()),
+    ]);
+    let brand = l.pick([
+        "关于页的字标使用 Lexend Deca 字体，依据 SIL 开源字体许可证 1.1 版免费使用。字体文件未经修改，仅随本镜像提供，不单独分发。\n\n许可证全文位于 /skyward/LexendDeca-OFL.txt，也可在 openfontlicense.org 查看。",
+        "關於頁的字標使用 Lexend Deca 字型，依據 SIL 開放字型授權條款 1.1 版免費使用。字型檔案未經修改，僅隨本映像檔提供，不單獨散布。\n\n授權條款全文位於 /skyward/LexendDeca-OFL.txt，也可在 openfontlicense.org 查看。",
+        "The About page's wordmark is set in Lexend Deca, used free of charge under the SIL Open Font License, version 1.1. The font file is unchanged, and comes with this image alone, never on its own.\n\nThe license in full is at /skyward/LexendDeca-OFL.txt, and on openfontlicense.org.",
+    ]);
+    let y = widgets::paragraph(&mut c, t, f, y + t.m.dp(4.0), brand);
     let y = widgets::section(&mut c, t, f, y, l.pick(["终端文字", "終端機文字", "Terminal text"]));
     let holders: Vec<&str> = MONO_LICENSE.lines().take_while(|l| l.starts_with("Copyright")).collect();
     let y = widgets::info_card(&mut c, t, f, y, &[

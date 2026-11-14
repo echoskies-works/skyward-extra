@@ -1,15 +1,17 @@
-![Skyward Recovery](assets/hero.jpg)
+![Skyward-Extra](assets/hero.png)
 
-# Skyward
+# Skyward-Extra
 
 English | [简体中文](README.zh-CN.md)
 
-Skyward is a recovery written in Rust, from scratch.
+Skyward-Extra is an extension built on Skyward, a from-scratch Rust Android recovery, with extra features and experiments.
+It includes all of Skyward's features, plus some additional extensions.
 
 <p align="center">
-  <img src="assets/home.png" width="30%" alt="Home">
-  <img src="assets/settings-dark.png" width="30%" alt="Settings in dark mode">
-  <img src="assets/time-zone.png" width="30%" alt="Time zone">
+  <img src="assets/desktop.png" width="24%" alt="Desktop">
+  <img src="assets/home.png" width="24%" alt="Home">
+  <img src="assets/settings-dark.png" width="24%" alt="Settings in dark mode">
+  <img src="assets/time-zone.png" width="24%" alt="Time zone">
 </p>
 
 ## Features
@@ -119,6 +121,13 @@ the data partition.
 | 🚧 REDMI K90 Ultra | `warsaw` | OS3.0.309.0.WHPCNXM (Android 16) |
 | 🚧 REDMI K100 Pro | `athens` | OS4.0.4.0.XPICNXM (Android 17) |
 | 🚧 REDMI K100 Pro Max | `songyuan` | OS4.0.4.0.XGNCNXM (Android 17) |
+
+## Extra features
+
+Including: a desktop, a recovery, and a file manager.
+The default interface of this project is the desktop. Tap the "Recovery" icon
+to reveal all the original recovery features.
+That's right — this Android recovery can read books, play music, and even play games!
 
 ## Installing Skyward
 

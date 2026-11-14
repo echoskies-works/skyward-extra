@@ -2257,6 +2257,7 @@ dependencies = [
  "skyward-modules",
  "skyward-mtp",
  "skyward-net",
+ "skyward-startup",
  "skyward-sys",
  "skyward-systems",
  "skyward-ui",
@@ -2390,6 +2391,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "skyward-kms"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "drm",
+ "drm-ffi",
+ "libc",
+]
+
+[[package]]
 name = "skyward-lp"
 version = "0.2.0"
 dependencies = [
@@ -2464,10 +2475,22 @@ dependencies = [
  "skyward-info",
  "skyward-install",
  "skyward-net",
+ "skyward-startup",
  "skyward-systems",
  "skyward-ui",
  "skyward-vab",
  "toml",
+]
+
+[[package]]
+name = "skyward-startup"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "evdev",
+ "libc",
+ "skyward-kms",
+ "skyward-sys",
 ]
 
 [[package]]
@@ -2517,8 +2540,6 @@ dependencies = [
  "ab_glyph",
  "ab_glyph_rasterizer",
  "anyhow",
- "drm",
- "drm-ffi",
  "icu_locale_core",
  "jiff",
  "libc",
@@ -2528,6 +2549,7 @@ dependencies = [
  "serde_json",
  "skyward-info",
  "skyward-install",
+ "skyward-kms",
  "skyward-net",
  "skyward-systems",
  "skyward-vab",

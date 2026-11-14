@@ -1,0 +1,17 @@
+[package]
+name = "skyward-startup"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The menu depends on the scanout and nothing else, on purpose. Adding a
+# dependency here is a decision about how likely this program is to still
+# work on a phone whose system partition is the thing that broke.
+[dependencies]
+anyhow = { workspace = true }
+skyward-kms = { path = "../skyward-kms" }
+
+[target.'cfg(target_os = "android")'.dependencies]
+evdev = "0.13.2"
+libc = { workspace = true }
+skyward-sys = { path = "../skyward-sys" }

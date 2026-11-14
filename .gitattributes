@@ -1,0 +1,7 @@
+# The startup menu's glyph table is a binary dump of Unifont, not text.
+#
+# Git already guesses that from the NUL bytes, but the guess is a heuristic
+# with a size limit, and this machine has `core.autocrlf = true`: if the guess
+# ever went the other way, every LF byte in the table would be rewritten and
+# the whole menu would come out as garbage. Say it explicitly.
+crates/skyward-startup/src/font/glyphs.bin binary

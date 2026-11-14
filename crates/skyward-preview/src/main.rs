@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use skyward_config::DeviceConfig;
 use skyward_info::{Battery, Boot, Charge, Cpu, DeviceInfo, PatchLevel, Storage};
 use skyward_install::{Failure, ImageKind, Outcome, Ramdisk, Reflash, Refusal, Stage};
@@ -8,10 +8,13 @@ use skyward_net::reach::Reach;
 use skyward_net::release::{Release, Unanswered};
 use skyward_net::supplicant::Security;
 use skyward_net::wlan::{Bands, Joined, Link, Network, Power, Stage as Joining, Traffic, Wlan};
+use skyward_startup::{Action as StartupAction, Crash as StartupCrash, Lang as StartupLang, View as StartupView};
 use skyward_systems::{Named, Other, Overview, Who};
 use skyward_ui::app::{
-    Action, Adding, App, Asked, BackupAt, BackupEnd, BackupEntry, BackupJob, BackupRefusal, Choice, Clip, Damage, Data, DownloadEnd,
+    Action, Adding, App, Asked, BackupAt, BackupEnd, BackupEntry, BackupJob, BackupRefusal, Choice, Clip, ClockFace, Damage, Data,
+    DownloadEnd,
     DownloadJob, EraseStop, Field, FileKind, FileOp, FileRow, FileTask, FsAction, FsRow, Have, Held, Install, ItemEnd, JobEnd, Key, Keys,
+    Lap,
     MountFailure, MountRow, Part, PartKind, PartStop, Pick, Place, Screen, SkywardEnd, SkywardJob, SkywardStage, Source, SystemChoice,
     SystemsWork, TermEnd, Touch, UsbDrive, UsbLink, SCREEN_OFF,
 };
@@ -136,7 +139,12 @@ fn main() -> Result<()> {
 
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let font_path = font_path()?;
-    let fonts = Fonts::load(&font_path, 0, root.join("resources/fonts/KirkMono-Regular.ttf"))?;
+    let fonts = Fonts::load(
+        &font_path,
+        0,
+        root.join("resources/fonts/KirkMono-Regular.ttf"),
+        root.join("resources/fonts/LexendDeca-VariableFont_wght.ttf"),
+    )?;
     eprintln!("font: {}", font_path.display());
     for (tag, min, def, max) in fonts.axes() {
         eprintln!("axis {tag}: {min}..{max} (default {def})");
@@ -166,7 +174,11 @@ fn main() -> Result<()> {
     let pattern = Data::Locked { user: 0, keys: Keys::Pattern, checking: false };
     // Whole pages, the way a long screenshot shows them. The About page's
     // field is drawn only on screen, so it appears among the moments below.
-    let shots: [Shot; 12] = [
+    let shots: [Shot; 16] = [
+        ("00-desktop-light", Screen::Desktop, false, &info, Data::Open, &[]),
+        ("00b-desktop-dark", Screen::Desktop, true, &info, Data::Open, &[]),
+        ("00c-calculator-light", Screen::Calculator, false, &info, Data::Open, &[]),
+        ("00d-calculator-dark", Screen::Calculator, true, &info, Data::Open, &[]),
         ("01-decrypt-dark", Screen::Decrypt, true, &info, pattern, &[0, 3, 4, 5, 8]),
         ("02-home-light", Screen::Home, false, &info, Data::Open, &[]),
         ("03-home-dark-update-pending", Screen::Home, true, &pending, Data::Open, &[]),
@@ -191,13 +203,83 @@ fn main() -> Result<()> {
         println!("wrote {}", path.display());
     }
 
+    // The clock's two faces as they are worked: the stopwatch going with a
+    // few entries on its paper, and the timer counting down from the
+    // twenty-five minutes it was set for.
+    let clock: [(&str, bool, ClockFace); 3] = [
+        ("00m-clock-stopwatch-light", false, ClockFace::Stopwatch),
+        ("00n-clock-stopwatch-dark", true, ClockFace::Stopwatch),
+        ("00o-clock-timer-light", false, ClockFace::Timer),
+    ];
+    for (name, dark, face) in clock {
+        let mut app = opened(Screen::Clock, w, h, ppd);
+        app.state.dark = dark;
+        app.state.clock.face = face;
+        match face {
+            ClockFace::Stopwatch => {
+                app.state.clock.stop_since = Some(0);
+                app.state.clock.laps = vec![
+                    Lap { split: 30_000, total: 30_000 },
+                    Lap { split: 31_000, total: 61_000 },
+                    Lap { split: 22_450, total: 83_450 },
+                ];
+                app.tick(83_450);
+            }
+            ClockFace::Timer => {
+                let length = 25 * 60_000;
+                app.state.clock.span = length;
+                app.state.clock.left = length;
+                app.state.clock.left_since = Some(0);
+                app.tick(38_000);
+            }
+        }
+        let path = out.join(format!("{name}.png"));
+        write_png(&path, &whole_page(&mut app, &fonts, &info))?;
+        println!("wrote {}", path.display());
+    }
+
     // The screen kept on, which warns about burn-in.
-    let mut app = opened(Screen::ScreenOff, w, h, ppd);
-    app.state.dark = true;
+    let mut app = opened(Screen::ScreenOff, w, h, ppd);    app.state.dark = true;
     app.state.screen_off = SCREEN_OFF.iter().position(Option::is_none).expect("one choice keeps the screen on");
     let path = out.join("14-screen-off-never-dark.png");
     write_png(&path, &whole_page(&mut app, &fonts, &info))?;
     println!("wrote {}", path.display());
+
+    // The menu that runs before anything else does, drawn by the code that
+    // goes on the phone rather than by the page renderer: the list, the
+    // question a reset puts up, and the two screens that take over when
+    // Aether dies — one for a phone that never came up, one for a phone that
+    // was in use. Its typeface is Unifont, so these are what to compare
+    // against a photo of the panel.
+    //
+    // All of them go in their own folder: they are the one part of the
+    // preview that is not Aether's own screen, and they are drawn by a
+    // different crate. Keeping them next to the 250-odd pages they have
+    // nothing to do with made them look like one more page.
+    let startup: [(&str, StartupView); 4] = [
+        ("00p-startup-menu", StartupView::List { sel: 0 }),
+        ("00q-startup-reset", StartupView::Confirm { action: StartupAction::Reset, yes: false }),
+        // Nothing draws these on the phone yet: the menu still hands the
+        // panel over with exec, so there is no parent left to catch the exit
+        // code. The layout is settled, the wiring is not.
+        ("00r-startup-failed", StartupView::Failure { crash: StartupCrash::Startup, code: 139 }),
+        ("00s-system-crashed", StartupView::Failure { crash: StartupCrash::Runtime, code: 139 }),
+    ];
+    let outside = out.join("startup");
+    std::fs::create_dir_all(&outside)?;
+    // Both languages every time, whatever `--lang` says: the panel is the one
+    // screen that has to be checked in both at once, since the two differ in
+    // glyph width and a line that fits in English can still run off the edge
+    // in Chinese.
+    for (name, view) in startup {
+        for (suffix, panel_lang) in [("zh", StartupLang::Zh), ("en", StartupLang::En)] {
+            let mut canvas = Canvas::new(w, h);
+            canvas.data.copy_from_slice(&skyward_startup::render(w, h, view, panel_lang));
+            let path = outside.join(format!("{name}-{suffix}.png"));
+            write_png(&path, &canvas)?;
+            println!("wrote {}", path.display());
+        }
+    }
 
     // The sideload page through an install, as the installer tells it.
     let recovery = ImageKind::Boot { kernel: false, ramdisk: Ramdisk::Recovery };
@@ -1010,7 +1092,58 @@ fn main() -> Result<()> {
     }
 
     // The panel mid-gesture, to set beside recordings of the same moves.
-    let moments: [Moment; 27] = [
+    let moments: [Moment; 35] = [
+        // A page pulled off the screen by its foot, the desktop come in
+        // under it: four frames of the one move, the page gone up by about a
+        // quarter, a half, three quarters and all but its last strip. The
+        // finger is still down in each, so each stands where it got to.
+        ("00g-going-home-1-light", Screen::Calculator, false, &|app, f| {
+            let by = app.theme().m.h as f32 * 0.22;
+            pull_up(app, f, by)
+        }),
+        ("00h-going-home-2-light", Screen::Calculator, false, &|app, f| {
+            let by = app.theme().m.h as f32 * 0.48;
+            pull_up(app, f, by)
+        }),
+        ("00i-going-home-3-light", Screen::Calculator, false, &|app, f| {
+            let by = app.theme().m.h as f32 * 0.74;
+            pull_up(app, f, by)
+        }),
+        ("00j-going-home-4-light", Screen::Calculator, false, &|app, f| {
+            let by = app.theme().m.h as f32 * 0.93;
+            pull_up(app, f, by)
+        }),
+        // The tasks up over the desktop, the desktop dimmed under them, and
+        // the foot of the screen saying there is nothing running yet.
+        ("00k-tasks-up-dark", Screen::Desktop, true, &|app, f| {
+            let by = app.theme().m.dp(120.0);
+            pull_up(app, f, by)
+        }),
+        // The same over a page, the way a touch stays put instead of going
+        // on: the page has gone up as far as the tasks are tall and dimmed
+        // with them, and the strip they stand in is the desktop's own black,
+        // left bare by the page rather than covered by a card.
+        ("00l-tasks-over-a-page-light", Screen::Calculator, false, &|app, f| {
+            let by = app.theme().m.dp(120.0);
+            pull_up(app, f, by)
+        }),
+        // The power menu over the desktop, brought up the way the panel
+        // brings it: the power key and volume up together, then the card
+        // coming in over the page dimmed behind it.
+        ("00e-power-menu-light", Screen::Desktop, false, &|app, _| {
+            let _ = app.key(Key::Power, 1000);
+            let _ = app.key(Key::VolumeUp, 1100);
+            1400
+        }),
+        // The same menu with the light moved down it, as the volume key
+        // does, to show an entry other than the first lit.
+        ("00f-power-menu-dark", Screen::Desktop, true, &|app, _| {
+            let _ = app.key(Key::Power, 1000);
+            let _ = app.key(Key::VolumeUp, 1100);
+            let _ = app.key(Key::VolumeDown, 1200);
+            let _ = app.key(Key::VolumeDown, 1260);
+            1500
+        }),
         ("08-about-light", Screen::About, false, &|_, _| 2000),
         ("08-about-dark", Screen::About, true, &|_, _| 2000),
         ("08-about-light-later", Screen::About, false, &|_, _| 9000),
@@ -1103,23 +1236,44 @@ fn main() -> Result<()> {
             type_keys(app, f, &info, &keys, 300)
         }),
     ];
+    // Each moment is drawn on its own, and one that breaks the page while
+    // drawing it is said so and left out rather than taking the rest of the
+    // sheet with it: a sheet of thirty is not worth losing to one bad move.
+    let mut missed = Vec::new();
     for (name, screen, dark, act) in moments {
-        let mut app = opened(screen, w, h, ppd);
-        app.set_screen_corners(cfg.display.corner_radius as f32);
-        app.state.dark = dark;
-        app.frame(&fonts, &info);
-        app.tick(0);
-        let now = act(&mut app, &fonts);
-        // Time passes frame by frame, as on the panel.
-        for ms in (0..now).step_by(16) {
-            app.tick(ms);
+        let drew = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+            let mut app = opened(screen, w, h, ppd);
+            app.set_screen_corners(cfg.display.corner_radius as f32);
+            app.state.dark = dark;
+            app.frame(&fonts, &info);
+            app.tick(0);
+            let now = act(&mut app, &fonts);
+            // Time passes frame by frame, as on the panel.
+            for ms in (0..now).step_by(16) {
+                app.tick(ms);
+            }
+            app.tick(now);
+            let mut c = Canvas::new(w, h);
+            app.compose(&mut c, &fonts, &info, CLOCK, now);
+            let path = out.join(format!("{name}.png"));
+            write_png(&path, &c)?;
+            println!("wrote {}", path.display());
+            Ok(())
+        }));
+        match drew {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                eprintln!("{name}: not drawn: {e:#}");
+                missed.push(name);
+            }
+            Err(_) => {
+                eprintln!("{name}: not drawn: the page broke while drawing it");
+                missed.push(name);
+            }
         }
-        app.tick(now);
-        let mut c = Canvas::new(w, h);
-        app.compose(&mut c, &fonts, &info, CLOCK, now);
-        let path = out.join(format!("{name}.png"));
-        write_png(&path, &c)?;
-        println!("wrote {}", path.display());
+    }
+    if !missed.is_empty() {
+        eprintln!("{} of the moments were not drawn: {}", missed.len(), missed.join(", "));
     }
 
     // The home page's card with each notice it gives: a battery too low to
@@ -1180,6 +1334,19 @@ fn drag(app: &mut App, f: &Fonts, y0: f32, y1: f32) -> u64 {
         app.tick(ms);
     }
     2000
+}
+
+/// A finger down in the strip at the foot of the screen and pulled `by`
+/// pixels up it, kept down: a page on its way off the screen, or the
+/// desktop's tasks on their way up. Returns a time after the pull is drawn,
+/// so the frame shows where it got to rather than where it will settle.
+fn pull_up(app: &mut App, f: &Fonts, by: f32) -> u64 {
+    let m = app.theme().m;
+    let foot = m.h as f32 - m.dp(24.0) + 2.0;
+    app.touch(Touch::Down(600.0, foot), f, 0);
+    app.touch(Touch::Move(600.0, foot - 40.0), f, 16);
+    app.touch(Touch::Move(600.0, foot - by), f, 200);
+    240
 }
 
 /// Put a finger down at `at` on the control doing `action`, on the page
@@ -1503,7 +1670,7 @@ fn opened(screen: Screen, w: u32, h: u32, ppd: f32) -> App {
 /// places an unscrolled page gives them.
 fn whole_page(app: &mut App, f: &Fonts, info: &DeviceInfo) -> Canvas {
     let t = app.theme();
-    let (screen, state) = (app.screen(), app.state.clone());
+    let (screen, state, now) = (app.screen(), app.state.clone(), app.now());
     let frame = app.whole_frame(f, info);
     let mut c = Canvas::new(frame.canvas.w, frame.height(&t) as u32);
     c.clear(frame.bg);
@@ -1512,7 +1679,7 @@ fn whole_page(app: &mut App, f: &Fonts, info: &DeviceInfo) -> Canvas {
         fold.draw(&mut c, &t, &widgets::search_words(&t, f, fold.bar, fold.hint), 0.0);
     }
     if let Some(rows) = &frame.rows {
-        let cx = Ctx { t: &t, f, info, state: &state, term: None, band: None };
+        let cx = Ctx { t: &t, f, info, state: &state, term: None, band: None, now };
         for k in 0..rows.count() {
             let mut row = Canvas::new(c.w, (rows.edges[k + 1] - rows.edges[k]) as u32);
             pages::row(screen, &cx, k, &mut row);
@@ -1525,7 +1692,26 @@ fn whole_page(app: &mut App, f: &Fonts, info: &DeviceInfo) -> Canvas {
     if let Some(d) = &frame.dock {
         c.put(&d.canvas, (c.h - d.canvas.h) as i32);
     }
-    widgets::status_bar(&mut c, &t, f, &app.bar(CLOCK, info), t.pal.status);
+    // The bar the page carries: its `<`, its round button, and the large
+    // title in the place an unscrolled page gives them. The panel draws
+    // these over the page as it composes; a long screenshot has to lay
+    // them down here, or the picture is missing them.
+    if frame.back {
+        let (chip, x, y) = widgets::back_chip(&t);
+        c.lay(&chip, x, y, 1.0);
+        widgets::back_arrow(&mut c, &t, t.pal.text);
+    }
+    if let Some((glyph, _)) = &frame.button {
+        let (chip, x, y) = widgets::button_chip(&t);
+        c.lay(&chip, x, y, 1.0);
+        widgets::button_glyph(&mut c, &t, *glyph, t.pal.text);
+    }
+    if frame.header {
+        widgets::big_title(&t, f, frame.title).draw(&mut c, 0.0, 0.0, t.pal.text, 1.0);
+    }
+    // The desktop's black wallpaper takes the light bar, as it does on the phone.
+    let ink = if screen == Screen::Desktop { pages::DESKTOP_STATUS } else { t.pal.status };
+    widgets::status_bar(&mut c, &t, f, &app.bar(CLOCK, info), ink);
     c
 }
 
@@ -1610,11 +1796,15 @@ fn font_path() -> Result<PathBuf> {
 }
 
 fn write_png(path: &Path, canvas: &Canvas) -> Result<()> {
-    let file = File::create(path)?;
-    let w = BufWriter::new(file);
-    let mut enc = png::Encoder::new(w, canvas.w, canvas.h);
+    let (w, h, bytes) = (canvas.w, canvas.h, canvas.data.len() as u64);
+    let shown = path.display();
+    if w == 0 || h == 0 || bytes != u64::from(w) * u64::from(h) * 4 {
+        return Err(anyhow!("{shown}: a {w}x{h} canvas of {bytes} bytes is not a picture"));
+    }
+    let file = File::create(path).with_context(|| format!("open {shown}"))?;
+    let mut enc = png::Encoder::new(BufWriter::new(file), w, h);
     enc.set_color(png::ColorType::Rgba);
     enc.set_depth(png::BitDepth::Eight);
-    enc.write_header()?.write_image_data(&canvas.data)?;
+    enc.write_header().with_context(|| format!("write the head of {shown}"))?.write_image_data(&canvas.data).with_context(|| format!("write the body of {shown}"))?;
     Ok(())
 }

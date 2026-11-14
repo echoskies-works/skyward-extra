@@ -20,14 +20,20 @@ const MOVES: [&str; 12] = ["press", "open", "drag", "fold", "fling", "back", "se
 
 /// Times what the UI draws: whole pages rendered, and every frame of the
 /// moves people make, driven the way the runtime drives the app. Run with
-/// the directory holding MiSansVF.ttf and KirkMono-Regular.ttf, then the
-/// moves to time (all of them if none is named) and, after `x`, how many
-/// times over to make each; `renders` times the pages rendered, and
-/// `renders:Settings` one of them.
+/// the directory holding MiSansVF.ttf, KirkMono-Regular.ttf and
+/// LexendDeca-VariableFont_wght.ttf, then the moves to time (all of them
+/// if none is named) and, after `x`, how many times over to make each;
+/// `renders` times the pages rendered, and `renders:Settings` one of them.
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let dir = args.get(1).expect("the directory holding MiSansVF.ttf and KirkMono-Regular.ttf");
-    let f = Fonts::load(format!("{dir}/MiSansVF.ttf"), 0, format!("{dir}/KirkMono-Regular.ttf")).expect("load the fonts");
+    let dir = args.get(1).expect("the directory holding the fonts");
+    let f = Fonts::load(
+        format!("{dir}/MiSansVF.ttf"),
+        0,
+        format!("{dir}/KirkMono-Regular.ttf"),
+        format!("{dir}/LexendDeca-VariableFont_wght.ttf"),
+    )
+    .expect("load the fonts");
     let i = info();
     let mut named: Vec<&str> = Vec::new();
     let mut times = 1;
@@ -185,7 +191,7 @@ fn renders(f: &Fonts, i: &DeviceInfo, only: Option<&str>, quiet: bool) {
     for t in [Theme::light(W, H, PPD), Theme::light(W, H, PPD).pressed()] {
         for screen in screens.into_iter().filter(|s| only.is_none_or(|o| format!("{s:?}") == o)) {
             let time = |band| {
-                let cx = Ctx { t: &t, f, info: i, state: &state, term: None, band };
+                let cx = Ctx { t: &t, f, info: i, state: &state, term: None, band, now: 0 };
                 let mut ms: Vec<f64> = (0..5)
                     .map(|_| {
                         let t0 = Instant::now();

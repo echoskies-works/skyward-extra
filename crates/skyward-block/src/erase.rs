@@ -150,8 +150,16 @@ fn layout(extras: &[String]) -> Result<Option<String>> {
 }
 
 /// The size of the kernel's memory pages.
+#[cfg(not(target_os = "windows"))]
 fn page_size() -> u64 {
     unsafe { libc::sysconf(libc::_SC_PAGESIZE) as u64 }
+}
+
+/// Windows has no `sysconf`; its page size is a fixed 4 KiB on both x64 and
+/// ARM64, so this is what `skyward-preview` sees when run on a Windows host.
+#[cfg(target_os = "windows")]
+fn page_size() -> u64 {
+    4096
 }
 
 #[cfg(test)]

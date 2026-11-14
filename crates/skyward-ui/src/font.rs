@@ -170,8 +170,12 @@ pub struct Weights {
     pub status: f32,
     pub strong: f32,
     pub speed: f32,
-    pub display: f32,
 }
+
+/// The `wght` the brand wordmark asks of its own typeface. It is not a row
+/// of [`Weights`]: that table is fitted to the UI typeface on stock
+/// screenshots, and the wordmark is no longer set in it.
+const BRAND_WEIGHT: f32 = 480.0;
 
 pub const STOCK_WEIGHTS: Weights = Weights {
     title: 322.0,
@@ -183,7 +187,6 @@ pub const STOCK_WEIGHTS: Weights = Weights {
     status: 485.0,
     strong: 545.0,
     speed: 680.0,
-    display: 480.0,
 };
 
 pub struct Fonts {
@@ -203,7 +206,7 @@ pub struct Fonts {
     pub strong: Face,
     /// How fast data goes, in the status bar.
     pub speed: Face,
-    /// The About page wordmark.
+    /// The About page wordmark, set in a typeface of its own.
     pub display: Face,
     /// The terminal's monospaced face, for the characters it has.
     pub mono: Face,
@@ -211,6 +214,8 @@ pub struct Fonts {
     pub info: FontInfo,
     /// What the monospaced typeface says about itself.
     pub mono_info: FontInfo,
+    /// What the brand typeface says about itself.
+    pub brand_info: FontInfo,
     data: &'static [u8],
     index: u32,
 }
@@ -249,16 +254,29 @@ fn leak(path: &Path) -> Result<&'static [u8]> {
 }
 
 impl Fonts {
-    /// The UI typeface from `path` (face `index` of a collection) and the
-    /// terminal's monospaced one from `mono`.
-    pub fn load(path: impl AsRef<Path>, index: u32, mono: impl AsRef<Path>) -> Result<Self> {
-        Self::load_with(path, index, mono, &STOCK_WEIGHTS)
+    /// The UI typeface from `path` (face `index` of a collection), the
+    /// terminal's monospaced one from `mono`, and the brand wordmark's own
+    /// one from `brand`.
+    pub fn load(
+        path: impl AsRef<Path>,
+        index: u32,
+        mono: impl AsRef<Path>,
+        brand: impl AsRef<Path>,
+    ) -> Result<Self> {
+        Self::load_with(path, index, mono, brand, &STOCK_WEIGHTS)
     }
 
-    pub fn load_with(path: impl AsRef<Path>, index: u32, mono: impl AsRef<Path>, w: &Weights) -> Result<Self> {
+    pub fn load_with(
+        path: impl AsRef<Path>,
+        index: u32,
+        mono: impl AsRef<Path>,
+        brand: impl AsRef<Path>,
+        w: &Weights,
+    ) -> Result<Self> {
         // One copy of the bytes backs every weight instance.
         let data = leak(path.as_ref())?;
         let mono_data = leak(mono.as_ref())?;
+        let brand_data = leak(brand.as_ref())?;
         let face = |wght: f32| Face::new(data, index, wght);
         Ok(Fonts {
             title: face(w.title)?,
@@ -270,11 +288,13 @@ impl Fonts {
             status: face(w.status)?,
             strong: face(w.strong)?,
             speed: face(w.speed)?,
-            display: face(w.display)?,
+            // The wordmark is the brand's own lettering, not the UI's.
+            display: Face::new(brand_data, 0, BRAND_WEIGHT)?,
             // A single-weight file: the coordinate asks for the weight it is.
             mono: Face::new(mono_data, 0, 400.0)?,
             info: FontInfo::read(data, index)?,
             mono_info: FontInfo::read(mono_data, 0)?,
+            brand_info: FontInfo::read(brand_data, 0)?,
             data,
             index,
         })
@@ -300,7 +320,13 @@ impl Fonts {
 #[cfg(test)]
 pub(crate) fn bundled() -> Fonts {
     let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../resources/fonts");
-    Fonts::load(format!("{dir}/MiSansVF.ttf"), 0, format!("{dir}/KirkMono-Regular.ttf")).unwrap()
+    Fonts::load(
+        format!("{dir}/MiSansVF.ttf"),
+        0,
+        format!("{dir}/KirkMono-Regular.ttf"),
+        format!("{dir}/LexendDeca-VariableFont_wght.ttf"),
+    )
+    .unwrap()
 }
 
 #[cfg(test)]

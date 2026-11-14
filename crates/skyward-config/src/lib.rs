@@ -15,6 +15,10 @@ pub mod ramdisk {
     /// The monospaced typeface's licence, which travels with every copy of
     /// it.
     pub const MONO_LICENSE: &str = "skyward/KirkMono-OFL.txt";
+    /// The brand typeface the About page sets its wordmark in.
+    pub const BRAND: &str = "skyward/LexendDeca-VariableFont_wght.ttf";
+    /// The brand typeface's licence, which travels with every copy of it.
+    pub const BRAND_LICENSE: &str = "skyward/LexendDeca-OFL.txt";
     /// The recovery service binary init starts.
     pub const RECOVERY: &str = "system/bin/recovery";
     /// The first program of a system installed beside the installed one,
@@ -28,6 +32,13 @@ pub mod ramdisk {
     /// service binary beside it, which runs the command it is started as.
     pub const COMMANDS: [&str; 5] =
         ["system/bin/7za", "system/bin/avbctl", "system/bin/resetprop", "system/bin/unzip", "system/bin/zstd"];
+    /// The startup menu, reached by this name.
+    ///
+    /// init starts the recovery service by path with no arguments, so a
+    /// program that has to be reachable on its own needs a name of its own.
+    /// For now the link points at the recovery binary and the binary picks
+    /// the menu by the name it was started as.
+    pub const STARTUP: &str = "system/bin/startup";
     /// The first property file init loads in recovery mode.
     pub const PROP_DEFAULT: &str = "prop.default";
     /// The scheduling profiles libprocessgroup reads.

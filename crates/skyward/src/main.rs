@@ -202,6 +202,9 @@ enum Cmd {
         /// The terminal's monospaced typeface.
         #[arg(long, default_value = "/skyward/KirkMono-Regular.ttf")]
         mono: std::path::PathBuf,
+        /// The brand typeface the About page sets its wordmark in.
+        #[arg(long, default_value = "/skyward/LexendDeca-VariableFont_wght.ttf")]
+        brand: std::path::PathBuf,
         /// Open on the unlock page instead of the home page.
         #[arg(long)]
         unlock: bool,
@@ -211,12 +214,36 @@ enum Cmd {
     },
 }
 
+/// The startup menu, when this binary is run as `startup`.
+///
+/// Nothing starts it automatically yet. On the phone it is reached from a
+/// shell, which is what the first check needs anyway: whether the panel
+/// comes up this early, and whether the buttons are readable at this point.
+#[cfg(target_os = "android")]
+fn startup_menu() -> Result<()> {
+    match skyward_startup::run()? {
+        skyward_startup::Choice::System => recovery(),
+        skyward_startup::Choice::PowerOff => skyward_sys::power(Power::Off),
+        // The bootloader's own fastboot, not the recovery's userspace one:
+        // this is the mode that can write an image when nothing on the phone
+        // will start, which is the whole reason the line is on the menu.
+        skyward_startup::Choice::Fastboot => skyward_sys::power(Power::Bootloader),
+    }
+}
+
 fn main() -> Result<()> {
     // init starts the recovery service by path with no arguments.
     let started_as = std::env::args_os().next().unwrap_or_default();
     let name = Path::new(&started_as).file_name().unwrap_or_default();
     if name == "recovery" {
         return recovery();
+    }
+    // The menu, by its own name: reachable from a shell while nothing starts
+    // it automatically yet, which is also how the panel gets checked on a
+    // real phone before init is told about it.
+    #[cfg(target_os = "android")]
+    if name == "startup" {
+        return startup_menu();
     }
     // Install scripts run the commands linked to this binary by their names.
     let args: Vec<_> = std::env::args_os().skip(1).collect();
@@ -415,10 +442,10 @@ fn main() -> Result<()> {
             Ok(())
         }
         #[cfg(target_os = "android")]
-        Cmd::Ui { config, font, mono, unlock, dump } => {
+        Cmd::Ui { config, font, mono, brand, unlock, dump } => {
             let cfg = DeviceConfig::load(&config)?;
-            let start = if unlock { skyward_ui::app::Screen::Decrypt } else { skyward_ui::app::Screen::Home };
-            ui::run(&cfg, &font, &mono, bcb::Request::default(), start, dump.as_deref())
+            let start = if unlock { skyward_ui::app::Screen::Decrypt } else { skyward_ui::app::Screen::Desktop };
+            ui::run(&cfg, &font, &mono, &brand, bcb::Request::default(), start, dump.as_deref())
         }
     }
 }
@@ -699,7 +726,7 @@ fn recovery() -> Result<()> {
         skyward_sys::kmsg(&format!(
             "{} {} recovery up, misc command {:?} args {:?}, asking for {:?}",
             cfg.device.codename,
-            skyward_info::VERSION,
+            skyward_info::version_text(),
             message.command,
             message.args,
             request.work
@@ -751,7 +778,15 @@ fn recovery() -> Result<()> {
                 prepare(&cfg, booted_slot()?)?;
             }
             let root = Path::new("/");
-            ui::run(&cfg, &root.join(ramdisk::FONT), &root.join(ramdisk::MONO), request, Screen::Home, None)
+            ui::run(
+                &cfg,
+                &root.join(ramdisk::FONT),
+                &root.join(ramdisk::MONO),
+                &root.join(ramdisk::BRAND),
+                request,
+                Screen::Desktop,
+                None,
+            )
         }
         #[cfg(not(target_os = "android"))]
         {
@@ -803,7 +838,7 @@ fn info(config: &str) -> Result<()> {
     println!("storage       = {} bytes, free {:?}", i.storage.total, i.storage.free);
     println!("battery       = {:?}", i.battery);
     println!("boot          = {:?}", i.boot);
-    println!("recovery      = {}", skyward_info::VERSION);
+    println!("recovery      = {}", skyward_info::version_text());
     match i.slot {
         Some(s) => println!("current_slot  = {}", s.suffix()),
         None => println!("current_slot  = (not A/B)"),

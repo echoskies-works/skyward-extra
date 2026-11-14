@@ -7,7 +7,7 @@
 //! stock WLAN arcs and round at their ends.
 
 use crate::canvas::Canvas;
-use crate::color::Rgba;
+use crate::color::{mix, Rgba};
 use crate::theme::Theme;
 use std::sync::{Arc, Mutex};
 use svgtypes::{SimplePathSegment, SimplifyingPathParser};
@@ -35,6 +35,9 @@ pub enum Icon {
     Globe,
     /// A clock face with its hands cut out of it.
     Clock,
+    /// A calculator: its body, the screen across the top and the keys under
+    /// it. Project Aether's own.
+    Calculator,
     /// A window with a prompt cut out of it.
     Terminal,
     /// A plug: its metal end with two holes, its body and its cable.
@@ -215,6 +218,21 @@ const CLOCK: &[Part] = &[
     cut(Shape::Line("M14,8.9V14.3L17.4,16.4", 2.0)),
 ];
 
+/// A calculator, drawn for Project Aether: the body, the screen across the
+/// top of it and six keys under the screen.
+const CALCULATOR: &[Part] = &[
+    add(Shape::Fill("M9,3.5H19A3,3 0 0 1 22,6.5V21.5A3,3 0 0 1 19,24.5H9A3,3 0 0 1 6,21.5V6.5A3,3 0 0 1 9,3.5Z")),
+    cut(Shape::EvenOdd(
+        "M8.8,6.8H19.2V10.8H8.8Z\
+         M8.8,12.8H12.4V15H8.8Z\
+         M15.6,12.8H19.2V15H15.6Z\
+         M8.8,16.2H12.4V18.4H8.8Z\
+         M15.6,16.2H19.2V18.4H15.6Z\
+         M8.8,19.6H12.4V21.8H8.8Z\
+         M15.6,19.6H19.2V21.8H15.6Z",
+    )),
+];
+
 const TERMINAL: &[Part] = &[
     add(Shape::Fill("M8.6,6.4H19.4A3.4,3.4 0 0 1 22.8,9.8V18.2A3.4,3.4 0 0 1 19.4,21.6H8.6A3.4,3.4 0 0 1 5.2,18.2V9.8A3.4,3.4 0 0 1 8.6,6.4Z")),
     cut(Shape::Line("M9.4,10.6L12.5,13.3L9.4,16", 1.9)),
@@ -358,6 +376,7 @@ fn outline(icon: Icon) -> (&'static [Part], f32) {
         Icon::Power => (POWER, 1.0),
         Icon::Globe => (GLOBE, 1.0),
         Icon::Clock => (CLOCK, 1.0),
+        Icon::Calculator => (CALCULATOR, 1.0),
         Icon::Terminal => (TERMINAL, 1.0),
         Icon::Usb => (USB, 1.0),
         Icon::UsbDrive => (USB_DRIVE, 1.0),
@@ -387,6 +406,32 @@ pub fn tile(c: &mut Canvas, t: &Theme, x: f32, y: f32, color: Rgba, icon: Icon) 
     let (cx, cy) = (x + s / 2.0, y + s / 2.0);
     draw(c, Art::Tile, cx, cy, s, color);
     glyph(c, icon, cx, cy, s, Rgba::rgb(255, 255, 255));
+}
+
+/// The stock tile on its own, `size` across with its top-left corner at
+/// (`x`, `y`), shading from `top` to `bottom` down it: the tile a row's
+/// icon sits on, laid as a desktop tile the light falls on. It is the same
+/// outline either way, so a desktop tile and a row's tile read as one
+/// shape rather than as two takes on a rounded square.
+pub fn tile_graded(c: &mut Canvas, x: f32, y: f32, size: f32, top: Rgba, bottom: Rgba) {
+    let (left, up) = (x.round() as i32, y.round() as i32);
+    let side = size.ceil() as i32;
+    let (rows, cols) = (c.held(), c.cols());
+    let (y0, y1) = (up.max(rows.start as i32), (up + side).min(rows.end as i32));
+    let (x0, x1) = (left.max(cols.start as i32), (left + side).min(cols.end as i32));
+    if y0 >= y1 || x0 >= x1 {
+        return;
+    }
+    let cover = coverage(Art::Tile, size);
+    for y in y0..y1 {
+        let ink = mix(top, bottom, ((y - up) as f32 + 0.5) / size);
+        for x in x0..x1 {
+            let a = cover.alpha[((y - up) as u32 * cover.side + (x - left) as u32) as usize];
+            if a > 0 {
+                c.blend(x, y, ink, a as f32 / 255.0);
+            }
+        }
+    }
 }
 
 /// What is drawn from outlines: a tile, or a glyph.
@@ -500,7 +545,7 @@ fn path(d: &str) -> tiny_skia::Path {
 mod tests {
     use super::*;
 
-    const ALL: [Icon; 22] = [
+    const ALL: [Icon; 23] = [
         Icon::Install,
         Icon::Backup,
         Icon::Restore,
@@ -510,6 +555,7 @@ mod tests {
         Icon::Power,
         Icon::Globe,
         Icon::Clock,
+        Icon::Calculator,
         Icon::Terminal,
         Icon::Usb,
         Icon::UsbDrive,

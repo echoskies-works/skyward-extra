@@ -38,6 +38,6 @@ proc-macro2 = "1.0.107"
 syn = { version = "2.0.119", features = ["full", "visit"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-drm = "0.15.0"
-drm-ffi = "0.9.1"
+# Scanout, lifted out so a text-only surface can draw without linking the UI.
+skyward-kms = { path = "../skyward-kms" }
 libc = { workspace = true }
