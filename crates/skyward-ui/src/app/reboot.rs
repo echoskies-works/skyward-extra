@@ -12,6 +12,10 @@ pub enum Target {
     Bootloader,
     Edl,
     PowerOff,
+    /// Nowhere yet. The entry stands on the power menu so the menu's shape
+    /// is settled, but nothing on this system is wired up to go to sleep:
+    /// picking it puts the menu away and leaves the phone as it was.
+    Suspend,
 }
 
 pub const TARGETS: [Target; 6] = [Target::System, Target::Recovery, Target::Fastboot, Target::Bootloader, Target::Edl, Target::PowerOff];
@@ -19,12 +23,14 @@ pub const TARGETS: [Target; 6] = [Target::System, Target::Recovery, Target::Fast
 /// What the power menu offers, in the order it lists them, for the phone to
 /// be restarted or turned off from anywhere: the power key held down, or
 /// the power and volume up keys together, brings it up. Wipe and EDL are
-/// left out — too much to set off with a thumb by accident.
-pub const POWER_MENU: [(Target, Text); 4] = [
+/// left out — too much to set off with a thumb by accident. Suspend is
+/// listed last because it is the one entry that does not restart anything.
+pub const POWER_MENU: [(Target, Text); 5] = [
     (Target::PowerOff, ["关机", "關機", "Power off"]),
     (Target::System, ["重启", "重啟", "Restart"]),
     (Target::Recovery, ["重启到 Recovery", "重啟到 Recovery", "Restart to recovery"]),
     (Target::Bootloader, ["重启到 Bootloader", "重啟到 Bootloader", "Restart to bootloader"]),
+    (Target::Suspend, ["挂起", "掛起", "Suspend"]),
 ];
 
 /// Where the fastboot page goes, in the order it lists them: the volume

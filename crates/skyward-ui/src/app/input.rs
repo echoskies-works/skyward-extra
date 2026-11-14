@@ -17,13 +17,19 @@ impl App {
             return self.power_menu_touch(ev, now);
         }
         // A finger on the charging screen sends it away for the page, and
-        // does nothing else until it lifts.
+        // does nothing else until it lifts. That screen stands over the lock,
+        // so it is the one the finger reaches first.
         if self.charge_shown() {
             if matches!(ev, Touch::Down(..)) {
                 self.dismiss_charging(now);
                 self.drag = Drag::Waking;
             }
             return Vec::new();
+        }
+        // The lock takes the finger while it shows: it is swiped up away,
+        // and nothing under it is touched.
+        if self.locked() {
+            return self.lock_touch(ev, now);
         }
         // A finger landing just after the panel lit only keeps it awake.
         if matches!(ev, Touch::Down(..)) && self.just_woke(now) {
@@ -163,6 +169,19 @@ impl App {
                         // this asks nothing of what lies under the one shown.
                         // A page at work is not pulled off, as the back key
                         // will not leave it: the finger scrolls it instead.
+                        // A finger dragged level across the desktop pulls
+                        // its icons aside, and where it lets go turns to
+                        // the page beside the one showing. A page's worth
+                        // of icons is what a screen holds, so the desktop
+                        // turns sideways rather than running on downwards.
+                        _ if self.screen() == Screen::Desktop && crate::pages::desk_pages() > 1 && dx.abs() > slop && dx.abs() > dy.abs() => {
+                            // The pull starts where the finger already is,
+                            // not at nought, so the icons do not jump the
+                            // slop's width on the first move.
+                            self.state.desk_drag = dx;
+                            self.dirty = true;
+                            Drag::Page { start: x0 }
+                        }
                         _ if dy < -slop && dy.abs() > dx.abs() && y0 > m.h as f32 - m.dp(FOOT_DP) && !self.working() => {
                             // Over the desktop there is nowhere further to go
                             // than the tasks themselves.
@@ -202,6 +221,14 @@ impl App {
                     self.tracker.add(now, y);
                     self.drag_by(last - y);
                     self.drag = Drag::Scroll { last: y };
+                }
+                // The icons come along with the finger, as far as it has
+                // pulled them. Letting go does the turning, in `Up`.
+                Drag::Page { start } => {
+                    let w = m.w as f32;
+                    self.state.desk_drag = (x - start).clamp(-w, w);
+                    self.dirty = true;
+                    self.drag = Drag::Page { start };
                 }
                 Drag::Edge { start, from_left, armed, cy, .. } => {
                     let travel = if from_left { x - start } else { start - x };
@@ -254,6 +281,9 @@ impl App {
                 }
                 Drag::Waking => self.drag = Drag::Waking,
                 Drag::Held => self.drag = Drag::Held,
+                // A finger on the lock, which is swiped by its own path in
+                // `lock_touch` and never reaches here.
+                Drag::Lock { from } => self.drag = Drag::Lock { from },
                 Drag::Idle => {}
             },
             Touch::Up => match std::mem::replace(&mut self.drag, Drag::Idle) {
@@ -295,6 +325,20 @@ impl App {
                         Some(glide) if !(folding(scroll) && folding(glide.at(u64::MAX).0)) => self.fling = Some(glide),
                         _ => self.settle_fold(now),
                     }
+                }
+                // The desktop turns: dragged a quarter of a screen or more
+                // it goes to the page beside the one it was on, short of
+                // that the icons come back where they were.
+                Drag::Page { .. } => {
+                    let pull = self.state.desk_drag;
+                    let w = m.w as f32;
+                    let pages = crate::pages::desk_pages();
+                    // Dragged left (negative) is the page after this one.
+                    let turn = if pull.abs() > w * 0.25 { -pull.signum() as i32 } else { 0 };
+                    let page = self.state.desk_page as i32 + turn;
+                    self.state.desk_page = page.clamp(0, pages as i32 - 1) as usize;
+                    self.state.desk_drag = 0.0;
+                    self.dirty = true;
                 }
                 Drag::Edge { armed: true, .. } => fx.extend(self.back(now)),
                 Drag::Foot { .. } => {
@@ -411,6 +455,12 @@ impl App {
         // move the light, the power key takes what is lit, back puts it away.
         if self.power_menu.is_some() {
             return self.power_menu_key(key, now);
+        }
+        // The lock takes every key but the power key, which goes on lighting
+        // and darkening the panel here as it does anywhere. A charging screen
+        // over the lock is what the keys work while it shows.
+        if self.locked() && !self.charge_shown() && key != Key::Power {
+            return Vec::new();
         }
         if let Some((first, at)) = self.chord
             && now < at + CHORD_MS

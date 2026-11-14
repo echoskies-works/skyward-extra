@@ -87,9 +87,16 @@ impl Line {
 /// than as the same rule the bootloader uses.
 const RULE_H: u32 = SCALE;
 
-/// Where the rule sits inside its line, so it runs through the middle of the
-/// text it separates rather than under it.
-const RULE_DY: i32 = ((CELL_H - RULE_H) / 2) as i32;
+/// How much a rule advances the pen: the line itself plus air either side, so
+/// it sits tight against the words it separates instead of floating a full
+/// row away from them — but not so tight that a rule over a reversed line
+/// reads as a ragged edge on the band it is touching.
+const RULE_LINE_H: u32 = RULE_H + 5 * SCALE;
+
+/// How far into its row the rule is drawn. Two pixels of air above it and a
+/// little more below, which makes the rule read as the heading's underline
+/// rather than as the first item's overline.
+const RULE_DY: u32 = 2 * SCALE;
 
 /// Paint `view` over the whole screen.
 pub fn draw(screen: &mut Screen, view: View, lang: Lang) {
@@ -107,16 +114,18 @@ pub fn draw(screen: &mut Screen, view: View, lang: Lang) {
         match line {
             Line::Words(text, Ink::Plain) => screen.draw_left(y, text, LIT),
             Line::Words(text, Ink::Reversed) => {
-                // The band is exactly as wide as the words on it: a bar the
-                // full width of the panel would read as a window rather than
-                // as a cursor. Measuring by pixel, not by character, is what
-                // keeps the band right when the line is Chinese.
-                screen.fill_rect(0, y, Screen::text_w(text), CELL_H, LIT);
+                // The band runs the whole width of the panel, edge to edge,
+                // the way a BIOS menu shows where the cursor is; the words on
+                // it are knocked out of it rather than drawn beside it.
+                screen.fill_rect(0, y, screen.w, CELL_H, LIT);
                 screen.draw_left(y, text, INK);
             }
-            Line::Rule => screen.fill_rect(0, y + RULE_DY, screen.w, RULE_H, LIT),
+            Line::Rule => screen.fill_rect(0, y + RULE_DY as i32, screen.w, RULE_H, LIT),
         }
-        y += LINE_H as i32;
+        y += match line {
+            Line::Rule => RULE_LINE_H,
+            _ => LINE_H,
+        } as i32;
     }
 }
 
@@ -201,14 +210,22 @@ pub(crate) fn failure(crash: Crash, code: i32, lang: Lang) -> Vec<Line> {
     lines
 }
 
-/// The title and the rule under it.
+/// The title, a blank, and the rule under it.
+///
+/// The blank is wanted here: the title is the panel's own heading, and a
+/// console puts a row of air between a heading and the rule that closes it.
+/// The rule then sits tight against the first item — that gap is the list's,
+/// not the heading's.
 fn header(lang: Lang) -> Vec<Line> {
-    vec![Line::plain(lang.pick(TITLE)), Line::Rule, Line::plain("")]
+    vec![Line::plain(lang.pick(TITLE)), Line::plain(""), Line::Rule]
 }
 
-/// A rule, the key legend, and a blank above them to keep it off the list.
+/// A rule, a blank, and the key legend.
+///
+/// The blank is the mirror of the header's: the legend is the panel's
+/// footing, not a sixth item, so it stands one row clear of the rule over it.
 fn footer(lang: Lang) -> Vec<Line> {
-    let mut lines = vec![Line::plain(""), Line::Rule];
+    let mut lines = vec![Line::Rule, Line::plain("")];
     lines.extend(HINT.iter().map(|hint| Line::plain(lang.pick(*hint))));
     lines
 }
@@ -230,22 +247,25 @@ mod tests {
     #[test]
     fn both_views_start_with_the_same_header() {
         // The block is ranged from the top, so a view one line longer does
-        // not move the title; only the header has to match.
+        // not move the title; only the header has to match. The header is the
+        // title, a blank and its rule, nothing more: the first item follows
+        // the rule at once.
         for lang in BOTH {
             assert_eq!(list(0, lang)[..3], confirm(Action::Reset, false, lang)[..3], "{lang:?}");
         }
     }
 
     #[test]
-    fn the_header_is_the_title_and_a_rule_under_it() {
+    fn the_header_is_the_title_a_blank_and_a_rule_under_it() {
         for lang in BOTH {
             let lines = list(0, lang);
             assert_eq!(lines[0].text(), lang.pick(TITLE));
-            assert!(matches!(lines[1], Line::Rule), "{lang:?}: a rule, not words");
+            assert_eq!(lines[1].text(), "", "{lang:?}: air under the title");
+            assert!(matches!(lines[2], Line::Rule), "{lang:?}: a rule, not words");
             // Both rules are the same line, at the same place: one under the
-            // title and one over the key legend.
+            // title's blank and one over the legend's blank.
             let rules: Vec<usize> = lines.iter().enumerate().filter(|(_, l)| matches!(l, Line::Rule)).map(|(i, _)| i).collect();
-            assert_eq!(rules, vec![1, lines.len() - HINT.len() - 1], "{lang:?}");
+            assert_eq!(rules, vec![2, lines.len() - HINT.len() - 2], "{lang:?}");
         }
     }
 
@@ -258,8 +278,9 @@ mod tests {
             let mut screen = Screen::new(w, h);
             draw(&mut screen, View::List { sel: 0 }, lang);
             let start = top(h) as u32;
-            // Line 1 is the rule under the title.
-            let y = start + LINE_H + RULE_DY as u32;
+            // Line 2 is the rule under the title: the title's cell, the blank
+            // under it, then the air the rule keeps above itself.
+            let y = start + 2 * LINE_H + RULE_DY;
             for dy in 0..RULE_H {
                 for x in 0..w {
                     assert_eq!(
@@ -387,13 +408,18 @@ mod tests {
             let mut screen = Screen::new(w, h);
             draw(&mut screen, View::List { sel: 0 }, lang);
             let start = top(h) as u32;
-            for line in 0..list(0, lang).len() as u32 {
-                let top_y = start + line * LINE_H;
+            let mut top_y = start;
+            for (line, what) in list(0, lang).iter().enumerate() {
                 let lit_at = |x: u32| (top_y..top_y + CELL_H).any(|y| screen.data[((y * w + x) * 4) as usize] != 0);
-                let Some(left) = (0..w).find(|&x| lit_at(x)) else { continue };
-                // Glyphs carry a column or two of their own margin, so this
-                // is "within the first cell", not "at pixel zero".
-                assert!(left < CELL_W, "{lang:?}: line {line} starts at column {left}, not against the edge");
+                if let Some(left) = (0..w).find(|&x| lit_at(x)) {
+                    // Glyphs carry a column or two of their own margin, so this
+                    // is "within the first cell", not "at pixel zero".
+                    assert!(left < CELL_W, "{lang:?}: line {line} starts at column {left}, not against the edge");
+                }
+                top_y += match what {
+                    Line::Rule => RULE_LINE_H,
+                    _ => LINE_H,
+                };
             }
         }
     }

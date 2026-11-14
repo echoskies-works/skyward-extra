@@ -64,10 +64,12 @@ const LEAVE_AFTER_MS: u64 = 1500;
 /// none by then, the pages are worked with the keys, their light shown.
 const TOUCH_WAIT: Duration = Duration::from_secs(5);
 
-/// How long a panel gone dark rests, ready to light again at once, before
-/// the display turns off; the phone's own system keeps its panel dozing
-/// about as long after the screen goes off.
-const REST: Duration = Duration::from_secs(5);
+// A dark panel rests in its low-power mode and stops there: it is not
+// turned off after a while, as it once was. Turning the display off leaves
+// a full modeset between a key press and the frame that answers it, and a
+// display come back from a suspend can refuse that commit — which the pages
+// took as the end of the recovery, leaving a dark panel that no key lit
+// again. Resting costs a little power and lights in 13 ms.
 
 /// Where logs saved to the temporary folder go, in the recovery service's
 /// own folder, and where in internal storage the others do.
@@ -179,14 +181,19 @@ fn normal_max(max: u32) -> Result<u32> {
 
 /// Leave recovery for the chosen target.
 fn power(target: Target) -> Result<()> {
-    skyward_sys::power(match target {
+    let power = match target {
         Target::System => Power::System,
         Target::Recovery => Power::Recovery,
         Target::Fastboot => Power::Fastboot,
         Target::Bootloader => Power::Bootloader,
         Target::Edl => Power::Edl,
         Target::PowerOff => Power::Off,
-    })
+        // The power menu lists a suspend for the shape of the menu; nothing
+        // asks to leave for it, and there is nowhere to leave to. Staying
+        // put is the honest answer, and better than a wrong reboot.
+        Target::Suspend => return Ok(()),
+    };
+    skyward_sys::power(power)
 }
 
 /// File transfer: the service offering internal storage to a computer over
@@ -1152,8 +1159,6 @@ struct Pages<'a> {
     /// Whether the panel's frame memory has been blacked out for an off
     /// panel; cleared once a real frame is shown again.
     blanked: bool,
-    /// When the panel gone dark began to rest.
-    rested_at: Option<Instant>,
     /// Started for fastboot, the port goes to the phone's own fastbootd. The
     /// page says whether it came up and how far a computer has the port;
     /// why it did not come up goes to the kernel log and on screen.
@@ -1406,7 +1411,6 @@ impl<'a> Pages<'a> {
             read_at,
             asked: None,
             blanked: false,
-            rested_at: None,
             fastboot,
             port_at,
             transfer,
@@ -1712,7 +1716,14 @@ impl<'a> Pages<'a> {
             if self.app.take_dirty() || !self.surface.is_on() {
                 let t0 = Instant::now();
                 self.app.compose(&mut self.screen, &self.fonts, &self.info, &self.shown_clock, now);
-                self.surface.present(&self.screen)?;
+                // A display can refuse a frame: one just back from a sleep,
+                // before its driver has resumed, most of all. One refused
+                // frame is not the end of the pages — the panel is left as
+                // it was and the next turn draws it again.
+                if let Err(e) = self.surface.present(&self.screen) {
+                    skyward_sys::kmsg(&format!("the panel did not take a frame: {e:#}"))?;
+                    return Ok((panel.is_some(), false));
+                }
                 eprintln!("frame {:?} in {} ms", self.app.screen(), t0.elapsed().as_millis());
                 if let Some(path) = self.dump {
                     fs::write(path, &self.screen.data).with_context(|| format!("write {}", path.display()))?;
@@ -1722,11 +1733,13 @@ impl<'a> Pages<'a> {
             self.blanked = false;
         } else if !self.blanked {
             // Black out the panel's frame memory before the backlight goes
-            // to 0 and the display off, so an OLED that floors the backlight
-            // above zero rather than cutting it shows nothing as it goes off.
+            // to 0, so an OLED that floors the backlight above zero rather
+            // than cutting it shows nothing as it goes off. A frame the
+            // display refuses here is nothing to end the pages over: it is
+            // dark either way.
             self.screen.data.fill(0);
-            self.surface.present(&self.screen)?;
-            self.surface.settle()?;
+            let _ = self.surface.present(&self.screen);
+            let _ = self.surface.settle();
             self.blanked = true;
         }
         // After the frame is on the panel, so a panel coming back on lights
@@ -1740,17 +1753,13 @@ impl<'a> Pages<'a> {
             // Lit, a panel that came on again switches to its fastest
             // refresh.
             self.surface.speed_up()?;
-            self.rested_at = None;
-        } else if self.surface.is_on() {
+        } else {
             // With the backlight off, the panel rests, and the touch
-            // controller following it stops drawing power.
+            // controller following it stops drawing power. One resting
+            // already is left as it is: the display is never turned off
+            // from here, so that a key always lights it again (the note
+            // above says why).
             self.surface.rest()?;
-            self.rested_at = Some(Instant::now());
-        } else if self.rested_at.is_some_and(|at| at.elapsed() >= REST) {
-            // Rested long enough, the display goes off: the panel and the
-            // display processor feeding it stop drawing power.
-            self.surface.turn_off()?;
-            self.rested_at = None;
         }
         Ok((panel.is_some(), shown))
     }
@@ -1767,9 +1776,7 @@ impl<'a> Pages<'a> {
         // gets at least a millisecond.
         let floor = if shown { 0 } else { 1 };
         let until_due = self.app.deadline(now).map(|d| d.saturating_sub(now) as i32);
-        // A resting panel turns off once its rest is over.
-        let rest_left = self.rested_at.map(|at| REST.saturating_sub(at.elapsed()).as_millis() as i32);
-        let timeout = if ahead { 0 } else { until_due.into_iter().chain(rest_left).min().map_or(1000, |t| t.clamp(floor, 1000)) };
+        let timeout = if ahead { 0 } else { until_due.map_or(1000, |t| t.clamp(floor, 1000)) };
         sleeper.allow(self.may_sleep()?);
         let mut fds = vec![self.inputs.fd(), uevents.fd(), sleeper.fd()];
         if let Some(i) = &self.installer {
@@ -1849,6 +1856,11 @@ impl<'a> Pages<'a> {
             Some(sh) => !sh.waiting()?,
             None => false,
         };
+        // The display is never turned off now, only rested, so this is
+        // nought and the phone is not suspended at all: a suspend takes the
+        // display's driver with it, and the commit that lights the panel
+        // again is the one that was being refused. It comes back as a whole
+        // once resting alone is seen to light every time.
         Ok(self.surface.is_off()
             && !busy
             && !self.fastboot

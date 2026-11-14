@@ -20,7 +20,7 @@ pub(super) struct PowerMenu {
 /// The card the power menu shows in, and the rows it lists, on a screen of
 /// the metrics `t` carries: the card in the middle of the screen, one row
 /// for each entry of [`POWER_MENU`].
-fn power_menu_layout(t: &Theme) -> (Rect, [Rect; 4]) {
+fn power_menu_layout(t: &Theme) -> (Rect, [Rect; POWER_MENU.len()]) {
     let m = &t.m;
     let (pad, item) = (m.dp(8.0), m.dp(56.0));
     let w = m.dp(288.0);
@@ -28,6 +28,17 @@ fn power_menu_layout(t: &Theme) -> (Rect, [Rect; 4]) {
     let (x, y) = ((m.w as f32 - w) / 2.0, (m.h as f32 - h) / 2.0);
     let rows = std::array::from_fn(|i| Rect::new(x + pad, y + pad + item * i as f32, w - pad * 2.0, item));
     (Rect::new(x, y, w, h), rows)
+}
+
+/// What picking `target` on the menu does: leave for it, or — for the
+/// suspend this system has nowhere to go to yet — nothing at all. The menu
+/// is put away either way, so a press on an entry that does nothing reads
+/// as "that did nothing" rather than as a hang.
+fn power_effect(target: Target) -> Vec<Effect> {
+    match target {
+        Target::Suspend => Vec::new(),
+        _ => vec![Effect::Reboot(target)],
+    }
 }
 
 impl App {
@@ -125,6 +136,9 @@ impl App {
         self.curtain.set(false, now);
         self.display_on = false;
         self.power_menu = None;
+        // The panel comes back on behind the lock, whatever it showed: the
+        // page under it is kept as it was left, and lit again as it was.
+        self.lock_now();
         self.bright = full_brightness();
         match std::mem::replace(&mut self.drag, Drag::Idle) {
             Drag::Confirm { .. } => {
@@ -147,6 +161,7 @@ impl App {
         self.morph = None;
         self.row_press = None;
         self.row_art = None;
+        self.foot = None;
         self.end_turn();
     }
 
@@ -175,9 +190,9 @@ impl App {
         self.dirty = true;
     }
 
-    /// A finger on the power menu: a tap on an entry does what it says, a
-    /// tap beside the card puts the menu away and does nothing else.
-    pub(super) fn power_menu_touch(&mut self, ev: Touch, now: u64) -> Vec<Effect> {
+/// A finger on the power menu: a tap on an entry does what it says, a
+/// tap beside the card puts the menu away and does nothing else.
+pub(super) fn power_menu_touch(&mut self, ev: Touch, now: u64) -> Vec<Effect> {
         let Touch::Down(x, y) = ev else { return Vec::new() };
         let t = self.theme();
         // The card is drawn a few dp low on its way in; the rows come with
@@ -191,7 +206,7 @@ impl App {
             if x >= row.x && x < row.x + row.w && y >= row.y + rise && y < row.y + rise + row.h {
                 self.power_menu = None;
                 self.dirty = true;
-                return vec![Effect::Reboot(POWER_MENU[i].0)];
+                return power_effect(POWER_MENU[i].0);
             }
         }
         if x < card.x || x >= card.x + card.w || y < card.y + rise || y >= card.y + rise + card.h {
@@ -216,7 +231,7 @@ impl App {
         match key {
             Key::Power => {
                 self.power_menu = None;
-                vec![Effect::Reboot(POWER_MENU[chosen].0)]
+                power_effect(POWER_MENU[chosen].0)
             }
             Key::Back => {
                 self.power_menu = None;
@@ -434,7 +449,10 @@ mod tests {
         assert_eq!(app.top().1, 0.0, "nor scrolled the page");
         press(&mut app, Key::Power, 200);
         assert!(app.display_on());
-        tap_at(&mut app, &f, &i, Action::Open(Screen::Settings), 700);
+        // The panel lit comes back behind the lock, which is swiped away
+        // before the page takes a finger.
+        unlock(&mut app, &f, 300);
+        tap_at(&mut app, &f, &i, Action::Open(Screen::Settings), 1400);
         assert_eq!(app.screen(), Screen::Settings, "a tap on the lit panel does");
     }
 
@@ -625,9 +643,10 @@ mod tests {
         // guard it only keeps the panel awake.
         assert!(tap_at(&mut app, &f, &i, Action::RebootTo(Target::System), 200).is_empty());
         assert_eq!(app.screen(), Screen::Installing, "the stray tap did not reboot");
-        // Past the guard the same tap reboots.
+        // Past the guard the lock is swiped away, and the same tap reboots.
+        unlock(&mut app, &f, 400);
         assert_eq!(
-            tap_at(&mut app, &f, &i, Action::RebootTo(Target::System), 700),
+            tap_at(&mut app, &f, &i, Action::RebootTo(Target::System), 1500),
             vec![Effect::Reboot(Target::System)]
         );
     }

@@ -277,6 +277,45 @@ impl Canvas {
         }
     }
 
+    /// `src` stretched over this canvas to `w` × `h`, its top-left corner at
+    /// this canvas's: each pixel takes the bilinear sample of the four of
+    /// `src` around where it falls, its edges repeating the last row and
+    /// column. A small copy of a page spread this way fills the screen as
+    /// the soft picture the lock screen shows behind itself.
+    pub fn blit_scaled(&mut self, src: &Canvas, w: f32, h: f32) {
+        if src.w == 0 || src.h == 0 || w <= 0.0 || h <= 0.0 {
+            return;
+        }
+        let (sx, sy) = (src.w as f32 / w, src.h as f32 / h);
+        let (x0, x1) = self.columns(0, self.w as i32);
+        let (y0, y1) = self.rows(0, self.h as i32);
+        // Where a sample falls between the pixels of `src`, and which four
+        // those are.
+        let near = |v: f32, n: u32| {
+            let v = v.clamp(0.0, (n - 1) as f32);
+            let (i, f) = (v.floor() as u32, v.fract());
+            (i, (i + 1).min(n - 1), f)
+        };
+        let px = |x: u32, y: u32| {
+            let i = ((y * src.w + x) * 4) as usize;
+            [src.data[i], src.data[i + 1], src.data[i + 2], src.data[i + 3]]
+        };
+        for y in y0..y1 {
+            let (sy0, sy1, fy) = near((y as f32 + 0.5) * sy - 0.5, src.h);
+            for x in x0..x1 {
+                let (sx0, sx1, fx) = near((x as f32 + 0.5) * sx - 0.5, src.w);
+                let (a, b, c, d) = (px(sx0, sy0), px(sx1, sy0), px(sx0, sy1), px(sx1, sy1));
+                let mix = |k: usize| {
+                    let top = a[k] as f32 + (b[k] as f32 - a[k] as f32) * fx;
+                    let bottom = c[k] as f32 + (d[k] as f32 - c[k] as f32) * fx;
+                    (top + (bottom - top) * fy).round().clamp(0.0, 255.0) as u8
+                };
+                let i = self.at(x, y);
+                self.data[i..i + 4].copy_from_slice(&[mix(0), mix(1), mix(2), 255]);
+            }
+        }
+    }
+
     /// Lay `layer`, whose top-left corner goes at (`x`, `y`), over this
     /// opaque canvas at `alpha` of its strength.
     pub fn lay(&mut self, layer: &Canvas, x: i32, y: i32, alpha: f32) {

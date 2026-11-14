@@ -76,6 +76,17 @@ pub(super) fn tap_at(app: &mut App, f: &Fonts, i: &DeviceInfo, action: Action, n
     fx
 }
 
+/// Swipe the lock away, as a finger dragged up from the foot of the lit
+/// panel does, and let it come to rest: the page under it shows again.
+pub(super) fn unlock(app: &mut App, f: &Fonts, now: u64) {
+    let x = app.theme().m.w as f32 / 2.0;
+    let from = app.h as f32 * 0.8;
+    app.touch(Touch::Down(x, from), f, now);
+    app.touch(Touch::Move(x, from - app.h as f32 * 0.5), f, now + 16);
+    app.touch(Touch::Up, f, now + 32);
+    app.tick(now + 1_000);
+}
+
 /// Tap the `<`, which stays at the top of the screen.
 pub(super) fn tap_back(app: &mut App, f: &Fonts, i: &DeviceInfo, now: u64) {
     app.frame(f, i);

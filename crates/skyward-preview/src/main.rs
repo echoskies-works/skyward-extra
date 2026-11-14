@@ -239,6 +239,30 @@ fn main() -> Result<()> {
         println!("wrote {}", path.display());
     }
 
+    // The lock screen, the page under it kept soft: over a page of the
+    // recovery, in both themes, since the veil lightens a light page and
+    // darkens a dark one. Each is composed twice — once for the picture the
+    // lock keeps behind itself, once with the lock over it.
+    let locks: [(&str, bool, Screen); 3] = [
+        ("00t-lock-light", false, Screen::Settings),
+        ("00u-lock-dark", true, Screen::Desktop),
+        ("00v-lock-dark-home", true, Screen::Home),
+    ];
+    for (name, dark, screen) in locks {
+        let mut app = App::new(screen, w, h, ppd);
+        app.state.lang = lang;
+        app.state.dark = dark;
+        app.state.data = Data::Open;
+        let mut behind = Canvas::new(w, h);
+        app.compose(&mut behind, &fonts, &info, "21:40", 0);
+        app.lock_now();
+        let mut shot = Canvas::new(w, h);
+        app.compose(&mut shot, &fonts, &info, "21:40", 0);
+        let path = out.join(format!("{name}.png"));
+        write_png(&path, &shot)?;
+        println!("wrote {}", path.display());
+    }
+
     // The screen kept on, which warns about burn-in.
     let mut app = opened(Screen::ScreenOff, w, h, ppd);    app.state.dark = true;
     app.state.screen_off = SCREEN_OFF.iter().position(Option::is_none).expect("one choice keeps the screen on");
@@ -1312,7 +1336,7 @@ fn battery_states(f: &Fonts, t: &Theme) -> Canvas {
     for (k, &battery) in states.iter().enumerate() {
         let mut bar = Canvas::new(t.m.w, row);
         bar.clear(t.pal.bg);
-        widgets::status_bar(&mut bar, t, f, &Bar { clock: CLOCK, battery: Some(battery), wlan: None, data: None, slot: None, temp: None }, t.pal.status);
+        widgets::status_bar(&mut bar, t, f, &Bar { clock: CLOCK, battery: Some(battery), wlan: None, data: None, slot: None, temp: None }, t.pal.status, false);
         sheet.put(&bar, (row as usize * k) as i32);
     }
     sheet
@@ -1712,7 +1736,7 @@ fn whole_page(app: &mut App, f: &Fonts, info: &DeviceInfo) -> Canvas {
     }
     // The desktop's black wallpaper takes the light bar, as it does on the phone.
     let ink = if screen == Screen::Desktop { pages::DESKTOP_STATUS } else { t.pal.status };
-    widgets::status_bar(&mut c, &t, f, &app.bar(CLOCK, info), ink);
+    widgets::status_bar(&mut c, &t, f, &app.bar(CLOCK, info), ink, screen == Screen::Desktop);
     c
 }
 

@@ -46,6 +46,7 @@ mod frame;
 mod input;
 mod install;
 mod keys;
+mod lock;
 mod manager;
 mod mount;
 mod nav;
@@ -636,6 +637,10 @@ enum Drag {
     /// Pulling up from the foot of the screen, from where the finger came
     /// down at `from`: the page up off the screen, or the tasks up.
     Foot { from: f32 },
+    /// Dragging the desktop's icons sideways, from where the finger came
+    /// down at `start`. Letting go past a quarter of the screen turns it to
+    /// the page beside the one it was on; short of that, it goes back.
+    Page { start: f32 },
     Slider(Slider, Rect),
     Confirm { which: Confirm, track: Rect, grab: f32 },
     /// Scrolling a terminal's screen back through what the shell wrote, or
@@ -645,6 +650,9 @@ enum Drag {
     /// A finger that landed just after the panel lit; nothing it does
     /// counts until it lifts.
     Waking,
+    /// A finger on the lock, pulling it up from where it came down at
+    /// `from`: past the mark it goes away, short of it, back down.
+    Lock { from: f32 },
 }
 
 /// Where the keys are on a page.
@@ -1190,6 +1198,14 @@ pub struct App {
     /// The power menu, over the page while the phone is being asked to
     /// restart or go off.
     power_menu: Option<power::PowerMenu>,
+    /// The lock screen, over whatever the panel shows from the moment it
+    /// goes dark: the page it came over kept soft behind it, and the swipe
+    /// up that puts it away.
+    lock: Option<lock::Lock>,
+    /// The page the panel showed before it went dark, a pixel of every ten,
+    /// softened: what the lock stretches behind itself. None until a page
+    /// has been shown.
+    behind: Option<Canvas>,
     darkening: Option<f32>,
     /// The charging screen, from when a cable goes in until it has gone,
     /// with the level and what the charger does drawn for it, and the
@@ -1253,6 +1269,8 @@ impl App {
             button: None,
             chord: None,
             power_menu: None,
+            lock: None,
+            behind: None,
             seek: None,
             knob: None,
             adjusting: false,
@@ -1505,6 +1523,8 @@ impl App {
         // A pull at the foot of the screen, let go, carries on to where it
         // leads or back where it came from.
         fx.extend(self.settle_foot(now));
+        // The lock, let go, goes away or back down the same way.
+        fx.extend(self.settle_lock(now));
         if let Some(p) = self.row_press {
             if p.gone(now) {
                 self.row_press = None;
@@ -1640,9 +1660,11 @@ impl App {
         }
     }
 
-    /// Something laid over the page changed (the clock): compose again.
+    /// Something laid over the page changed (the clock): compose again. The
+    /// lock's picture keeps a clock of its own, so it is made again too.
     pub fn redraw(&mut self) {
         self.dirty = true;
+        self.lock_sheet_gone();
     }
 
     /// The settings the pages show, as they are kept between starts.

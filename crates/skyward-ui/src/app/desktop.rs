@@ -19,7 +19,7 @@ pub(super) const TASKS_DP: f32 = 120.0;
 /// shows until the pull is far enough to keep them.
 pub(super) const TASKS_MARK: f32 = 0.5;
 /// How dim the page goes while the tasks stand over it.
-const TASKS_DIM: f32 = 0.42;
+pub(super) const TASKS_DIM: f32 = 0.42;
 /// The ink of what the tasks' strip says, taken from the dark theme's light
 /// set: the desktop under it never turns light, so neither does this.
 const TASKS_INK: Rgba = Rgba::rgb(150, 150, 150);
@@ -56,7 +56,7 @@ pub(super) struct Foot {
 /// — all the way up at that height, and back down to nought as the page is
 /// pushed on past it: a page on its way off the screen does not drag the
 /// tasks up with it.
-fn tasks_up(pull: f32, stand: f32) -> f32 {
+pub(super) fn tasks_up(pull: f32, stand: f32) -> f32 {
     let mark = stand * TASKS_MARK;
     if pull <= mark {
         return 0.0;
@@ -91,8 +91,14 @@ impl App {
         if up <= 0.0 {
             return;
         }
-        // The page goes as dim as the tasks are up over it.
-        out.dim(TASKS_DIM * up);
+        // The page goes as dim as the tasks are up over it. Over the desktop
+        // there is no page lifted off it, so the whole screen darkens; a page
+        // pulled off is darkened by its own lift, which dims what lies under
+        // the page and leaves the page itself bright, so its rising is not
+        // fought by a second darkening laid over the whole frame.
+        if foot.tasks {
+            out.dim(TASKS_DIM * up);
+        }
         // The line comes in a little behind the dimming, so it is read on a
         // strip already dark enough to hold it.
         let shown = ((up - 0.2) / 0.8).clamp(0.0, 1.0);
@@ -112,7 +118,7 @@ impl App {
         let cx = Ctx { t: &t, f, info, state: &self.state, term: self.term.as_ref(), band: None, now: self.now };
         let mut c = pages::render(Screen::Desktop, &cx).canvas;
         let bar = self.bar(clock, info);
-        widgets::status_bar(&mut c, &t, f, &bar, pages::DESKTOP_STATUS);
+        widgets::status_bar(&mut c, &t, f, &bar, pages::DESKTOP_STATUS, true);
         c
     }
 

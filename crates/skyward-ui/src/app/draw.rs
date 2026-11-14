@@ -170,14 +170,28 @@ impl App {
         if charge < 1.0 {
             self.compose_page(out, f, info, clock, now);
         }
-        if charge > 0.0 {
-            self.compose_charging(out, f, info, charge, now);
-        }
-        self.compose_power_menu(out, f, now);
         // The tasks come up over whatever is shown, a page or the desktop:
         // over a page they stand where the pull left them and the page goes
         // on standing above them.
         self.compose_tasks(out, f);
+        // The lock comes over the page, the charging screen and the tasks:
+        // nothing any of them puts over another comes over the lock, and the
+        // page under it is left as it was.
+        self.compose_lock(out, f, info, clock);
+        // The charging screen comes over the lock: a cable in lights the
+        // panel to show the level, and the lock is there under it for once
+        // that is put away, as the phone's own system does.
+        if charge > 0.0 {
+            self.compose_charging(out, f, info, charge, now);
+        }
+        // The power menu comes over that too: the power key answers while the
+        // lock stands, so its menu must be the thing seen when it does.
+        self.compose_power_menu(out, f, now);
+        // What the panel shows is kept for the lock to stretch behind
+        // itself, while no lock is over it.
+        if self.display_on && self.lock.is_none() {
+            self.keep(out);
+        }
         out.dim(self.curtain.level(now));
     }
 
@@ -305,13 +319,18 @@ impl App {
                 let mut page = Canvas::new(out.w, out.h);
                 self.paint_page(&mut page, &t, Some((f, info)), &view);
                 let bar = self.bar(clock, info);
-                widgets::status_bar(&mut page, &t, f, &bar, t.pal.status);
+                widgets::status_bar(&mut page, &t, f, &bar, t.pal.status, false);
                 if let Some((text, _)) = &self.toast {
                     widgets::toast(&mut page, &t, f, text);
                 }
                 let desk = self.desktop_canvas(f, info, clock);
                 let foot = (self.h as f32 - off).round().clamp(0.0, self.h as f32) as i32;
-                out.lift(&page, &desk, foot, 0.0, self.corners);
+                // What lies under the page darkens as the tasks come up over
+                // it, while the page itself stays as bright as it was: the
+                // page's own rise and the darkening behind it are one motion,
+                // off one measure of how far the pull has come.
+                let dim = TASKS_DIM * tasks_up(off, t.m.dp(TASKS_DP));
+                out.lift(&page, &desk, foot, dim, self.corners);
                 self.shown = Some(view);
                 self.layer = None;
                 return;
@@ -367,8 +386,9 @@ impl App {
 
         // The desktop's wallpaper is black whichever theme is on, so its bar
         // takes the light ink; every other page's bar follows its own page.
-        let bar_ink = if self.screen() == Screen::Desktop { pages::DESKTOP_STATUS } else { t.pal.status };
-        widgets::status_bar(out, &t, f, &self.bar(clock, info), bar_ink);
+        let desk = self.screen() == Screen::Desktop;
+        let bar_ink = if desk { pages::DESKTOP_STATUS } else { t.pal.status };
+        widgets::status_bar(out, &t, f, &self.bar(clock, info), bar_ink, desk);
         if let Some((text, _)) = &self.toast {
             widgets::toast(out, &t, f, text);
         }
@@ -645,7 +665,7 @@ impl App {
         draw_faded(out, disc, 0.0, 0.0, t.pal.search, shown, blur);
         draw_faded(out, cross, 0.0, 0.0, t.pal.text, shown, blur);
         self.morph = Some(morph);
-        widgets::status_bar(out, &t, f, &self.bar(clock, info), t.pal.status);
+        widgets::status_bar(out, &t, f, &self.bar(clock, info), t.pal.status, false);
         if let Some((text, _)) = &self.toast {
             widgets::toast(out, &t, f, text);
         }

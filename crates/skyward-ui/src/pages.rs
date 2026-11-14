@@ -234,7 +234,7 @@ struct DeskApp {
 }
 
 /// The desktop's icons, laid out four to a row in the order written here.
-const DESKTOP_APPS: [DeskApp; 4] = [
+const DESKTOP_APPS: [DeskApp; 7] = [
     DeskApp {
         name: ["恢复模式", "恢復模式", "Recovery"],
         icon: Icon::Gear,
@@ -259,10 +259,45 @@ const DESKTOP_APPS: [DeskApp; 4] = [
         color: Rgba::rgb(0x67, 0x6e, 0x7a),
         opens: Some(Screen::Calculator),
     },
+    // The three below are named and drawn, but no page answers a touch on
+    // them yet: the player, the browser and the tasks page are still to
+    // come, so their icons stand on the desktop as placeholders.
+    DeskApp {
+        name: ["音乐", "音樂", "Music"],
+        icon: Icon::Music,
+        color: Rgba::rgb(0xf2, 0x6b, 0x3a),
+        opens: None,
+    },
+    DeskApp {
+        name: ["浏览器", "瀏覽器", "Browser"],
+        icon: Icon::Browser,
+        color: Rgba::rgb(0x1f, 0xa8, 0xb8),
+        opens: None,
+    },
+    DeskApp {
+        name: ["任务管理器", "工作管理員", "Tasks"],
+        icon: Icon::Tasks,
+        color: Rgba::rgb(0x7a, 0x5c, 0xf0),
+        opens: None,
+    },
 ];
 
 /// How many icons one row of the desktop holds.
 const DESKTOP_COLS: usize = 4;
+
+/// How many rows of icons one page of the desktop holds. A page is what a
+/// screen shows, not what it scrolls to: the icons past it wait on the page
+/// to the right, and the desktop turns sideways to reach them.
+const DESKTOP_ROWS: usize = 6;
+
+/// How many icons one page of the desktop holds.
+const DESKTOP_PER_PAGE: usize = DESKTOP_COLS * DESKTOP_ROWS;
+
+/// How many pages of icons the desktop has, never fewer than the one that
+/// is always showing.
+pub fn desk_pages() -> usize {
+    DESKTOP_APPS.len().div_ceil(DESKTOP_PER_PAGE).max(1)
+}
 
 /// The desktop's wallpaper: black whichever theme is on, since a desktop
 /// carries a picture of its own rather than a page of the system.
@@ -277,6 +312,11 @@ pub const DESKTOP_STATUS: Rgba = Rgba::rgb(224, 224, 224);
 /// apps laid over it in a grid, four to a row, as a phone's desktop lays its
 /// own out. The status bar is drawn over the desktop as it is over every
 /// page, so the time, the battery and the WLAN stay in view.
+///
+/// A screen holds one page of icons. More than fit wait on the page to the
+/// right: the desktop turns sideways, the way a phone's own does, rather
+/// than running on downwards. A row of dots at the foot says how many pages
+/// there are, and which one is showing.
 pub fn desktop(cx: &Ctx) -> Frame {
     let (t, f, l) = (cx.t, cx.f, cx.state.lang);
     let m = &t.m;
@@ -287,14 +327,27 @@ pub fn desktop(cx: &Ctx) -> Frame {
     let cell = m.w as f32 / DESKTOP_COLS as f32;
     let tile = m.dp(58.0);
     let row_h = m.dp(104.0);
-    // The first row clears the status bar.
-    let top = widgets::bar_bottom(t) + m.dp(28.0);
+    // The first row clears the status bar, but not by much: a phone's own
+    // desktop puts its first row of tiles close under the bar rather than
+    // leaving a band of empty wallpaper above it. `bar_bottom` is where a
+    // page with a title puts its content, and that clearance is for a title
+    // the desktop does not have, so the row starts inside it.
+    let top = widgets::bar_bottom(t) - m.dp(24.0);
     let ink = Rgba::rgb(255, 255, 255);
 
-    for (i, app) in DESKTOP_APPS.iter().enumerate() {
-        let col = (i % DESKTOP_COLS) as f32;
-        let row = (i / DESKTOP_COLS) as f32;
-        let x = cell * (col + 0.5);
+    // Which page is showing, and how far a finger has pulled it towards the
+    // one beside it. The pull is what a drag leaves in the state; at rest
+    // it is nought.
+    let pages = desk_pages();
+    let page = cx.state.desk_page.min(pages - 1);
+    let shift = cx.state.desk_drag;
+    let first = page * DESKTOP_PER_PAGE;
+    let last = (first + DESKTOP_PER_PAGE).min(DESKTOP_APPS.len());
+
+    for (at, app) in DESKTOP_APPS[first..last].iter().enumerate() {
+        let col = (at % DESKTOP_COLS) as f32;
+        let row = (at / DESKTOP_COLS) as f32;
+        let x = cell * (col + 0.5) + shift;
         let y = top + row * row_h;
         let cy = y + tile / 2.0;
         let (x0, y0) = (x - tile / 2.0, cy - tile / 2.0);
@@ -310,6 +363,20 @@ pub fn desktop(cx: &Ctx) -> Frame {
         // The whole cell answers a touch, as a phone's desktop icon does.
         if let Some(screen) = app.opens {
             out.push(Hit { rect: Rect::new(x - cell / 2.0, y, cell, row_h), action: Action::Open(screen) });
+        }
+    }
+
+    // A dot a page, and the one showing lit. One page alone needs none: a
+    // single dot says nothing the screen does not already say.
+    if pages > 1 {
+        let gap = m.dp(7.0);
+        let r = m.dp(2.5);
+        let y = m.h as f32 - m.dp(16.0);
+        let mut x = (m.w as f32 - gap * (pages - 1) as f32) / 2.0;
+        for p in 0..pages {
+            let dot = if p == page { ink } else { ink.with_alpha(88) };
+            c.fill_circle(x, y, r, dot);
+            x += gap;
         }
     }
 

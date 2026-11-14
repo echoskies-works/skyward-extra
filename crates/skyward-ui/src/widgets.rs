@@ -6,7 +6,7 @@ use crate::geom::Rect;
 use crate::icons::{self, Icon};
 use crate::lang::Lang;
 use crate::sprite::Sprite;
-use crate::theme::Theme;
+use crate::theme::{BatteryInk, Theme};
 use std::f32::consts::FRAC_PI_4;
 
 /// Where a drawn card ends and where each of its rows lies, for hit testing.
@@ -225,26 +225,45 @@ pub struct WlanMark {
 /// Below this level the battery fills red while the cable is out.
 pub const LOW_BATTERY: u8 = 20;
 
+/// The battery's inks over the desktop's black, as the stock bar draws them
+/// there. The light theme's empty fill is a black of its own, which nothing
+/// could see on a wallpaper that is black whichever theme is on.
+fn battery_over_black() -> BatteryInk {
+    BatteryInk {
+        charging: Rgba::rgb(29, 205, 58),
+        low: Rgba::rgb(230, 75, 59),
+        level: Rgba::rgb(255, 255, 255).with_alpha(232),
+        empty: Rgba::rgb(255, 255, 255).with_alpha(94),
+        bolt: Rgba::rgb(255, 255, 255).with_alpha(207),
+    }
+}
+
 /// Clock on the left; on the right the battery as the stock status bar draws
 /// it, with a bolt past it while the cable is in, and before it the network
 /// joined and how fast data goes over it, the data partition's lock, the
 /// slot in a tag as the stock bar tags a VPN, and the battery's temperature
 /// in figures over their unit as the stock bar gives a speed. `ink` colours
-/// the clock and every mark but the battery.
-pub fn status_bar(c: &mut Canvas, t: &Theme, f: &Fonts, bar: &Bar, ink: Rgba) {
+/// the clock and every mark but the battery; `over_black` says the bar
+/// stands on the desktop's black rather than on a page, where the battery
+/// takes its light inks whatever theme is on.
+pub fn status_bar(c: &mut Canvas, t: &Theme, f: &Fonts, bar: &Bar, ink: Rgba, over_black: bool) {
     let m = &t.m;
     let cy = m.status_cy;
+    let inks = match over_black {
+        true => battery_over_black(),
+        false => t.pal.battery,
+    };
     // Digits carry no descender, so centre on half their height (≈0.72 em).
     c.text(&f.status, bar.clock, m.status_x, cy + m.status_px * 0.36, m.status_px, ink, None);
     let mut right = m.w as f32 - m.status_right;
     if let Some((level, charging)) = bar.battery {
         if let Some(kind) = charging {
             let x = m.w as f32 - m.status_bolt_right - m.dp(BOLT_W_DP);
-            let (art, ox, oy) = bolt(t, kind, x, cy);
+            let (art, ox, oy) = bolt(t, kind, x, cy, inks.bolt);
             c.lay(&art, ox, oy, 1.0);
             right = x - m.dp(2.42);
         }
-        let (art, ox, oy) = battery(t, f, level, charging.is_some(), right, cy);
+        let (art, ox, oy) = battery(t, f, level, charging.is_some(), right, cy, &inks);
         c.lay(&art, ox, oy, 1.0);
         right -= m.dp(BATTERY_W_DP + BATTERY_CAP_DP);
     }
@@ -583,7 +602,7 @@ const QUICK_BOLT: Contour = (
 
 /// The stock bar's bolt of `kind` in its box from `x`, on the bar's middle
 /// `cy`: as its own canvas in the bolt's ink, and where it goes.
-fn bolt(t: &Theme, kind: Bolt, x: f32, cy: f32) -> (Canvas, i32, i32) {
+fn bolt(t: &Theme, kind: Bolt, x: f32, cy: f32, ink: Rgba) -> (Canvas, i32, i32) {
     let m = &t.m;
     let (start, pieces) = match kind {
         Bolt::Charging => BOLT,
@@ -609,7 +628,6 @@ fn bolt(t: &Theme, kind: Bolt, x: f32, cy: f32) -> (Canvas, i32, i32) {
         };
     }
     fill.draw_line(from, at(start));
-    let ink = t.pal.battery.bolt;
     let mut art = Canvas::new(w, h);
     fill.for_each_pixel_2d(|px, py, cover| {
         let i = ((py * w + px) * 4) as usize;
@@ -622,9 +640,8 @@ fn bolt(t: &Theme, kind: Bolt, x: f32, cy: f32) -> (Canvas, i32, i32) {
 /// The battery ending at `right`, centred on `cy`, as its own canvas and
 /// where it goes: body and cap, the level's share filled from the left, the
 /// digits in white over a charging or low fill and cut out of any other.
-fn battery(t: &Theme, f: &Fonts, level: u8, plugged: bool, right: f32, cy: f32) -> (Canvas, i32, i32) {
+fn battery(t: &Theme, f: &Fonts, level: u8, plugged: bool, right: f32, cy: f32, ink: &BatteryInk) -> (Canvas, i32, i32) {
     let m = &t.m;
-    let ink = t.pal.battery;
     let (bw, bh, cap_w, cap_h) = (m.dp(BATTERY_W_DP), m.dp(12.1), m.dp(BATTERY_CAP_DP), m.dp(4.25));
     let left = right - bw - cap_w;
     let (ox, oy) = ((left - 1.0).floor(), (cy - bh / 2.0 - 1.0).floor());
@@ -2825,7 +2842,7 @@ mod tests {
         let draw = |mark: WlanMark| {
             let mut c = Canvas::filled(1200, 160, t.pal.bg);
             let bar = Bar { clock: "01:27", battery: Some((40, Some(Bolt::Charging))), wlan: Some(mark), data: None, slot: None, temp: None };
-            status_bar(&mut c, &t, &f, &bar, t.pal.status);
+            status_bar(&mut c, &t, &f, &bar, t.pal.status, false);
             c
         };
         let full = WlanMark { level: 3, receiving: true, sending: true, speed: "7.02".into(), unit: "KB/s" };
@@ -2863,7 +2880,7 @@ mod tests {
         let mut c = Canvas::filled(1200, 160, t.pal.bg);
         let wlan = Some(WlanMark { level: 3, receiving: true, sending: true, speed: "0.00".into(), unit: "KB/s" });
         let bar = Bar { clock: "01:27", battery: Some((40, None)), wlan, data: Some(false), slot: Some("B"), temp: Some(362) };
-        status_bar(&mut c, &t, &f, &bar, t.pal.status);
+        status_bar(&mut c, &t, &f, &bar, t.pal.status, false);
         // Runs of inked columns on the bar's right half, those a few pixels
         // apart taken as one mark.
         let inked = |x: u32| (40..120).any(|y| c.data[((y * 1200 + x) * 4) as usize] > 60);
@@ -2935,7 +2952,7 @@ mod tests {
         let draw = |kind| {
             let mut c = Canvas::filled(1200, 160, Rgba::rgb(0, 0, 0));
             let bar = Bar { clock: "01:27", battery: Some((64, Some(kind))), wlan: None, data: None, slot: None, temp: None };
-            status_bar(&mut c, &t, &f, &bar, t.pal.status);
+            status_bar(&mut c, &t, &f, &bar, t.pal.status, false);
             c
         };
         // How much of a pixel the bolt covers, and the rows where its left
@@ -3035,17 +3052,17 @@ mod tests {
         // 69 px wide from 930.85; the row 15 px above the middle is clear
         // of the digits.
         let rgba = |c: Rgba| [c.r, c.g, c.b, c.a];
-        let half = battery(&t, &f, 50, false, right, cy);
+        let half = battery(&t, &f, 50, false, right, cy, &ink);
         assert_eq!(pixel(&half, 948.0, cy - 15.0), rgba(ink.level), "a quarter in is filled");
         assert_eq!(pixel(&half, 983.0, cy - 15.0), rgba(ink.empty), "three quarters in is empty");
-        let charging = battery(&t, &f, 50, true, right, cy);
+        let charging = battery(&t, &f, 50, true, right, cy, &ink);
         assert_eq!(pixel(&charging, 948.0, cy - 15.0), rgba(ink.charging), "the cable in fills green");
-        let low = battery(&t, &f, 15, false, right, cy);
+        let low = battery(&t, &f, 15, false, right, cy, &ink);
         assert_eq!(pixel(&low, 935.0, cy), rgba(ink.low), "low and unplugged fills red");
         assert_eq!(pixel(&low, 948.0, cy - 15.0), rgba(ink.empty), "past 15% it is empty");
-        let low_charging = battery(&t, &f, 15, true, right, cy);
+        let low_charging = battery(&t, &f, 15, true, right, cy, &ink);
         assert_eq!(pixel(&low_charging, 935.0, cy), rgba(ink.charging), "low but charging stays green");
-        let full = battery(&t, &f, 100, false, right, cy);
+        let full = battery(&t, &f, 100, false, right, cy, &ink);
         assert_eq!(pixel(&full, right - 1.5, cy), rgba(ink.level), "a full battery fills its cap");
     }
 
@@ -3053,6 +3070,7 @@ mod tests {
     fn digits_are_cut_out_of_a_plain_fill_and_white_over_a_coloured_one() {
         let f = crate::font::bundled();
         let t = Theme::dark(1200, 2608, 3.0);
+        let ink = t.pal.battery;
         let (right, cy) = (1000.0, 77.0);
         // Inside the body, clear of its rounded ends and edges.
         let holes = |art: &(Canvas, i32, i32)| -> usize {
@@ -3064,9 +3082,9 @@ mod tests {
             }
             n
         };
-        assert!(holes(&battery(&t, &f, 100, false, right, cy)) > 60, "the digits show the page through");
-        assert_eq!(holes(&battery(&t, &f, 100, true, right, cy)), 0, "white digits over green");
-        assert_eq!(holes(&battery(&t, &f, 15, false, right, cy)), 0, "white digits over red");
+        assert!(holes(&battery(&t, &f, 100, false, right, cy, &ink)) > 60, "the digits show the page through");
+        assert_eq!(holes(&battery(&t, &f, 100, true, right, cy, &ink)), 0, "white digits over green");
+        assert_eq!(holes(&battery(&t, &f, 15, false, right, cy, &ink)), 0, "white digits over red");
     }
 
     #[test]

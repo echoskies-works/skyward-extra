@@ -68,6 +68,14 @@ pub enum Icon {
     Battery,
     /// Two phones, the one behind showing round the one in front.
     Systems,
+    /// Two notes beamed at their stems' heads, as a music player shows
+    /// them.
+    Music,
+    /// A globe stood on its rings, as a browser shows one.
+    Browser,
+    /// Three bars of a graph standing on their line, as a tasks page shows
+    /// them.
+    Tasks,
 }
 
 /// The stock icons' box: every outline here is laid out in it.
@@ -364,6 +372,47 @@ const SYSTEMS: &[Part] = &[
     cut(Shape::Line("M14.4,20.2H18", 1.3)),
 ];
 
+/// A disc: its rim, the hole at its centre, and the two short arcs a
+/// record's surface throws the light back with.
+///
+/// Both halves are cut with the odd-even rule: the rim and the hole are
+/// written as one outline running round twice, and so are the hole's own
+/// ring and the arcs, which only come out as rings when what lies inside
+/// twice is left out.
+const MUSIC: &[Part] = &[
+    // The rim, and the edge that turns it into a ring.
+    add(Shape::EvenOdd(
+        "M13.93,23.66c-5.55,-0.09 -9.76,-4.51 -9.59,-10.18c0.16,-4.94 4.41,-9.2 9.7,-9.14c5.43,0.06 9.71,4.47 9.61,9.86c-0.09,5.23 -4.52,9.55 -9.72,9.46zm8.52,-9.56c0.01,-4.73 -3.74,-8.57 -8.39,-8.57c-4.82,0 -8.4,3.82 -8.52,8.13c-0.14,4.8 3.57,8.77 8.43,8.77c4.97,0.01 8.46,-4.03 8.48,-8.33z",
+    )),
+    // The hole, ringed the same way, and the two arcs over the label.
+    add(Shape::EvenOdd(
+        "M14.01,16.28c-1.26,0 -2.28,-1.01 -2.29,-2.27c-0.01,-1.29 1.01,-2.3 2.3,-2.31c1.22,-0.01 2.26,1.02 2.27,2.25c0.02,1.28 -1.01,2.33 -2.28,2.33zm-1.08,-2.27c0.01,0.59 0.5,1.08 1.09,1.07c0.59,-0.01 1.07,-0.51 1.06,-1.1c-0.01,-0.58 -0.52,-1.09 -1.09,-1.07c-0.6,0 -1.07,0.5 -1.06,1.1zM20.26,14.36c-0.2,3.22 -2.74,5.72 -6,5.9c-0.53,0.03 -0.82,-0.16 -0.84,-0.55c-0.02,-0.39 0.24,-0.62 0.76,-0.66c2.51,-0.22 4.32,-1.76 4.8,-4.12c0.05,-0.26 0.06,-0.53 0.08,-0.79c0.05,-0.52 0.31,-0.81 0.68,-0.74c0.45,0.08 0.57,0.41 0.53,0.82c0,0.04 0,0.09 -0.01,0.14zM7.73,13.62C7.81,10.5 10.74,7.66 13.84,7.7c0.47,0.01 0.78,0.25 0.76,0.61c-0.03,0.44 -0.33,0.57 -0.72,0.59c-2.56,0.09 -4.54,2 -4.89,4.28c-0.03,0.21 -0.04,0.43 -0.05,0.65c-0.02,0.4 -0.14,0.74 -0.62,0.75c-0.38,0.01 -0.59,-0.26 -0.59,-0.76v-0.2z",
+    )),
+];
+
+/// A globe: its ring, a line across it and a line round it.
+///
+/// All three are drawn at one weight, so the globe reads as a single
+/// drawing rather than as a heavy ring with thin marks inside it. A filled
+/// ring was too heavy against the two lines it sits around.
+const BROWSER: &[Part] = &[
+    // The ring.
+    add(Shape::Line("M14,5.2A8.8,8.8 0 1 1 14,22.8A8.8,8.8 0 1 1 14,5.2Z", 1.7)),
+    // The line across it, and the line round it.
+    add(Shape::Line("M5.2,14H22.8", 1.7)),
+    add(Shape::Line("M14,5.2A4.4,8.8 0 0 1 14,22.8A4.4,8.8 0 0 1 14,5.2", 1.7)),
+];
+
+/// Three bars of a graph standing on their line: what a tasks page shows.
+const TASKS: &[Part] = &[
+    // The bars, tallest last.
+    add(Shape::Fill("M8.2,21.0V14.4A1.4,1.4 0 0 1 11.0,14.4V21.0Z")),
+    add(Shape::Fill("M12.6,21.0V10.9A1.4,1.4 0 0 1 15.4,10.9V21.0Z")),
+    add(Shape::Fill("M17.0,21.0V7.2A1.4,1.4 0 0 1 19.8,7.2V21.0Z")),
+    // The line they stand on.
+    add(Shape::Fill("M6,21.0H22V22.2H6Z")),
+];
+
 /// What `icon`'s glyph is drawn from, and at what share of its size.
 fn outline(icon: Icon) -> (&'static [Part], f32) {
     match icon {
@@ -390,6 +439,9 @@ fn outline(icon: Icon) -> (&'static [Part], f32) {
         Icon::Wlan => (WLAN, 1.0),
         Icon::Battery => (BATTERY, 1.0),
         Icon::Systems => (SYSTEMS, 1.0),
+        Icon::Music => (MUSIC, 1.0),
+        Icon::Browser => (BROWSER, 1.0),
+        Icon::Tasks => (TASKS, 1.0),
     }
 }
 
@@ -545,7 +597,7 @@ fn path(d: &str) -> tiny_skia::Path {
 mod tests {
     use super::*;
 
-    const ALL: [Icon; 23] = [
+    const ALL: [Icon; 26] = [
         Icon::Install,
         Icon::Backup,
         Icon::Restore,
@@ -569,6 +621,9 @@ mod tests {
         Icon::Wlan,
         Icon::Battery,
         Icon::Systems,
+        Icon::Music,
+        Icon::Browser,
+        Icon::Tasks,
     ];
 
     /// Pixels a unit of the box takes in these tests.

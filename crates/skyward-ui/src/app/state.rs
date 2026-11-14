@@ -36,6 +36,13 @@ pub struct State {
     pub pattern: Vec<usize>,
     /// How far the swipe-to-confirm knob is dragged, 0 to 1.
     pub confirm: f32,
+    /// Which page of the desktop's icons is showing, counted from the left.
+    /// The icons past one screen's worth wait on the pages to its right, as
+    /// a phone's desktop turns sideways rather than scrolling down.
+    pub desk_page: usize,
+    /// How far the desktop has been pulled towards the page beside it, in
+    /// pixels: negative while a finger drags the icons leftwards.
+    pub desk_drag: f32,
     pub install: Install,
     /// Where the package being installed comes from.
     pub source: Source,
@@ -206,6 +213,8 @@ impl Default for State {
             phone_logs: 0,
             pattern: Vec::new(),
             confirm: 0.0,
+            desk_page: 0,
+            desk_drag: 0.0,
             install: Install::Idle,
             source: Source::Computer,
             package_name: None,
