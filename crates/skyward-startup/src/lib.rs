@@ -30,7 +30,7 @@ mod screen;
 mod keys;
 
 pub use lang::Lang;
-pub use menu::{Action, Crash, View};
+pub use menu::{Action, Crash, Reason, View};
 
 /// Draw `view` into a fresh RGBA buffer of `w` by `h`.
 ///
@@ -39,7 +39,7 @@ pub use menu::{Action, Crash, View};
 /// get compared against the bootloader's before anything is flashed.
 pub fn render(w: u32, h: u32, view: View, lang: Lang) -> Vec<u8> {
     let mut screen = screen::Screen::new(w, h);
-    paint::draw(&mut screen, view, lang);
+    paint::draw(&mut screen, view, lang, paint::ALL);
     screen.data
 }
 
@@ -67,45 +67,176 @@ const CARD: &str = "/dev/dri/card0";
 #[cfg(target_os = "android")]
 const IDLE: std::time::Duration = std::time::Duration::from_millis(250);
 
+/// How long a line of the menu holds the panel before the next one lands.
+///
+/// A boot menu is written out a line at a time, not typed: a dozen lines of
+/// prose at four words a second would be twelve seconds of waiting before the
+/// first press could do anything, and nobody has ever wanted to watch a menu
+/// being written. This is the whole list in about half a second — long enough
+/// to read as printing, short enough that the panel is ready before the
+/// finger is.
+#[cfg(target_os = "android")]
+const TYPE_LINE: std::time::Duration = std::time::Duration::from_millis(45);
+
+/// How long one character of a failure screen holds before the next lands.
+///
+/// A failure is the one screen on this panel that is read rather than
+/// scanned, and the one nobody is in a hurry to answer: it is written out a
+/// character at a time, at a speed that reads as a console printing under a
+/// fault rather than as a font being loaded. Seven lines come to under a
+/// second, and a press takes the rest of it at once.
+#[cfg(target_os = "android")]
+const TYPE_CHAR: std::time::Duration = std::time::Duration::from_millis(12);
+
+/// How a view is put on the panel.
+#[cfg(target_os = "android")]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Reveal {
+    /// One character at a time, the way a console prints under a fault.
+    Chars,
+    /// One line at a time, gap by gap, the way a boot menu comes up.
+    Lines,
+}
+
+/// The panel, the buttons and the buffer: everything this crate draws with,
+/// so the menu and a failure screen go up the same way.
+#[cfg(target_os = "android")]
+struct Panel {
+    surface: skyward_kms::KmsSurface,
+    screen: screen::Screen,
+    buttons: keys::Buttons,
+}
+
+#[cfg(target_os = "android")]
+impl Panel {
+    fn open() -> Result<Self> {
+        use anyhow::Context;
+
+        // The rules that give /dev its usual owners. Without this the nodes
+        // are whatever the kernel left, and a menu running as shell cannot
+        // open the card. A missing rule file is not fatal: the panel often
+        // works anyway.
+        if let Err(e) = skyward_sys::ueventd::apply() {
+            eprintln!("startup: {e:#}");
+        }
+
+        let surface = skyward_kms::KmsSurface::open(CARD).context("open the display")?;
+        let (w, h) = surface.size();
+        eprintln!("startup: display {w}x{h}");
+
+        let buttons = keys::Buttons::new();
+        if !buttons.found() {
+            eprintln!("startup: no buttons yet, still watching /dev/input");
+        }
+        Ok(Panel { surface, screen: screen::Screen::new(w, h), buttons })
+    }
+
+    /// `view` in full, in one frame.
+    fn present(&mut self, view: View, lang: Lang) -> Result<()> {
+        use anyhow::Context;
+        paint::draw(&mut self.screen, view, lang, paint::ALL);
+        let (w, h) = (self.screen.w, self.screen.h);
+        self.surface.present_frame(&self.screen.data, w, h).context("draw the panel")
+    }
+
+    /// Write `view` onto the panel one step at a time, and put all of it up
+    /// the moment a key is pressed.
+    ///
+    /// The press that stops the printing is taken and not handed back: it was
+    /// aimed at the printing, and the screen it was aimed at has not finished
+    /// arriving. Answering a question nobody has read yet is worse than one
+    /// more press.
+    fn type_out(&mut self, view: View, lang: Lang, reveal: Reveal, pace: std::time::Duration) -> Result<()> {
+        use anyhow::Context;
+        let ends = paint::steps(view, lang);
+        let total = ends.last().copied().unwrap_or(0);
+        let steps: Vec<usize> = match reveal {
+            Reveal::Lines => ends,
+            Reveal::Chars => (1..=total).collect(),
+        };
+        let (w, h) = (self.screen.w, self.screen.h);
+        for at in steps {
+            paint::draw(&mut self.screen, view, lang, at);
+            self.surface.present_frame(&self.screen.data, w, h).context("print the panel")?;
+            if !self.buttons.poll().is_empty() {
+                paint::draw(&mut self.screen, view, lang, paint::ALL);
+                self.surface.present_frame(&self.screen.data, w, h).context("finish the panel")?;
+                return Ok(());
+            }
+            std::thread::sleep(pace);
+        }
+        Ok(())
+    }
+
+    /// Say `text` where the menu was, wait for one press, and let the caller
+    /// put the menu back.
+    ///
+    /// For the lines that have nothing behind them yet: a press that changes
+    /// nothing has to say so, or the panel looks hung.
+    fn say(&mut self, text: &str) -> Result<()> {
+        use anyhow::Context;
+        paint::notice(&mut self.screen, text);
+        let (w, h) = (self.screen.w, self.screen.h);
+        self.surface.present_frame(&self.screen.data, w, h).context("draw the notice")?;
+        self.buttons.wait(IDLE);
+        Ok(())
+    }
+
+    /// Wait for the power button, and nothing else: the screen it is pressed
+    /// on offers one key and one way on.
+    fn wait_power(&mut self) -> menu::Key {
+        loop {
+            for key in self.buttons.wait(IDLE) {
+                if key == menu::Key::Power {
+                    return key;
+                }
+            }
+            // A panel that came up before its input devices did would
+            // otherwise leave the screen stuck with no way to answer it.
+            self.buttons.scan();
+        }
+    }
+}
+
+/// What a view is, as far as the printing goes: two views of the same kind
+/// are the same screen with the cursor moved, which is redrawn at once
+/// rather than printed again.
+#[cfg(target_os = "android")]
+fn kind(view: View) -> u8 {
+    match view {
+        View::List { .. } => 0,
+        View::Confirm { .. } => 1,
+        View::Failure { .. } => 2,
+    }
+}
+
 /// Put the menu on the panel and wait for a decision.
 ///
 /// The menu never wipes anything itself: what "reset" means is decided
 /// elsewhere, by the code that already knows how to erase a phone safely.
 #[cfg(target_os = "android")]
 pub fn run() -> Result<Choice> {
-    use anyhow::Context;
     use menu::Step;
-    use screen::Screen;
 
-    // The rules that give /dev its usual owners. Without this the nodes are
-    // whatever the kernel left, and a menu running as shell cannot open the
-    // card. A missing rule file is not fatal: the panel often works anyway.
-    if let Err(e) = skyward_sys::ueventd::apply() {
-        eprintln!("startup: {e:#}");
-    }
-
-    let mut surface = skyward_kms::KmsSurface::open(CARD).context("open the display")?;
-    let (w, h) = surface.size();
-    eprintln!("startup: display {w}x{h}");
-
-    let mut screen = Screen::new(w, h);
     let lang = Lang::from_env();
+    let mut panel = Panel::open()?;
     let mut menu = menu::Menu::new();
-    paint::draw(&mut screen, menu.view(), lang);
-    surface.present_frame(&screen.data, w, h).context("draw the menu")?;
-
-    let mut buttons = keys::Buttons::new();
-    if !buttons.found() {
-        eprintln!("startup: no buttons yet, still watching /dev/input");
-    }
+    panel.type_out(menu.view(), lang, Reveal::Lines, TYPE_LINE)?;
 
     loop {
-        for key in buttons.wait(IDLE) {
+        for key in panel.buttons.wait(IDLE) {
+            let before = menu.view();
             match menu.key(key) {
                 Step::Still => {}
                 Step::Redraw => {
-                    paint::draw(&mut screen, menu.view(), lang);
-                    surface.present_frame(&screen.data, w, h).context("redraw the menu")?;
+                    let after = menu.view();
+                    if kind(after) == kind(before) {
+                        panel.present(after, lang)?;
+                    } else {
+                        // The question comes up printed too: it is a new
+                        // screen, not the list with a band moved.
+                        panel.type_out(after, lang, Reveal::Lines, TYPE_LINE)?;
+                    }
                 }
                 Step::Done(Action::Continue) => return Ok(Choice::System),
                 Step::Done(Action::PowerOff) => return Ok(Choice::PowerOff),
@@ -116,38 +247,35 @@ pub fn run() -> Result<Choice> {
                     // expects somewhere to put a progress bar. This menu has
                     // no room for one, so saying "not yet" where the user can
                     // read it beats a line that looks like it worked.
-                    say(&mut screen, &mut surface, &mut buttons, lang.pick(["RESET IS NOT WIRED UP YET", "重置还没有接上"]))?;
-                    paint::draw(&mut screen, menu.view(), lang);
-                    surface.present_frame(&screen.data, w, h).context("redraw the menu")?;
+                    panel.say(lang.pick(["RESET IS NOT WIRED UP YET", "重置还没有接上"]))?;
+                    panel.present(menu.view(), lang)?;
                 }
                 Step::Done(Action::Troubleshoot) => {
                     // The sub-menu behind this is the deep end — reinstall,
                     // roll back, repair filesystems — and none of it exists
                     // yet. Same rule as reset: the panel says so.
-                    say(&mut screen, &mut surface, &mut buttons, lang.pick(["TROUBLESHOOT IS NOT WIRED UP YET", "疑难解答还没有接上"]))?;
-                    paint::draw(&mut screen, menu.view(), lang);
-                    surface.present_frame(&screen.data, w, h).context("redraw the menu")?;
+                    panel.say(lang.pick(["TROUBLESHOOT IS NOT WIRED UP YET", "疑难解答还没有接上"]))?;
+                    panel.present(menu.view(), lang)?;
                 }
             }
         }
-        // A panel that came up before its input devices did would otherwise
-        // leave the menu stuck with no way to answer it.
-        buttons.scan();
+        panel.buttons.scan();
     }
 }
 
-/// Say `text` where the menu was, wait for one press, and let the caller put
-/// the menu back.
+/// Put a failure on the panel, and wait for the key that leaves it.
 ///
-/// For the lines that have nothing behind them yet: a press that changes
-/// nothing has to say so, or the panel looks hung.
+/// This is the one screen the panel shows that is not about the panel: it is
+/// what is left of a system that stopped, so it says which of the two ways it
+/// stopped (never came up, or was up and then was not), the code it left, and
+/// — where it stopped on purpose — which of its own apps it stopped for.
 #[cfg(target_os = "android")]
-fn say(screen: &mut screen::Screen, surface: &mut skyward_kms::KmsSurface, buttons: &mut keys::Buttons, text: &str) -> Result<()> {
-    use anyhow::Context;
-    paint::notice(screen, text);
-    let (w, h) = (screen.w, screen.h);
-    surface.present_frame(&screen.data, w, h).context("draw the notice")?;
-    buttons.wait(IDLE);
+pub fn show_crash(crash: Crash, code: i32, reason: Option<Reason>) -> Result<()> {
+    let lang = Lang::from_env();
+    let mut panel = Panel::open()?;
+    let view = View::Failure { crash, code, reason };
+    panel.type_out(view, lang, Reveal::Chars, TYPE_CHAR)?;
+    panel.wait_power();
     Ok(())
 }
 
@@ -179,7 +307,7 @@ mod tests {
             // widest code there can be goes in the check too.
             for crash in [Crash::Startup, Crash::Runtime] {
                 for code in [0, 139, i32::MIN] {
-                    lines.extend(paint::failure(crash, code, lang).into_iter().map(|line| line.text().to_string()));
+                    lines.extend(paint::failure(crash, code, None, lang).into_iter().map(|line| line.text().to_string()));
                 }
             }
         }
@@ -195,13 +323,13 @@ mod tests {
         let views = [
             menu::View::List { sel: 0 },
             menu::View::Confirm { action: Action::Reset, yes: false },
-            menu::View::Failure { crash: Crash::Startup, code: 139 },
-            menu::View::Failure { crash: Crash::Runtime, code: 139 },
+            menu::View::Failure { crash: Crash::Startup, code: 139, reason: None },
+            menu::View::Failure { crash: Crash::Runtime, code: 139, reason: Some(Reason::Music) },
         ];
         for lang in BOTH {
             for view in views {
                 let mut screen = screen::Screen::new(w, h);
-                paint::draw(&mut screen, view, lang);
+                paint::draw(&mut screen, view, lang, paint::ALL);
                 // Nothing is drawn in the top sixteenth: that is where the hole is.
                 let band = h / 16;
                 let lit_in_band = (0..band).any(|y| (0..w).any(|x| screen.data[((y * w + x) * 4) as usize] != 0));

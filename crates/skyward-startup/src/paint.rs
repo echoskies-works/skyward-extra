@@ -9,7 +9,7 @@
 //! that a line added to one language cannot be forgotten in the other.
 
 use crate::lang::Lang;
-use super::menu::{Action, Crash, View, ITEMS};
+use super::menu::{Action, Crash, Reason, View, ITEMS};
 use super::screen::{Screen, CELL_H, INK, LINE_H, LIT, SCALE};
 
 /// What the panel says at the top.
@@ -98,34 +98,84 @@ const RULE_LINE_H: u32 = RULE_H + 5 * SCALE;
 /// rather than as the first item's overline.
 const RULE_DY: u32 = 2 * SCALE;
 
-/// Paint `view` over the whole screen.
-pub fn draw(screen: &mut Screen, view: View, lang: Lang) {
+/// How much of a view is on the panel, counted in the characters [`draw`]
+/// prints: everything, for a panel that goes up in one go.
+pub const ALL: usize = usize::MAX;
+
+/// Paint `view` over the whole screen, up to `typed` characters in.
+///
+/// A console prints as it goes, and this is that: the lines are walked from
+/// the top and each one is printed whole until the count runs out, so the
+/// caller can put one character more on the panel a frame at a time and get
+/// the words arriving in the order they are read. A rule counts as one
+/// character — it is a line of the panel like any other, and it should come
+/// in where it stands rather than up front with the title.
+pub fn draw(screen: &mut Screen, view: View, lang: Lang, typed: usize) {
     screen.fill([0, 0, 0]);
-    let lines = match view {
-        View::List { sel } => list(sel, lang),
-        View::Confirm { action, yes } => confirm(action, yes, lang),
-        View::Failure { crash, code } => failure(crash, code, lang),
-    };
+    let lines = lines_of(view, lang);
     // Ranged from the top left, not centred. A console starts where a page
     // starts; centring the block would also move every line when the question
     // comes up, since it is a line shorter than the list.
     let mut y = top(screen.h);
+    let mut left = typed;
     for line in &lines {
+        if left == 0 {
+            break;
+        }
         match line {
-            Line::Words(text, Ink::Plain) => screen.draw_left(y, text, LIT),
+            Line::Words(text, Ink::Plain) => {
+                let shown: String = text.chars().take(left).collect();
+                screen.draw_left(y, &shown, LIT);
+                left -= shown.chars().count();
+            }
             Line::Words(text, Ink::Reversed) => {
                 // The band runs the whole width of the panel, edge to edge,
                 // the way a BIOS menu shows where the cursor is; the words on
                 // it are knocked out of it rather than drawn beside it.
+                let shown: String = text.chars().take(left).collect();
                 screen.fill_rect(0, y, screen.w, CELL_H, LIT);
-                screen.draw_left(y, text, INK);
+                screen.draw_left(y, &shown, INK);
+                left -= shown.chars().count();
             }
-            Line::Rule => screen.fill_rect(0, y + RULE_DY as i32, screen.w, RULE_H, LIT),
+            Line::Rule => {
+                screen.fill_rect(0, y + RULE_DY as i32, screen.w, RULE_H, LIT);
+                left -= 1;
+            }
         }
-        y += match line {
-            Line::Rule => RULE_LINE_H,
-            _ => LINE_H,
-        } as i32;
+        y += step(line);
+    }
+}
+
+/// Where each line ends, in the characters [`draw`] counts: the steps a
+/// line-at-a-time reveal takes, the last of them the whole view.
+pub fn steps(view: View, lang: Lang) -> Vec<usize> {
+    let mut at = 0usize;
+    lines_of(view, lang)
+        .iter()
+        .map(|line| {
+            at += match line {
+                Line::Words(text, _) => text.chars().count(),
+                Line::Rule => 1,
+            };
+            at
+        })
+        .collect()
+}
+
+/// How far down the panel one line moves the pen.
+fn step(line: &Line) -> i32 {
+    let h = match line {
+        Line::Rule => RULE_LINE_H,
+        _ => LINE_H,
+    };
+    h as i32
+}
+/// What the panel says for `view`, as lines.
+fn lines_of(view: View, lang: Lang) -> Vec<Line> {
+    match view {
+        View::List { sel } => list(sel, lang),
+        View::Confirm { action, yes } => confirm(action, yes, lang),
+        View::Failure { crash, code, reason } => failure(crash, code, reason, lang),
     }
 }
 
@@ -185,11 +235,18 @@ fn confirm(action: Action, yes: bool, lang: Lang) -> Vec<Line> {
 /// not their fault and which button to press. The code stays because it is
 /// the only fact here that narrows the cause down — 101 is Aether's own
 /// panic, 134 a failed assert, 137 the system killing it for memory, 139 a
-/// bad pointer — and one line is cheap.
+/// bad pointer, and 67 one of the desktop's apps stopped on purpose because
+/// it is not built yet — and one line is cheap.
+///
+/// A stop of Aether's own making also leaves a reason, and it goes in a
+/// paragraph of its own between the code and the way out: the code says
+/// which kind of stop it was, the reason says which app, and the two are
+/// read one after the other rather than run together. A phone that fell over
+/// leaves nothing to say, and its screen is the shorter one.
 ///
 /// No stack, no registers: two keys cannot scroll, and the panel holds about
 /// twenty lines.
-pub(crate) fn failure(crash: Crash, code: i32, lang: Lang) -> Vec<Line> {
+pub(crate) fn failure(crash: Crash, code: i32, reason: Option<Reason>, lang: Lang) -> Vec<Line> {
     // The first line is the only thing the two screens say differently. A
     // phone that never came up and a phone that was in use are different
     // problems, and whoever is holding it already knows which one happened —
@@ -206,6 +263,10 @@ pub(crate) fn failure(crash: Crash, code: i32, lang: Lang) -> Vec<Line> {
         Line::plain(format!("{} {code}", lang.pick(["Error code:", "错误代码:"]))),
         Line::plain(""),
     ];
+    if let Some(reason) = reason {
+        lines.push(Line::plain(reason.label(lang)));
+        lines.push(Line::plain(""));
+    }
     lines.extend(EXIT.iter().map(|line| Line::plain(lang.pick(*line))));
     lines
 }
@@ -276,7 +337,7 @@ mod tests {
         let (w, h) = (1200u32, 2608u32);
         for lang in BOTH {
             let mut screen = Screen::new(w, h);
-            draw(&mut screen, View::List { sel: 0 }, lang);
+            draw(&mut screen, View::List { sel: 0 }, lang, ALL);
             let start = top(h) as u32;
             // Line 2 is the rule under the title: the title's cell, the blank
             // under it, then the air the rule keeps above itself.
@@ -364,7 +425,7 @@ mod tests {
         let (w, h) = (1200u32, 2608u32);
         for lang in BOTH {
             let mut screen = Screen::new(w, h);
-            draw(&mut screen, View::List { sel: 1 }, lang);
+            draw(&mut screen, View::List { sel: 1 }, lang, ALL);
             // No greys and no theme: one colour on black, with the cursor as
             // the same colour reversed rather than a dimmer shade of it.
             let pixels = screen.data.as_chunks::<4>().0;
@@ -377,7 +438,7 @@ mod tests {
     fn a_notice_replaces_the_whole_menu_with_one_line() {
         let (w, h) = (1080u32, 2400u32);
         let mut screen = Screen::new(w, h);
-        draw(&mut screen, View::List { sel: 0 }, Lang::Zh);
+        draw(&mut screen, View::List { sel: 0 }, Lang::Zh, ALL);
         notice(&mut screen, "重置还没有接上");
         // One line of glyphs and nothing else: the list is gone, so a press
         // that could not be carried out does not look like a redraw.
@@ -391,7 +452,7 @@ mod tests {
         let (w, h) = (400u32, 800u32);
         for lang in BOTH {
             let mut screen = Screen::new(w, h);
-            draw(&mut screen, View::List { sel: 0 }, lang);
+            draw(&mut screen, View::List { sel: 0 }, lang, ALL);
 
             let lit_at = |y: u32| (0..w).any(|x| screen.data[((y * w + x) * 4) as usize] != 0);
             let rows: Vec<u32> = (0..h).filter(|&y| lit_at(y)).collect();
@@ -406,7 +467,7 @@ mod tests {
         let (w, h) = (1200u32, 2608u32);
         for lang in BOTH {
             let mut screen = Screen::new(w, h);
-            draw(&mut screen, View::List { sel: 0 }, lang);
+            draw(&mut screen, View::List { sel: 0 }, lang, ALL);
             let start = top(h) as u32;
             let mut top_y = start;
             for (line, what) in list(0, lang).iter().enumerate() {
@@ -431,7 +492,7 @@ mod tests {
                 (Crash::Startup, ["Skyward-Extra has failed to startup.", "Skyward-Extra 启动失败了。"]),
                 (Crash::Runtime, ["Skyward-Extra stopped while running.", "Skyward-Extra 已停止运行。"]),
             ] {
-                let lines = failure(crash, 139, lang);
+                let lines = failure(crash, 139, None, lang);
                 assert_eq!(lines[0].text(), lang.pick(what), "{lang:?}: the screen names which case it was");
                 assert_eq!(lines[1].text(), format!("{} 139", lang.pick(["Error code:", "错误代码:"])), "{lang:?}");
                 let n = lines.len();
@@ -445,8 +506,8 @@ mod tests {
     #[test]
     fn the_two_failures_differ_only_in_the_first_line() {
         for lang in BOTH {
-            let startup = failure(Crash::Startup, 139, lang);
-            let runtime = failure(Crash::Runtime, 139, lang);
+            let startup = failure(Crash::Startup, 139, None, lang);
+            let runtime = failure(Crash::Runtime, 139, None, lang);
             assert_ne!(startup[0].text(), runtime[0].text(), "{lang:?}: which case it was is said");
             // Same stop code, same blank, same key: one layout with a different
             // verdict on top, not two designs.
@@ -455,9 +516,76 @@ mod tests {
     }
 
     #[test]
+    fn a_stop_of_its_own_leaves_a_reason_between_the_code_and_the_way_out() {
+        for lang in BOTH {
+            let plain = failure(Crash::Runtime, 67, None, lang);
+            let said = failure(Crash::Runtime, 67, Some(Reason::Music), lang);
+            // A phone that fell over leaves nothing to say; one that stopped
+            // on purpose says which app, in a paragraph of its own.
+            assert_eq!(plain.len(), 5, "{lang:?}: what happened, the code, a blank, the way out");
+            assert_eq!(said.len(), 7, "{lang:?}: and two rows for the reason");
+            assert_eq!(&said[..3], &plain[..3], "{lang:?}: nothing above the reason moves");
+            assert_eq!(said[3].text(), Reason::Music.label(lang), "{lang:?}: the app is named");
+            assert_eq!(said[4].text(), "", "{lang:?}: a row of air under it");
+            assert_eq!(&said[5..], &plain[3..], "{lang:?}: the way out is where it was");
+        }
+    }
+
+    #[test]
+    fn every_reason_lands_on_the_same_row() {
+        // Three apps, one layout: the panel must not move depending on which
+        // icon was tapped.
+        for lang in BOTH {
+            for reason in [Reason::Music, Reason::Browser, Reason::Tasks] {
+                let lines = failure(Crash::Runtime, 67, Some(reason), lang);
+                assert_eq!(lines.len(), 7, "{lang:?} {reason:?}");
+                assert_eq!(lines[3].text(), reason.label(lang), "{lang:?} {reason:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_panel_is_printed_in_the_order_it_is_read() {
+        let (w, h) = (1200u32, 2608u32);
+        for lang in BOTH {
+            let view = View::Failure { crash: Crash::Runtime, code: 67, reason: Some(Reason::Music) };
+            let lines = failure(Crash::Runtime, 67, Some(Reason::Music), lang);
+            let total: usize = lines
+                .iter()
+                .map(|line| match line {
+                    Line::Words(text, _) => text.chars().count(),
+                    Line::Rule => 1,
+                })
+                .sum();
+            let ends = steps(view, lang);
+            assert_eq!(ends.len(), lines.len(), "{lang:?}: one step a line");
+            assert_eq!(*ends.last().expect("a failure holds lines"), total, "{lang:?}: and the steps add up to the view");
+
+            // Nothing is on the panel before the printing starts.
+            let mut blank = Screen::new(w, h);
+            draw(&mut blank, view, lang, 0);
+            assert!(blank.data.as_chunks::<4>().0.iter().all(|px| *px == [0, 0, 0, 0xff]), "{lang:?}: a blank panel to print onto");
+
+            // Part way, what is up is the start of the screen and nothing
+            // after it: a console does not put the last line up first.
+            let mut part = Screen::new(w, h);
+            draw(&mut part, view, lang, ends[0] - 1);
+            let below = top(h) as u32 + LINE_H;
+            assert!(!(below..h).any(|y| (0..w).any(|x| part.data[((y * w + x) * 4) as usize] != 0)), "{lang:?}: nothing below an unfinished line");
+
+            // And the last step is the whole screen, character for character.
+            let mut all = Screen::new(w, h);
+            draw(&mut all, view, lang, ALL);
+            let mut done = Screen::new(w, h);
+            draw(&mut done, view, lang, total);
+            assert_eq!(all.data, done.data, "{lang:?}: counted to the end is the whole view");
+        }
+    }
+
+    #[test]
     fn a_failure_is_not_the_menu_with_a_line_on_top() {
         for lang in BOTH {
-            let lines = failure(Crash::Runtime, 101, lang);
+            let lines = failure(Crash::Runtime, 101, None, lang);
             // Its own words, not the menu's: a failure screen that still offers
             // "Continue Startup" invites a press that goes nowhere.
             assert!(lines.iter().all(|line| line.text() != lang.pick(TITLE)), "{lang:?}: no title");
@@ -469,25 +597,28 @@ mod tests {
     }
 
     #[test]
-    fn a_failure_is_five_lines_of_white_on_black() {
+    fn a_failure_is_white_on_black_and_stops_after_its_last_line() {
         let (w, h) = (1200u32, 2608u32);
         for lang in BOTH {
             for crash in [Crash::Startup, Crash::Runtime] {
-                let mut screen = Screen::new(w, h);
-                draw(&mut screen, View::Failure { crash, code: 139 }, lang);
-                // What happened, the code, a blank, how to leave: five rows of
-                // cells and nothing under them.
-                let lines = failure(crash, 139, lang).len();
-                assert_eq!(lines, 5);
-                let below = top(h) as u32 + lines as u32 * LINE_H;
-                let lit = |y: u32| (0..w).any(|x| screen.data[((y * w + x) * 4) as usize] != 0);
-                assert!((0..h).any(lit), "{lang:?} {crash:?}: draws something");
-                assert!(!(below..h).any(lit), "{lang:?} {crash:?}: stops after the last line");
-                let pixels = screen.data.as_chunks::<4>().0;
-                assert!(
-                    pixels.iter().all(|px| *px == [0, 0, 0, 0xff] || *px == [0xff; 4]),
-                    "{lang:?} {crash:?}: one colour, no grey"
-                );
+                for (reason, count) in [(None, 5), (Some(Reason::Tasks), 7)] {
+                    let mut screen = Screen::new(w, h);
+                    draw(&mut screen, View::Failure { crash, code: 67, reason }, lang, ALL);
+                    // What happened, the code, a blank, the reason where
+                    // there is one, and how to leave: rows of cells and
+                    // nothing under them.
+                    let lines = failure(crash, 67, reason, lang).len();
+                    assert_eq!(lines, count, "{lang:?} {crash:?} {reason:?}");
+                    let below = top(h) as u32 + lines as u32 * LINE_H;
+                    let lit = |y: u32| (0..w).any(|x| screen.data[((y * w + x) * 4) as usize] != 0);
+                    assert!((0..h).any(lit), "{lang:?} {crash:?}: draws something");
+                    assert!(!(below..h).any(lit), "{lang:?} {crash:?}: stops after the last line");
+                    let pixels = screen.data.as_chunks::<4>().0;
+                    assert!(
+                        pixels.iter().all(|px| *px == [0, 0, 0, 0xff] || *px == [0xff; 4]),
+                        "{lang:?} {crash:?}: one colour, no grey"
+                    );
+                }
             }
         }
     }
@@ -508,9 +639,13 @@ mod tests {
             strings.extend(ITEMS.iter().map(|item| item.label(lang).to_string()));
             strings.extend(ITEMS.iter().flat_map(|item| [format!("{}{}", item.label(lang), lang.pick(["?", "？"])), item.label(lang).to_string()]));
             strings.extend([lang.pick(["No", "否"]).to_string(), lang.pick(["Yes", "是"]).to_string()]);
-            strings.extend([lang.pick(["Error code:", "错误代码:"]).to_string(), "139".to_string(), "-2147483648".to_string()]);
+            strings.extend([lang.pick(["Error code:", "错误代码:"]).to_string(), "139".to_string(), "67".to_string(), "-2147483648".to_string()]);
+            for reason in [Reason::Music, Reason::Browser, Reason::Tasks] {
+                strings.push(reason.label(lang).to_string());
+            }
             for crash in [Crash::Startup, Crash::Runtime] {
-                strings.extend(failure(crash, 139, lang).into_iter().map(|line| line.text().to_string()));
+                strings.extend(failure(crash, 139, None, lang).into_iter().map(|line| line.text().to_string()));
+                strings.extend(failure(crash, 67, Some(Reason::Tasks), lang).into_iter().map(|line| line.text().to_string()));
             }
 
             for text in strings {

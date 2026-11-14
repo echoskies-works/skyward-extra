@@ -87,6 +87,62 @@ pub enum Crash {
     Runtime,
 }
 
+/// Why Aether stopped, when it stopped on purpose.
+///
+/// A number cannot say this: 67 is one code for one thing — an app that is
+/// named on the desktop and not built yet — and three icons stop the same
+/// way. So the app is said in words, and the words are written here rather
+/// than in Aether's own crate: the panel is the one that prints them, in the
+/// language the panel speaks, and Aether only leaves the word for the app
+/// behind. [`Reason::tag`] is that word, and it is what Aether writes.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Reason {
+    /// The player.
+    Music,
+    /// The browser.
+    Browser,
+    /// The tasks page.
+    Tasks,
+}
+
+impl Reason {
+    /// The line on the panel, after "Error code: 67" and a row of air.
+    ///
+    /// Said the way a person would say it, and about the app rather than
+    /// about the code: whoever tapped the icon knows which one they tapped,
+    /// and what they need to be told is that it is not their phone that is
+    /// broken.
+    pub fn label(self, lang: Lang) -> &'static str {
+        lang.pick(match self {
+            Reason::Music => ["The player is not built yet.", "音乐还没做好"],
+            Reason::Browser => ["The browser is not built yet.", "浏览器还没做好"],
+            Reason::Tasks => ["The tasks page is not built yet.", "任务管理器还没做好"],
+        })
+    }
+
+    /// The word Aether writes in its stop note. Short, lower case and
+    /// ASCII, since it travels through a file rather than through the panel.
+    pub fn tag(self) -> &'static str {
+        match self {
+            Reason::Music => "music",
+            Reason::Browser => "browser",
+            Reason::Tasks => "tasks",
+        }
+    }
+
+    /// The word back into the app, for the note Aether left behind. An
+    /// unknown word is no reason at all rather than a wrong one: a note
+    /// written by a newer Aether than this panel knows still leaves the
+    /// code on the screen, which is the part that narrows anything down.
+    pub fn from_tag(tag: &str) -> Option<Reason> {
+        ALL.into_iter().find(|reason| reason.tag() == tag.trim())
+    }
+}
+
+/// Every reason there is, so the words the panel prints and the words Aether
+/// writes stay in one list.
+const ALL: [Reason; 3] = [Reason::Music, Reason::Browser, Reason::Tasks];
+
 /// What is on the screen right now.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum View {
@@ -98,7 +154,14 @@ pub enum View {
     /// Aether died, and `code` is what it left behind. No cursor and no
     /// list: there is one key to press and one thing it does, so the panel
     /// only has to say so.
-    Failure { crash: Crash, code: i32 },
+    Failure {
+        crash: Crash,
+        code: i32,
+        /// Why, where it stopped on purpose. Nothing is said when it did
+        /// not: a phone that fell over has no reason line to give, and the
+        /// screen is a row shorter for it.
+        reason: Option<Reason>,
+    },
 }
 
 /// The cursor and, when a destructive item has been pressed, the question.
@@ -264,5 +327,40 @@ mod tests {
         menu.key(Key::Power);
         assert_eq!(menu.view(), View::List { sel: 1 });
         assert_eq!(menu.key(Key::Power), Step::Redraw, "asking again, not going through");
+    }
+
+    #[test]
+    fn a_reason_and_its_word_are_the_same_app() {
+        // Aether writes the word and the panel prints the line, so the two
+        // have to name the same app: a note that reads "music" and a screen
+        // that says the browser is worse than no reason line at all.
+        for reason in [Reason::Music, Reason::Browser, Reason::Tasks] {
+            assert_eq!(Reason::from_tag(reason.tag()), Some(reason), "{reason:?}");
+            for lang in [Lang::En, Lang::Zh] {
+                assert!(!reason.label(lang).is_empty(), "{reason:?} {lang:?}");
+            }
+        }
+        // The note is a line of a file, so it arrives with a newline on it.
+        assert_eq!(Reason::from_tag("music\n"), Some(Reason::Music));
+        // A word this panel does not know is no reason at all, rather than a
+        // wrong one: the code on the screen is still right.
+        assert_eq!(Reason::from_tag("telephone"), None);
+        assert_eq!(Reason::from_tag(""), None);
+    }
+
+    #[test]
+    fn every_reason_says_what_the_app_is_in_each_language() {
+        // The words themselves, not just that they exist: these are the lines
+        // a person reads after tapping an icon, and they are said about the
+        // app rather than about the code.
+        let said = [
+            (Reason::Music, ["The player is not built yet.", "音乐还没做好"]),
+            (Reason::Browser, ["The browser is not built yet.", "浏览器还没做好"]),
+            (Reason::Tasks, ["The tasks page is not built yet.", "任务管理器还没做好"]),
+        ];
+        for (reason, [en, zh]) in said {
+            assert_eq!(reason.label(Lang::En), en);
+            assert_eq!(reason.label(Lang::Zh), zh);
+        }
     }
 }

@@ -8,7 +8,7 @@ use skyward_net::reach::Reach;
 use skyward_net::release::{Release, Unanswered};
 use skyward_net::supplicant::Security;
 use skyward_net::wlan::{Bands, Joined, Link, Network, Power, Stage as Joining, Traffic, Wlan};
-use skyward_startup::{Action as StartupAction, Crash as StartupCrash, Lang as StartupLang, View as StartupView};
+use skyward_startup::{Action as StartupAction, Crash as StartupCrash, Lang as StartupLang, Reason as StartupReason, View as StartupView};
 use skyward_systems::{Named, Other, Overview, Who};
 use skyward_ui::app::{
     Action, Adding, App, Asked, BackupAt, BackupEnd, BackupEntry, BackupJob, BackupRefusal, Choice, Clip, ClockFace, Damage, Data,
@@ -281,14 +281,16 @@ fn main() -> Result<()> {
     // preview that is not Aether's own screen, and they are drawn by a
     // different crate. Keeping them next to the 250-odd pages they have
     // nothing to do with made them look like one more page.
-    let startup: [(&str, StartupView); 4] = [
+    let startup: [(&str, StartupView); 5] = [
         ("00p-startup-menu", StartupView::List { sel: 0 }),
         ("00q-startup-reset", StartupView::Confirm { action: StartupAction::Reset, yes: false }),
-        // Nothing draws these on the phone yet: the menu still hands the
-        // panel over with exec, so there is no parent left to catch the exit
-        // code. The layout is settled, the wiring is not.
-        ("00r-startup-failed", StartupView::Failure { crash: StartupCrash::Startup, code: 139 }),
-        ("00s-system-crashed", StartupView::Failure { crash: StartupCrash::Runtime, code: 139 }),
+        // What a system that fell over leaves: no reason, because a phone
+        // that fell over has nothing to say.
+        ("00r-startup-failed", StartupView::Failure { crash: StartupCrash::Startup, code: 139, reason: None }),
+        ("00s-system-crashed", StartupView::Failure { crash: StartupCrash::Runtime, code: 139, reason: None }),
+        // And one that stopped on purpose: 67 is the code for an app on the
+        // desktop that is not built, and the line under it says which.
+        ("00t-system-stopped", StartupView::Failure { crash: StartupCrash::Runtime, code: 67, reason: Some(StartupReason::Music) }),
     ];
     let outside = out.join("startup");
     std::fs::create_dir_all(&outside)?;

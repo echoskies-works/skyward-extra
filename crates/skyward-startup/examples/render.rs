@@ -5,9 +5,10 @@
 //! ```
 //!
 //! Views: `list`, `confirm`, `yes`, `fail` (never started), `crash` (died
-//! while running). Languages: `zh` (the default), `en`.
+//! while running), `stop` (stopped on purpose, for an app not built yet).
+//! Languages: `zh` (the default), `en`.
 
-use skyward_startup::{render, Action, Crash, Lang, View};
+use skyward_startup::{render, Action, Crash, Lang, Reason, View};
 use std::io::Write;
 
 fn main() {
@@ -17,11 +18,12 @@ fn main() {
     let view = match args.next().as_deref() {
         Some("confirm") => View::Confirm { action: Action::Reset, yes: false },
         Some("yes") => View::Confirm { action: Action::PowerOff, yes: true },
-        Some("fail") => View::Failure { crash: Crash::Startup, code: 139 },
-        Some("crash") => View::Failure { crash: Crash::Runtime, code: 139 },
+        Some("fail") => View::Failure { crash: Crash::Startup, code: 139, reason: None },
+        Some("crash") => View::Failure { crash: Crash::Runtime, code: 139, reason: None },
+        Some("stop") => View::Failure { crash: Crash::Runtime, code: 67, reason: Some(Reason::Music) },
         Some("list") | None => View::List { sel: 0 },
         Some(other) => {
-            eprintln!("unknown view {other:?}: list, confirm, yes, fail or crash");
+            eprintln!("unknown view {other:?}: list, confirm, yes, fail, crash or stop");
             std::process::exit(2);
         }
     };
