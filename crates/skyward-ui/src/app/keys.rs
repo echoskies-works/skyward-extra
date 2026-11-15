@@ -58,6 +58,16 @@ impl App {
         if self.frame.is_none() {
             return Vec::new();
         }
+        // With the volume keys turned to the volume, they turn the media
+        // volume up and down and put up the panel, instead of moving the
+        // light from control to control.
+        if !self.state.volume_keys {
+            let step = if down { -1 } else { 1 };
+            self.state.media_volume = (self.state.media_volume as i16 + step).clamp(0, 15) as u8;
+            self.volume_bar = Some(now + VOLUME_BAR_MS);
+            self.dirty = true;
+            return Vec::new();
+        }
         if self.adjusting {
             if let Some(Spot { stop: Stop::Hit(Action::Slider(which)), rect, .. }) = self.lit() {
                 let level = self.level(which) + if down { -SLIDER_STEP } else { SLIDER_STEP };

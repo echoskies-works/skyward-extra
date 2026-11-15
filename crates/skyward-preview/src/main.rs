@@ -1194,7 +1194,7 @@ fn main() -> Result<()> {
     }
 
     // The panel mid-gesture, to set beside recordings of the same moves.
-    let moments: [Moment; 35] = [
+    let moments: [Moment; 37] = [
         // A page pulled off the screen by its foot, the desktop come in
         // under it: four frames of the one move, the page gone up by about a
         // quarter, a half, three quarters and all but its last strip. The
@@ -1336,6 +1336,27 @@ fn main() -> Result<()> {
             app.touch(Touch::Up, f, 150);
             let keys = [Cap::Space, Cap::Show(Layer::Digits), Cap::Char('-'), Cap::Show(Layer::Letters), Cap::Char('x')];
             type_keys(app, f, &info, &keys, 300)
+        }),
+        // The volume panel over the desktop: the keys turned to the
+        // volume, a press up moves the media volume, and the panel shows.
+        // The media slider is the accent, the system one grey.
+        ("00-volume-panel-light", Screen::Desktop, false, &|app, f| {
+            app.state.volume_keys = false;
+            app.state.system_volume = 6;
+            app.state.media_volume = 10;
+            app.frame(f, &info);
+            let _ = app.key(Key::VolumeUp, 1000);
+            let _ = app.key_up(Key::VolumeUp, 1010);
+            1100
+        }),
+        ("00-volume-panel-dark", Screen::Desktop, true, &|app, f| {
+            app.state.volume_keys = false;
+            app.state.system_volume = 6;
+            app.state.media_volume = 10;
+            app.frame(f, &info);
+            let _ = app.key(Key::VolumeUp, 1000);
+            let _ = app.key_up(Key::VolumeUp, 1010);
+            1100
         }),
     ];
     // Each moment is drawn on its own, and one that breaks the page while

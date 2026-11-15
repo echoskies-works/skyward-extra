@@ -392,6 +392,13 @@ impl App {
         if let Some((text, _)) = &self.toast {
             widgets::toast(out, &t, f, text);
         }
+        if self.volume_bar.is_some() {
+            let l = self.state.lang;
+            let title = l.pick(["音量", "音量", "Volume"]);
+            let system = l.pick(["系统（铃声和音效）", "系統（鈴聲和音效）", "System (ringtone and sounds)"]);
+            let media = l.pick(["媒体（应用和音乐）", "媒體（應用和音樂）", "Media (apps and music)"]);
+            widgets::volume_bar(out, &t, f, title, system, media, self.state.system_volume, self.state.media_volume);
+        }
         match self.drag {
             Drag::Edge { start, from_left, armed, x, cy } => {
                 let travel = if from_left { x - start } else { start - x };
@@ -668,6 +675,13 @@ impl App {
         widgets::status_bar(out, &t, f, &self.bar(clock, info), t.pal.status, false);
         if let Some((text, _)) = &self.toast {
             widgets::toast(out, &t, f, text);
+        }
+        if self.volume_bar.is_some() {
+            let l = self.state.lang;
+            let title = l.pick(["音量", "音量", "Volume"]);
+            let system = l.pick(["系统（铃声和音效）", "系統（鈴聲和音效）", "System (ringtone and sounds)"]);
+            let media = l.pick(["媒体（应用和音乐）", "媒體（應用和音樂）", "Media (apps and music)"]);
+            widgets::volume_bar(out, &t, f, title, system, media, self.state.system_volume, self.state.media_volume);
         }
     }
 

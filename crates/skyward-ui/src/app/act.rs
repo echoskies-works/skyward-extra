@@ -136,6 +136,7 @@ impl App {
                     Switch::Signature => &mut self.state.check_signature,
                     Switch::KeepRecovery => &mut self.state.keep_recovery,
                     Switch::ShowPassword => &mut self.state.show_password,
+                    Switch::VolumeKeys => &mut self.state.volume_keys,
                     Switch::Wlan => unreachable!("the WLAN switch is turned above"),
                 };
                 *on = !*on;

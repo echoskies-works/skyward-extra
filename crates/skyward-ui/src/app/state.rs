@@ -23,6 +23,15 @@ pub struct State {
     /// How strongly the motor taps, from 0 at the slider's left end to 1
     /// at its right.
     pub vibration: f32,
+    /// The volume keys move the light from control to control when on, and
+    /// turn the volume up and down when off.
+    pub volume_keys: bool,
+    /// The system volume (the ringtone and the sound effects), in steps of
+    /// a fifteen-step span.
+    pub system_volume: u8,
+    /// The media volume (the apps and the music), in steps of the same
+    /// fifteen-step span.
+    pub media_volume: u8,
     /// A computer connected over USB is offered internal storage.
     pub file_transfer: bool,
     pub reboot: usize,
@@ -210,6 +219,9 @@ impl Default for State {
             time_zone: 0,
             vibrate: true,
             vibration: SLIDER_START,
+            volume_keys: true,
+            system_volume: 8,
+            media_volume: 8,
             file_transfer: true,
             reboot: 0,
             wipe: [false; WIPES.len()],

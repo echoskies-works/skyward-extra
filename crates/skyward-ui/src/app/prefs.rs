@@ -29,6 +29,9 @@ pub enum Switch {
     Wlan,
     /// Show the password typed rather than a dot for each character.
     ShowPassword,
+    /// The volume keys move the light from control to control, rather than
+    /// turning the volume up and down.
+    VolumeKeys,
 }
 
 /// How long the screen stays on with nothing touched, in milliseconds, in

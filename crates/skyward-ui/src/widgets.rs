@@ -943,6 +943,53 @@ pub fn toast(c: &mut Canvas, t: &Theme, f: &Fonts, text: &str) {
     c.text_center(&f.heading, text, m.w as f32 / 2.0, y + h / 2.0, px, Rgba::rgb(255, 255, 255));
 }
 
+/// A thick slider in a chosen fill colour: the stock one is the accent,
+/// and the volume panel uses the muted `track` grey for the volume the
+/// keys do not move.
+fn slider_in(c: &mut Canvas, t: &Theme, x: f32, top: f32, w: f32, value: f32, fill: Rgba) {
+    let m = &t.m;
+    let h = m.slider_h;
+    c.fill_round_rect(x, top, w, h, h / 2.0, t.pal.track);
+    let fw = (w * value.clamp(0.0, 1.0)).max(h);
+    c.fill_round_rect(x, top, fw, h, h / 2.0, fill);
+    c.fill_circle(x + fw - h / 2.0, top + h / 2.0, m.slider_knob / 2.0, Rgba::rgb(255, 255, 255));
+}
+
+/// The volume panel: a card floating centred over the page, with the
+/// system and the media volumes, each on a slider in the settings-card
+/// style — a monochrome caption, the label, then the track. The media
+/// volume, the one the keys move, is the accent; the system one is grey.
+/// The card is plain, its own colour, not blurred like the power menu's.
+#[allow(clippy::too_many_arguments)]
+pub fn volume_bar(c: &mut Canvas, t: &Theme, f: &Fonts, title: &str, system: &str, media: &str, system_v: u8, media_v: u8) {
+    let m = &t.m;
+    let (card_x, right) = (m.margin, m.w as f32 - m.margin);
+    let card_w = right - card_x;
+    let row_h = m.dp(72.0);
+    let title_h = m.dp(30.0);
+    let pad = m.dp(20.0);
+    let h = title_h + 2.0 * row_h + pad;
+    let top = (m.h as f32 - h) / 2.0;
+    c.fill_round_rect(card_x, top, card_w, h, m.card_radius, t.pal.card);
+
+    // The title, set like a card's account name.
+    c.text_vc(&f.heading, title, card_x + m.dp(28.0), top + m.dp(24.0), m.account_title_px, t.pal.text, None);
+
+    let track_x = card_x + m.inner;
+    let track_w = card_w - m.inner * 2.0;
+    for (k, (label, value, active, icon)) in [
+        (system, system_v, false, Icon::Clock),
+        (media, media_v, true, Icon::Music),
+    ].into_iter().enumerate() {
+        let lcy = top + title_h + m.dp(16.0) + k as f32 * row_h;
+        icons::glyph(c, icon, card_x + m.dp(28.0), lcy, m.dp(22.0), if active { t.pal.accent } else { t.pal.info });
+        c.text_vc(&f.heading, label, card_x + m.dp(53.7), lcy, m.account_title_px, t.pal.info, None);
+        let sy = lcy + m.dp(26.0);
+        let fill = if active { t.pal.accent } else { t.pal.track };
+        slider_in(c, t, track_x, sy, track_w, value as f32 / 15.0, fill);
+    }
+}
+
 /// The home page's search bar in `r`, at `level` of its strength, without
 /// its icon and words: those are laid over it from [`search_words`].
 pub fn search_bar(c: &mut Canvas, t: &Theme, r: Rect, level: f32) {

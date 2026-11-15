@@ -191,7 +191,7 @@ const LANGUAGE: Text = ["语言", "語言", "Language"];
 const TIME_ZONE: Text = ["时区", "時區", "Time zone"];
 const PERSONALIZATION: Text = ["个性化选项", "個人化選項", "Personalization"];
 const RINGTONE: Text = ["铃声", "鈴聲", "Ringtone"];
-const SOUND_EFFECTS: Text = ["音效", "音效", "Sound effects"];
+const SOUND_EFFECTS: Text = ["通知声音", "通知聲音", "Notification sounds"];
 const WALLPAPER_TITLE: Text = ["壁纸", "桌布", "Wallpaper"];
 const LICENSE: Text = ["开源许可", "開放原始碼授權", "Open source licenses"];
 const FONTS: Text = ["界面字体", "介面字型", "UI fonts"];
@@ -866,11 +866,12 @@ pub fn settings(cx: &Ctx) -> Frame {
     }
     y = widgets::section(&mut c, t, f, vibration.bottom, l.pick(["通用", "一般", "General"]));
     let general = widgets::list(&mut c, t, f, y, &[
+        Row::new(l.pick(["音量键用作光标", "音量鍵用作游標", "Volume keys move the light"])).icon(SLATE, Icon::More).trail(Trail::Switch(s.volume_keys)),
         Row::new(l.pick(PERSONALIZATION)).icon(PURPLE, Icon::More),
         Row::new(l.pick(LANGUAGE)).icon(BLUE, Icon::Globe).trail(Trail::Value(l.name())),
         Row::new(l.pick(TIME_ZONE)).icon(ORANGE, Icon::Clock).trail(Trail::Value(l.pick(TIME_ZONES[s.time_zone].0))),
     ]);
-    out.extend(hits(&general.rows, &[Action::Open(Screen::Personalization), Action::Open(Screen::Language), Action::Open(Screen::TimeZone)]));
+    out.extend(hits(&general.rows, &[Action::Toggle(Switch::VolumeKeys), Action::Open(Screen::Personalization), Action::Open(Screen::Language), Action::Open(Screen::TimeZone)]));
     y = widgets::section(&mut c, t, f, general.bottom, "USB");
     let usb = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(["文件传输", "檔案傳輸", "File transfer"])).icon(BLUE, Icon::Usb).trail(Trail::Switch(s.file_transfer))]);
     out.extend(hits(&usb.rows, &[Action::Toggle(Switch::FileTransfer)]));

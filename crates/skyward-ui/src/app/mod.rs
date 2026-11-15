@@ -715,6 +715,8 @@ enum Press {
 }
 
 const TOAST_MS: u64 = 2000;
+/// The volume panel stays up this long after the last volume key.
+const VOLUME_BAR_MS: u64 = 1500;
 /// How long a text field's cursor shows and then hides, as the stock
 /// fields blink it.
 const BLINK_MS: u64 = 500;
@@ -1178,6 +1180,9 @@ pub struct App {
     /// The About page field's dither, made for the screen once.
     dither: Option<glow::Dither>,
     toast: Option<(String, u64)>,
+    /// The volume panel showing until this time, after a volume key moved
+    /// it while the keys turn the volume.
+    volume_bar: Option<u64>,
     drag: Drag,
     tracker: Tracker,
     /// The page gliding on after a flick.
@@ -1320,6 +1325,7 @@ impl App {
             unsaved_warned: None,
             dither: None,
             toast: None,
+            volume_bar: None,
             drag: Drag::Idle,
             tracker: Tracker::default(),
             fling: None,
@@ -1473,7 +1479,7 @@ impl App {
         // a time while the count on it runs, rather than waiting for the
         // fallback below, which is a whole second.
         let ticking = (self.display_on && self.state.clock.running()).then(|| now + clock::step(&self.state.clock, now));
-        [self.toast.as_ref().map(|t| t.1), easing, self.idle_due(), held, repeat, blink, darkens, chord, menu, ticking]
+        [self.toast.as_ref().map(|t| t.1), self.volume_bar, easing, self.idle_due(), held, repeat, blink, darkens, chord, menu, ticking]
             .into_iter()
             .flatten()
             .min()
@@ -1564,6 +1570,10 @@ impl App {
         }
         if self.toast.as_ref().is_some_and(|m| now >= m.1) {
             self.toast = None;
+            self.dirty = true;
+        }
+        if self.volume_bar.is_some_and(|m| now >= m) {
+            self.volume_bar = None;
             self.dirty = true;
         }
         if self.blink_at(now).is_some_and(|(on, _)| on != self.caret_shown) || self.morph.is_some() || self.turn.is_some() {
