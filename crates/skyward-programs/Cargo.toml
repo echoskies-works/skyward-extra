@@ -11,7 +11,7 @@ roxmltree = "0.21.2"
 skyward-config = { path = "../skyward-config" }
 # The name of the secure element service a phone's weaver may go through,
 # which the recovery serves.
-skyward-omapi = { path = "../skyward-omapi" }
+# skyward-omapi = { path = "../skyward-omapi" }
 
 [dev-dependencies]
 # Looks the accounts the programs run as up as the recovery does on the

@@ -2635,7 +2635,6 @@ dependencies = [
  "anyhow",
  "roxmltree",
  "skyward-config",
- "skyward-omapi",
  "skyward-sys",
  "tempfile",
 ]

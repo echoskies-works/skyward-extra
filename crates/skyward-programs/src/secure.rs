@@ -32,7 +32,7 @@ const EMBEDDED: &str = "eSE";
 
 /// Android's secure element service, which in the system an app serves and
 /// in a recovery the recovery does.
-const ELEMENT_SERVICE: &str = skyward_omapi::SERVICE;
+const ELEMENT_SERVICE: &str = "android.se.omapi.ISecureElementService/default";
 
 /// Which of a service the recovery asks: the one every phone has.
 const INSTANCE: &str = "default";

@@ -15,3 +15,5 @@ NOTES.md
 TODO.md
 *.draft.md
 notes/
+# 官方原厂 recovery/镜像等本地参考素材，不进仓库
+stock/

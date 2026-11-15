@@ -1,11 +1,16 @@
 use anyhow::{bail, Context, Result};
 use cpio::{NewcBuilder, NewcReader};
+#[cfg(unix)]
 use std::ffi::{CString, OsStr};
+#[cfg(unix)]
 use std::fs;
 use std::io::{Cursor, Read, Write};
+#[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
+#[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
+#[cfg(unix)]
 use std::process::{Command, Stdio};
 
 /// One cpio entry with the metadata the kernel restores when it unpacks the
@@ -27,9 +32,13 @@ const S_IFMT: u32 = 0o170000;
 const S_IFDIR: u32 = 0o040000;
 const S_IFREG: u32 = 0o100000;
 const S_IFLNK: u32 = 0o120000;
+#[cfg(unix)]
 const S_IFCHR: u32 = 0o020000;
+#[cfg(unix)]
 const S_IFBLK: u32 = 0o060000;
+#[cfg(unix)]
 const S_IFIFO: u32 = 0o010000;
+#[cfg(unix)]
 const S_IFSOCK: u32 = 0o140000;
 
 /// The permissions a stock ramdisk gives its links, such as the commands
@@ -84,7 +93,18 @@ impl Ramdisk {
     /// with the reference `lz4` tool in legacy framing (the kernel's initramfs
     /// unpacker reads no other LZ4 framing) at its highest compression.
     pub fn encode(&self) -> Result<Vec<u8>> {
-        lz4_tool(&self.archive()?)
+        let archive = self.archive()?;
+        // The reference tool compresses tighter, so the images the releases
+        // are built from go through it; a computer without it packs the
+        // same framing in process, which the kernel reads just the same.
+        #[cfg(unix)]
+        {
+            lz4_tool(&archive)
+        }
+        #[cfg(not(unix))]
+        {
+            Ok(lz4_legacy(&archive))
+        }
     }
 
     /// Pack as a newc archive, uncompressed.
@@ -115,6 +135,7 @@ impl Ramdisk {
         self.entries.iter().find(|e| e.name == name)
     }
 
+    #[cfg(unix)]
     /// Unpack the archive over `root`, as the kernel unpacks each archive of
     /// an initramfs over those before it: an entry takes the place of what
     /// is there of another kind, a folder already there stays, and each
@@ -192,10 +213,12 @@ fn root_entry(name: &str, mode: u32, data: Vec<u8>) -> Entry {
     Entry { name: name.to_string(), mode, uid: 0, gid: 0, mtime: 0, nlink, dev: (0, 0), rdev: (0, 0), data }
 }
 
+#[cfg(unix)]
 fn c_path(path: &Path) -> Result<CString> {
     CString::new(path.as_os_str().as_bytes()).context("a NUL in the path")
 }
 
+#[cfg(unix)]
 /// One entry of [`Ramdisk::unpack`] at `path`.
 fn unpack(e: &Entry, path: &Path) -> Result<()> {
     let kind = e.mode & S_IFMT;
@@ -241,6 +264,7 @@ fn unpack(e: &Entry, path: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
 /// Give `path` itself, a link or not, `mtime` as the time it was last
 /// changed and read.
 fn set_time(path: &Path, mtime: u32) -> Result<()> {
@@ -275,6 +299,7 @@ pub fn lz4_legacy(input: &[u8]) -> Vec<u8> {
     out
 }
 
+#[cfg(unix)]
 fn lz4_tool(input: &[u8]) -> Result<Vec<u8>> {
     let mut child = Command::new("lz4")
         .args(["-l", "-12", "--favor-decSpeed", "-c"])
@@ -291,6 +316,16 @@ fn lz4_tool(input: &[u8]) -> Result<Vec<u8>> {
         bail!("lz4 exited with {}", out.status);
     }
     Ok(out.stdout)
+}
+
+/// A computer that is not a Unix never unpacks a ramdisk: there the archive
+/// is changed in memory and written back out, and only the phone puts one on
+/// a filesystem.
+#[cfg(not(unix))]
+impl Ramdisk {
+    pub fn unpack(&self, _root: &Path) -> Result<()> {
+        bail!("a ramdisk is unpacked into a filesystem on the phone, not on a computer")
+    }
 }
 
 #[cfg(test)]
@@ -372,11 +407,13 @@ mod tests {
     }
 
     /// An entry owned by whoever runs the tests, who can give it that owner.
+    #[cfg(unix)]
     fn mine(name: &str, mode: u32, data: &[u8]) -> Entry {
         let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
         Entry { name: name.into(), mode, uid, gid, mtime: 1_500_000_000, nlink: 1, dev: (0, 0), rdev: (0, 0), data: data.to_vec() }
     }
 
+    #[cfg(unix)]
     #[test]
     fn unpacking_over_an_archive_unpacked_before_follows_the_kernel() {
         use std::os::unix::fs::{FileTypeExt, MetadataExt};
@@ -420,6 +457,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_folder_with_files_in_it_keeps_its_place() {
         let dir = tempfile::tempdir().unwrap();
