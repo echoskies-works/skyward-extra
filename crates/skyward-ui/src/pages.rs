@@ -366,12 +366,15 @@ pub fn desktop(cx: &Ctx) -> Frame {
 
     // The grid, measured off a phone's own desktop at 1080 wide: a tile
     // 164 px square with 90 px between tiles, so four tiles and their gaps
-    // come to 925 px and leave 77 px at each side; a row is 299 px apart.
+    // come to 925 px and leave 77 px at each side; a row is 275 px apart,
+    // tile and name together, so the gap between one row's name and the
+    // next row's tile is what a phone leaves rather than the tile's own
+    // height carried down.
     let tile = m.dp(62.5);
     let gap = m.dp(34.2);
     let row_w = tile * DESKTOP_COLS as f32 + gap * (DESKTOP_COLS - 1) as f32;
     let margin_x = (m.w as f32 - row_w) / 2.0;
-    let row_h = m.dp(113.9);
+    let row_h = m.dp(104.8);
     // The first row clears the status bar, but not by much: a phone's own
     // desktop puts its first row of tiles close under the bar rather than
     // leaving a band of empty wallpaper above it. `bar_bottom` is where a
