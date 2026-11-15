@@ -75,6 +75,7 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::Clock => clock(cx),
         Screen::Home => home(cx),
         Screen::Settings => settings(cx),
+        Screen::Personalization => personalization(cx),
         Screen::Reboot => reboot(cx),
         Screen::Wipe => wipe(cx),
         Screen::Mount => mount(cx),
@@ -188,6 +189,10 @@ const FILES: Text = ["文件管理", "檔案管理", "File manager"];
 const TERMINAL: Text = ["终端", "終端機", "Terminal"];
 const LANGUAGE: Text = ["语言", "語言", "Language"];
 const TIME_ZONE: Text = ["时区", "時區", "Time zone"];
+const PERSONALIZATION: Text = ["个性化选项", "個人化選項", "Personalization"];
+const RINGTONE: Text = ["铃声", "鈴聲", "Ringtone"];
+const SOUND_EFFECTS: Text = ["音效", "音效", "Sound effects"];
+const WALLPAPER_TITLE: Text = ["壁纸", "桌布", "Wallpaper"];
 const LICENSE: Text = ["开源许可", "開放原始碼授權", "Open source licenses"];
 const FONTS: Text = ["界面字体", "介面字型", "UI fonts"];
 const DUAL_BOOT: Text = ["双系统", "雙系統", "Dual boot"];
@@ -861,10 +866,11 @@ pub fn settings(cx: &Ctx) -> Frame {
     }
     y = widgets::section(&mut c, t, f, vibration.bottom, l.pick(["通用", "一般", "General"]));
     let general = widgets::list(&mut c, t, f, y, &[
+        Row::new(l.pick(PERSONALIZATION)).icon(PURPLE, Icon::More),
         Row::new(l.pick(LANGUAGE)).icon(BLUE, Icon::Globe).trail(Trail::Value(l.name())),
         Row::new(l.pick(TIME_ZONE)).icon(ORANGE, Icon::Clock).trail(Trail::Value(l.pick(TIME_ZONES[s.time_zone].0))),
     ]);
-    out.extend(hits(&general.rows, &[Action::Open(Screen::Language), Action::Open(Screen::TimeZone)]));
+    out.extend(hits(&general.rows, &[Action::Open(Screen::Personalization), Action::Open(Screen::Language), Action::Open(Screen::TimeZone)]));
     y = widgets::section(&mut c, t, f, general.bottom, "USB");
     let usb = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(["文件传输", "檔案傳輸", "File transfer"])).icon(BLUE, Icon::Usb).trail(Trail::Switch(s.file_transfer))]);
     out.extend(hits(&usb.rows, &[Action::Toggle(Switch::FileTransfer)]));
@@ -3970,6 +3976,61 @@ pub fn time_zone(cx: &Ctx) -> Frame {
     let note = l.pick(["状态栏和各页面中的时间按所选时区显示。", "狀態列和各頁面中的時間按所選時區顯示。", "The status bar and the pages tell times in the zone chosen."]);
     let bottom = widgets::footnote(&mut c, t, f, list.bottom, note);
     Frame::new(t, fit(c, t, bottom), out, l.pick(TIME_ZONE), top)
+}
+
+/// The name of the wallpaper `path` points to, as the names file says it in
+/// the language the pages speak; where it says nothing, the file's own name.
+fn wallpaper_name(l: Lang, names: &skyward_config::WallpaperNames, kind: WallpaperKind, path: &str) -> String {
+    let file = Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or(path);
+    let named = match kind {
+        WallpaperKind::Desk => names.desk.get(file),
+        WallpaperKind::Lock => names.lock.get(file),
+    };
+    match named {
+        Some(n) if l == Lang::En => n.en.clone(),
+        Some(n) => n.zh.clone(),
+        None => file.to_string(),
+    }
+}
+
+/// Which of the two wallpapers a name is for: the desktop's or the lock
+/// screen's.
+#[derive(Clone, Copy)]
+enum WallpaperKind {
+    Desk,
+    Lock,
+}
+
+/// Sound, ring and wallpaper picked the way the user likes them: a place
+/// the three gather while each of them is not built yet. The ring and the
+/// sound effects wait on the audio, and the wallpaper shows its name but
+/// does not yet change.
+pub fn personalization(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = long_page(cx);
+    let top = t.m.content_top;
+    // The ring and the sound effects are placeholders: nothing plays yet,
+    // so their entries stand as rows that say they are not ready.
+    let y = widgets::section_first(&mut c, t, f, top, l.pick(["声音", "聲音", "Sound"]));
+    let sound = widgets::list(&mut c, t, f, y, &[
+        Row::new(l.pick(RINGTONE)).icon(BLUE, Icon::Music).trail(Trail::Value(l.pick(["未就绪", "未就緒", "Not ready"]))),
+        Row::new(l.pick(SOUND_EFFECTS)).icon(GREEN, Icon::Music).trail(Trail::Value(l.pick(["未就绪", "未就緒", "Not ready"]))),
+    ]);
+    // The rows tell where things stand but do not open anything yet.
+    let y = widgets::section(&mut c, t, f, sound.bottom, l.pick(WALLPAPER_TITLE));
+    let desk = wallpaper_name(l, &s.wallpaper_names, WallpaperKind::Desk, skyward_config::ramdisk::WALLPAPER);
+    let lock = wallpaper_name(l, &s.wallpaper_names, WallpaperKind::Lock, skyward_config::ramdisk::WALLPAPER_LOCK);
+    let wallpapers = widgets::list(&mut c, t, f, y, &[
+        Row::new(l.pick(["桌面壁纸", "桌面桌布", "Desktop wallpaper"])).icon(PURPLE, Icon::Phone).trail(Trail::Value(desk.as_str())),
+        Row::new(l.pick(["锁屏壁纸", "鎖定畫面桌布", "Lock screen wallpaper"])).icon(ORANGE, Icon::Lock).trail(Trail::Value(lock.as_str())),
+    ]);
+    let note = l.pick([
+        "声音和换壁纸尚未完成，这里只显示当前使用的壁纸名称。",
+        "聲音和換桌布尚未完成，這裡只顯示目前使用的桌布名稱。",
+        "Sound and changing the wallpaper are not done yet; this only shows the name of the wallpaper in use.",
+    ]);
+    let bottom = widgets::footnote(&mut c, t, f, wallpapers.bottom, note);
+    Frame::new(t, fit(c, t, bottom), Vec::new(), l.pick(PERSONALIZATION), top)
 }
 
 /// Saving the logs, as a bug report asks for them.

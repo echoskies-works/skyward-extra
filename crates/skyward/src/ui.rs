@@ -358,6 +358,13 @@ fn lock_wallpaper() -> Option<Canvas> {
     }
 }
 
+/// The wallpapers' names, as the「个性化选项」page shows them: a ramdisk
+/// without the names file leaves every name empty, which the page falls
+/// back from.
+fn wallpaper_names() -> skyward_config::WallpaperNames {
+    skyward_config::WallpaperNames::load(format!("/{}", skyward_config::ramdisk::WALLPAPERS_NAMES))
+}
+
 /// Read all the phone's details anew into `info`, which keeps what it has
 /// where they cannot be read.
 fn read_details(cfg: &DeviceConfig, info: &mut skyward_info::DeviceInfo, told: &mut skyward_sys::ToldOnce) -> Result<()> {
@@ -1376,6 +1383,7 @@ impl<'a> Pages<'a> {
         if let Some(picture) = lock_wallpaper() {
             app.set_lock_wallpaper(picture);
         }
+        app.state.wallpaper_names = wallpaper_names();
         app.set_screen_corners(cfg.display.corner_radius as f32);
         // The settings kept from the starts before are back before the first
         // frame, and before file transfer starts with its switch and the time

@@ -1,0 +1,10 @@
+# 每张壁纸的名字，双语：zh 中文、en 英文。
+# 壁纸图在 resources/wallpapers/ 下按 des 桌/ lock 锁屏 分目录，
+# 文件名与这里的键对应；「个性化选项」页读这里显示名字。
+
+[desk]
+starsky = { zh = "星空", en = "Starry Sky" }
+sunset = { zh = "日落", en = "Sunset" }
+
+[lock]
+night = { zh = "夜色", en = "Night" }

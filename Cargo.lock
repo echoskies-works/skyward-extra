@@ -2705,6 +2705,7 @@ dependencies = [
  "proc-macro2",
  "serde",
  "serde_json",
+ "skyward-config",
  "skyward-info",
  "skyward-install",
  "skyward-kms",

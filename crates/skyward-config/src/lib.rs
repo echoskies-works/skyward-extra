@@ -29,6 +29,10 @@ pub mod ramdisk {
     /// carries: its own, rather than the desktop's. A ramdisk that carries
     /// none lets the lock fall back to the desktop's wallpaper.
     pub const WALLPAPER_LOCK: &str = "skyward/wallpapers/night.png";
+    /// The names the wallpapers are known by, in the languages the pages
+    /// speak: the「个性化选项」page reads them to show which wallpaper is
+    /// in use.
+    pub const WALLPAPERS_NAMES: &str = "skyward/wallpapers/wallpaper.toml";
     /// The recovery service binary init starts.
     pub const RECOVERY: &str = "system/bin/recovery";
     /// The first program of a system installed beside the installed one,
@@ -507,6 +511,40 @@ pub fn codename(text: &str) -> Result<String> {
     }
     let named: Named = toml::from_str(text).context("parse device config")?;
     Ok(named.device.codename)
+}
+
+/// A wallpaper's name in the two languages the pages speak it: the desktop
+/// and the lock screen each hold one, and the「个性化选项」page shows the
+/// name of the one in use.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+pub struct WallpaperName {
+    #[serde(default)]
+    pub zh: String,
+    #[serde(default)]
+    pub en: String,
+}
+
+/// The names of the wallpapers the ramdisk carries, read from the file that
+/// travels with them. A ramdisk without it leaves every name empty, which
+/// the page falls back from to the file name.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+pub struct WallpaperNames {
+    #[serde(default)]
+    pub desk: HashMap<String, WallpaperName>,
+    #[serde(default)]
+    pub lock: HashMap<String, WallpaperName>,
+}
+
+impl WallpaperNames {
+    /// Read the names from `path`, which the ramdisk holds as
+    /// [`ramdisk::WALLPAPERS_NAMES`]. A file missing or unreadable is fine:
+    /// the names are a nicety, not something to keep the recovery from
+    /// starting for.
+    pub fn load(path: impl AsRef<Path>) -> Self {
+        let p = path.as_ref();
+        let Ok(text) = std::fs::read_to_string(p) else { return Self::default() };
+        toml::from_str(&text).unwrap_or_default()
+    }
 }
 
 impl DeviceConfig {

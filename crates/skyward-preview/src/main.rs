@@ -174,6 +174,8 @@ fn main() -> Result<()> {
             None
         }
     });
+    // The wallpapers' names, as the「个性化选项」page shows them.
+    let wallpaper_names = skyward_config::WallpaperNames::load(root.join("resources/wallpapers/wallpaper.toml"));
     let on_wallpaper = |screen: Screen, mut app: App| {
         let _ = screen;
         if let Some(picture) = &wallpaper {
@@ -182,6 +184,7 @@ fn main() -> Result<()> {
         if let Some(picture) = &lock_wallpaper {
             app.set_lock_wallpaper(picture.clone());
         }
+        app.state.wallpaper_names = wallpaper_names.clone();
         app
     };
 
@@ -204,7 +207,7 @@ fn main() -> Result<()> {
     let pattern = Data::Locked { user: 0, keys: Keys::Pattern, checking: false };
     // Whole pages, the way a long screenshot shows them. The About page's
     // field is drawn only on screen, so it appears among the moments below.
-    let shots: [Shot; 16] = [
+    let shots: [Shot; 17] = [
         ("00-desktop-light", Screen::Desktop, false, &info, Data::Open, &[]),
         ("00b-desktop-dark", Screen::Desktop, true, &info, Data::Open, &[]),
         ("00c-calculator-light", Screen::Calculator, false, &info, Data::Open, &[]),
@@ -213,6 +216,7 @@ fn main() -> Result<()> {
         ("02-home-light", Screen::Home, false, &info, Data::Open, &[]),
         ("03-home-dark-update-pending", Screen::Home, true, &pending, Data::Open, &[]),
         ("04-settings-light", Screen::Settings, false, &info, Data::Open, &[]),
+        ("04b-personalization-light", Screen::Personalization, false, &info, Data::Open, &[]),
         ("05-settings-dark", Screen::Settings, true, &info, Data::Open, &[]),
         ("06-reboot-dark", Screen::Reboot, true, &info, Data::Open, &[]),
         ("07-wipe-light", Screen::Wipe, false, &info, Data::Open, &[]),

@@ -152,6 +152,9 @@ jobs:
             --mono-license resources/fonts/KirkMono-OFL.txt \
             --brand resources/fonts/LexendDeca-VariableFont_wght.ttf --brand-license resources/fonts/LexendDeca-OFL.txt \
             --wallpaper resources/wallpapers/desk/starsky.png \
+            --wallpaper resources/wallpapers/desk/sunset.png \
+            --wallpaper resources/wallpapers/lock/night.png \
+            --wallpaper resources/wallpapers/wallpaper.toml \
             --out "out/$name.img"
           echo "name=$name" >> "$GITHUB_OUTPUT"
       # The image is the whole partition, flashed as it is, and most of it

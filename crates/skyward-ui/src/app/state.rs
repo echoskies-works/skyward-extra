@@ -192,6 +192,10 @@ pub struct State {
     pub calc: Calc,
     /// The clock's own state: which of its two faces the page shows.
     pub clock: Clock,
+    /// The wallpapers' names in the two languages the pages speak, read
+    /// from the ramdisk: the「个性化选项」page shows the one in use by
+    /// them.
+    pub wallpaper_names: skyward_config::WallpaperNames,
 }
 
 impl Default for State {
@@ -281,6 +285,7 @@ impl Default for State {
             traffic: Traffic::default(),
             calc: Calc::default(),
             clock: Clock::default(),
+            wallpaper_names: skyward_config::WallpaperNames::default(),
         }
     }
 }

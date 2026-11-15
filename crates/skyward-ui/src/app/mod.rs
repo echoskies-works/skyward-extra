@@ -101,6 +101,9 @@ pub enum Screen {
     Clock,
     Home,
     Settings,
+    /// Sound, ring and wallpaper picked the way the user likes them: a
+    /// temporary page while each of those is not built yet.
+    Personalization,
     Reboot,
     Wipe,
     /// Mounting and unmounting the slot's partitions.
