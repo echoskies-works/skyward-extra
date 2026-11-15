@@ -208,10 +208,10 @@ fn main() -> Result<()> {
     // Whole pages, the way a long screenshot shows them. The About page's
     // field is drawn only on screen, so it appears among the moments below.
     let shots: [Shot; 17] = [
-        ("00-desktop-light", Screen::Desktop, false, &info, Data::Open, &[]),
-        ("00b-desktop-dark", Screen::Desktop, true, &info, Data::Open, &[]),
-        ("00c-calculator-light", Screen::Calculator, false, &info, Data::Open, &[]),
-        ("00d-calculator-dark", Screen::Calculator, true, &info, Data::Open, &[]),
+        ("00-01-desktop-light", Screen::Desktop, false, &info, Data::Open, &[]),
+        ("00-01-desktop-dark", Screen::Desktop, true, &info, Data::Open, &[]),
+        ("00-02-calculator-light", Screen::Calculator, false, &info, Data::Open, &[]),
+        ("00-02-calculator-dark", Screen::Calculator, true, &info, Data::Open, &[]),
         ("01-decrypt-dark", Screen::Decrypt, true, &info, pattern, &[0, 3, 4, 5, 8]),
         ("02-home-light", Screen::Home, false, &info, Data::Open, &[]),
         ("03-home-dark-update-pending", Screen::Home, true, &pending, Data::Open, &[]),
@@ -241,9 +241,9 @@ fn main() -> Result<()> {
     // few entries on its paper, and the timer counting down from the
     // twenty-five minutes it was set for.
     let clock: [(&str, bool, ClockFace); 3] = [
-        ("00m-clock-stopwatch-light", false, ClockFace::Stopwatch),
-        ("00n-clock-stopwatch-dark", true, ClockFace::Stopwatch),
-        ("00o-clock-timer-light", false, ClockFace::Timer),
+        ("00-03-clock-stopwatch-light", false, ClockFace::Stopwatch),
+        ("00-03-clock-stopwatch-dark", true, ClockFace::Stopwatch),
+        ("00-03-clock-timer-light", false, ClockFace::Timer),
     ];
     for (name, dark, face) in clock {
         let mut app = opened(Screen::Clock, w, h, ppd);
@@ -277,9 +277,9 @@ fn main() -> Result<()> {
     // darkens a dark one. Each is composed twice — once for the picture the
     // lock keeps behind itself, once with the lock over it.
     let locks: [(&str, bool, Screen); 3] = [
-        ("00t-lock-light", false, Screen::Settings),
-        ("00u-lock-dark", true, Screen::Desktop),
-        ("00v-lock-dark-home", true, Screen::Home),
+        ("00-04-lock-light", false, Screen::Settings),
+        ("00-04-lock-dark", true, Screen::Desktop),
+        ("00-04-lock-home-dark", true, Screen::Home),
     ];
     for (name, dark, screen) in locks {
         let mut app = on_wallpaper(screen, App::new(screen, w, h, ppd));
@@ -311,10 +311,10 @@ fn main() -> Result<()> {
     // whole and moved, the clock going off the top, the words alone at the
     // middle, and the last strip of the lock at the top of the screen.
     let unlock: [(&str, f32); 4] = [
-        ("00w-lock-swiped-1-dark", 0.10),
-        ("00x-lock-swiped-2-dark", 0.28),
-        ("00y-lock-swiped-3-dark", 0.55),
-        ("00z-lock-swiped-4-dark", 0.93),
+        ("00-04-lock-swiped-1-dark", 0.10),
+        ("00-04-lock-swiped-2-dark", 0.28),
+        ("00-04-lock-swiped-3-dark", 0.55),
+        ("00-04-lock-swiped-4-dark", 0.93),
     ];
     for (name, part) in unlock {
         let mut app = on_wallpaper(Screen::Settings, App::new(Screen::Settings, w, h, ppd));
@@ -356,16 +356,20 @@ fn main() -> Result<()> {
     // preview that is not Aether's own screen, and they are drawn by a
     // different crate. Keeping them next to the 250-odd pages they have
     // nothing to do with made them look like one more page.
+    // These are numbered from one inside their own folder, not from zero
+    // alongside the pages: nothing here shares a number with `out`, so
+    // `startup/01-menu` cannot be mistaken for the first page of the
+    // preview.
     let startup: [(&str, StartupView); 5] = [
-        ("00p-startup-menu", StartupView::List { sel: 0 }),
-        ("00q-startup-reset", StartupView::Confirm { action: StartupAction::Reset, yes: false }),
+        ("01-menu", StartupView::List { sel: 0 }),
+        ("02-confirm-reset", StartupView::Confirm { action: StartupAction::Reset, yes: false }),
         // What a system that fell over leaves: no reason, because a phone
         // that fell over has nothing to say.
-        ("00r-startup-failed", StartupView::Failure { crash: StartupCrash::Startup, code: 139, reason: None }),
-        ("00s-system-crashed", StartupView::Failure { crash: StartupCrash::Runtime, code: 139, reason: None }),
+        ("03-failed", StartupView::Failure { crash: StartupCrash::Startup, code: 139, reason: None }),
+        ("04-crashed", StartupView::Failure { crash: StartupCrash::Runtime, code: 139, reason: None }),
         // And one that stopped on purpose: 67 is the code for an app on the
         // desktop that is not built, and the line under it says which.
-        ("00t-system-stopped", StartupView::Failure { crash: StartupCrash::Runtime, code: 67, reason: Some(StartupReason::Music) }),
+        ("05-stopped", StartupView::Failure { crash: StartupCrash::Runtime, code: 67, reason: Some(StartupReason::Music) }),
     ];
     let outside = out.join("startup");
     std::fs::create_dir_all(&outside)?;
@@ -1199,25 +1203,25 @@ fn main() -> Result<()> {
         // under it: four frames of the one move, the page gone up by about a
         // quarter, a half, three quarters and all but its last strip. The
         // finger is still down in each, so each stands where it got to.
-        ("00g-going-home-1-light", Screen::Calculator, false, &|app, f| {
+        ("00-08-going-home-1-light", Screen::Calculator, false, &|app, f| {
             let by = app.theme().m.h as f32 * 0.22;
             pull_up(app, f, by)
         }),
-        ("00h-going-home-2-light", Screen::Calculator, false, &|app, f| {
+        ("00-08-going-home-2-light", Screen::Calculator, false, &|app, f| {
             let by = app.theme().m.h as f32 * 0.48;
             pull_up(app, f, by)
         }),
-        ("00i-going-home-3-light", Screen::Calculator, false, &|app, f| {
+        ("00-08-going-home-3-light", Screen::Calculator, false, &|app, f| {
             let by = app.theme().m.h as f32 * 0.74;
             pull_up(app, f, by)
         }),
-        ("00j-going-home-4-light", Screen::Calculator, false, &|app, f| {
+        ("00-08-going-home-4-light", Screen::Calculator, false, &|app, f| {
             let by = app.theme().m.h as f32 * 0.93;
             pull_up(app, f, by)
         }),
         // The tasks up over the desktop, the desktop dimmed under them, and
         // the foot of the screen saying there is nothing running yet.
-        ("00k-tasks-up-dark", Screen::Desktop, true, &|app, f| {
+        ("00-05-tasks-up-dark", Screen::Desktop, true, &|app, f| {
             let by = app.theme().m.dp(120.0);
             pull_up(app, f, by)
         }),
@@ -1225,21 +1229,21 @@ fn main() -> Result<()> {
         // on: the page has gone up as far as the tasks are tall and dimmed
         // with them, and the strip they stand in is the desktop's own black,
         // left bare by the page rather than covered by a card.
-        ("00l-tasks-over-a-page-light", Screen::Calculator, false, &|app, f| {
+        ("00-05-tasks-over-a-page-light", Screen::Calculator, false, &|app, f| {
             let by = app.theme().m.dp(120.0);
             pull_up(app, f, by)
         }),
         // The power menu over the desktop, brought up the way the panel
         // brings it: the power key and volume up together, then the card
         // coming in over the page dimmed behind it.
-        ("00e-power-menu-light", Screen::Desktop, false, &|app, _| {
+        ("00-07-power-menu-light", Screen::Desktop, false, &|app, _| {
             let _ = app.key(Key::Power, 1000);
             let _ = app.key(Key::VolumeUp, 1100);
             1400
         }),
         // The same menu with the light moved down it, as the volume key
         // does, to show an entry other than the first lit.
-        ("00f-power-menu-dark", Screen::Desktop, true, &|app, _| {
+        ("00-07-power-menu-dark", Screen::Desktop, true, &|app, _| {
             let _ = app.key(Key::Power, 1000);
             let _ = app.key(Key::VolumeUp, 1100);
             let _ = app.key(Key::VolumeDown, 1200);
@@ -1340,7 +1344,7 @@ fn main() -> Result<()> {
         // The volume panel over the desktop: the keys turned to the
         // volume, a press up moves the media volume, and the panel shows.
         // The media slider is the accent, the system one grey.
-        ("00-volume-panel-light", Screen::Desktop, false, &|app, f| {
+        ("00-06-volume-panel-light", Screen::Desktop, false, &|app, f| {
             app.state.volume_keys = false;
             app.state.system_volume = 6;
             app.state.media_volume = 10;
@@ -1349,7 +1353,7 @@ fn main() -> Result<()> {
             let _ = app.key_up(Key::VolumeUp, 1010);
             1100
         }),
-        ("00-volume-panel-dark", Screen::Desktop, true, &|app, f| {
+        ("00-06-volume-panel-dark", Screen::Desktop, true, &|app, f| {
             app.state.volume_keys = false;
             app.state.system_volume = 6;
             app.state.media_volume = 10;
