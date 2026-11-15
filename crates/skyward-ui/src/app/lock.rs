@@ -73,6 +73,14 @@ impl App {
         self.lock.is_some()
     }
 
+    /// How far up a finger has to drag, in pixels of this screen, to put the
+    /// lock away. The lock follows the finger one for one up to that, so a
+    /// caller dragging it wants this to know where the end is — the preview
+    /// does, so its frames stand where the phone's would.
+    pub fn lock_swipe_span(&self) -> f32 {
+        self.h as f32 * LOCK_SWIPE
+    }
+
     /// The lock over what is shown: the page behind it kept soft, the veil
     /// over that, and the clock and words over both. It slides up whole as a
     /// finger drags it, showing the page again under it.

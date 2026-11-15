@@ -151,10 +151,28 @@ fn main() -> Result<()> {
         eprintln!("axis {tag}: {min}..{max} (default {def})");
     }
 
-    let cfg = DeviceConfig::load(root.join("devices/nezha.toml"))?;
+    let cfg = DeviceConfig::load(root.join("devices/fuxi.toml"))?;
     let (w, h) = (cfg.display.width, cfg.display.height);
     let ppd = cfg.display.density as f32 / 160.0;
     let light = Theme::light(w, h, ppd);
+    // The desktop is drawn on the wallpaper the image carries: the preview
+    // takes the one the repository holds, cropped to the screen as the
+    // image's own does.
+    let wallpaper = std::fs::read(root.join("resources/wallpapers/desk/starsky.png")).ok().and_then(|bytes| match Canvas::from_png(&bytes) {
+        Ok(picture) => Some(picture),
+        Err(e) => {
+            eprintln!("wallpaper: {e:#}");
+            None
+        }
+    });
+    let on_wallpaper = |screen: Screen, mut app: App| {
+        if screen == Screen::Desktop {
+            if let Some(picture) = &wallpaper {
+                app.set_wallpaper(picture.clone());
+            }
+        }
+        app
+    };
 
     match args.get(2).map(String::as_str) {
         Some("--calibrate") => {
@@ -170,7 +188,7 @@ fn main() -> Result<()> {
         _ => {}
     }
 
-    let info = nezha(&cfg);
+    let info = fuxi(&cfg);
     let pending = DeviceInfo { snapshot: SnapshotState::Snapshotted, ..info.clone() };
     let pattern = Data::Locked { user: 0, keys: Keys::Pattern, checking: false };
     // Whole pages, the way a long screenshot shows them. The About page's
@@ -194,7 +212,7 @@ fn main() -> Result<()> {
         ("13-screen-off-light", Screen::ScreenOff, false, &info, Data::Open, &[]),
     ];
     for (name, screen, dark, info, data, pattern) in shots {
-        let mut app = App::new(screen, w, h, ppd);
+        let mut app = on_wallpaper(screen, App::new(screen, w, h, ppd));
         app.state.lang = lang;
         app.state.dark = dark;
         app.state.data = data;
@@ -249,13 +267,53 @@ fn main() -> Result<()> {
         ("00v-lock-dark-home", true, Screen::Home),
     ];
     for (name, dark, screen) in locks {
-        let mut app = App::new(screen, w, h, ppd);
+        let mut app = on_wallpaper(screen, App::new(screen, w, h, ppd));
         app.state.lang = lang;
         app.state.dark = dark;
         app.state.data = Data::Open;
         let mut behind = Canvas::new(w, h);
         app.compose(&mut behind, &fonts, &info, "21:40", 0);
         app.lock_now();
+        let mut shot = Canvas::new(w, h);
+        app.compose(&mut shot, &fonts, &info, "21:40", 0);
+        let path = out.join(format!("{name}.png"));
+        write_png(&path, &shot)?;
+        println!("wrote {}", path.display());
+    }
+
+    // The lock on its way off: a finger drags it up and every frame stands
+    // where the finger got to, still down, so the page under it comes in from
+    // the bottom of the screen while the clock and the words ride off its
+    // top. The page under it is a settings list rather than the desktop, one
+    // row after another down the whole screen: a wallpaper leaves the lower
+    // half bare, and a frame of the lock half gone would show nothing coming
+    // in under it.
+    //
+    // The marks are not the evens the page pulled off the screen is caught
+    // at, because the lock has far less to show: the clock stands a fifth of
+    // the way down, so a move of a quarter puts it off the screen and the
+    // frames after that would be of an empty sheet. These four are the clock
+    // whole and moved, the clock going off the top, the words alone at the
+    // middle, and the last strip of the lock at the top of the screen.
+    let unlock: [(&str, f32); 4] = [
+        ("00w-lock-swiped-1-dark", 0.10),
+        ("00x-lock-swiped-2-dark", 0.28),
+        ("00y-lock-swiped-3-dark", 0.55),
+        ("00z-lock-swiped-4-dark", 0.93),
+    ];
+    for (name, part) in unlock {
+        let mut app = opened(Screen::Settings, w, h, ppd);
+        app.state.dark = true;
+        let mut behind = Canvas::new(w, h);
+        app.compose(&mut behind, &fonts, &info, "21:40", 0);
+        app.lock_now();
+        let m = app.theme().m;
+        let foot = m.h as f32 - m.dp(24.0) + 2.0;
+        // Taken from the lock itself rather than a share written out here, so
+        // these frames go on standing where the panel's would.
+        let by = app.lock_swipe_span() * part;
+        app.touch(Touch::Down(600.0, foot), &fonts, 0);
+        app.touch(Touch::Move(600.0, foot - by), &fonts, 200);
         let mut shot = Canvas::new(w, h);
         app.compose(&mut shot, &fonts, &info, "21:40", 0);
         let path = out.join(format!("{name}.png"));
@@ -1698,6 +1756,8 @@ fn opened(screen: Screen, w: u32, h: u32, ppd: f32) -> App {
 fn whole_page(app: &mut App, f: &Fonts, info: &DeviceInfo) -> Canvas {
     let t = app.theme();
     let (screen, state, now) = (app.screen(), app.state.clone(), app.now());
+    // Taken before the page, which holds the app while it is drawn.
+    let wallpaper = app.wallpaper().cloned();
     let frame = app.whole_frame(f, info);
     let mut c = Canvas::new(frame.canvas.w, frame.height(&t) as u32);
     c.clear(frame.bg);
@@ -1706,7 +1766,7 @@ fn whole_page(app: &mut App, f: &Fonts, info: &DeviceInfo) -> Canvas {
         fold.draw(&mut c, &t, &widgets::search_words(&t, f, fold.bar, fold.hint), 0.0);
     }
     if let Some(rows) = &frame.rows {
-        let cx = Ctx { t: &t, f, info, state: &state, term: None, band: None, now, wallpaper: None };
+        let cx = Ctx { t: &t, f, info, state: &state, term: None, band: None, now, wallpaper: wallpaper.as_ref() };
         for k in 0..rows.count() {
             let mut row = Canvas::new(c.w, (rows.edges[k + 1] - rows.edges[k]) as u32);
             pages::row(screen, &cx, k, &mut row);
@@ -1742,32 +1802,33 @@ fn whole_page(app: &mut App, f: &Fonts, info: &DeviceInfo) -> Canvas {
     c
 }
 
-/// Xiaomi 17 Ultra by Leica as `skyward info` read it on 2026-10-18 (the
-/// config supplies the SoC name, panel and screen size).
-fn nezha(cfg: &DeviceConfig) -> DeviceInfo {
+/// Xiaomi 13 as the phone itself reports it, the config supplying the SoC
+/// name, the panel and the screen size: the phone the pages are drawn for,
+/// since it is the one flashed here most.
+fn fuxi(cfg: &DeviceConfig) -> DeviceInfo {
     DeviceInfo {
-        model: "Xiaomi 17 Ultra by Leica".into(),
+        model: "Xiaomi 13".into(),
         codename: cfg.device.codename.clone(),
         soc: cfg.device.soc.clone(),
-        cpu: Cpu { cores: 8, max_khz: Some(4_608_000) },
-        ram_kib: 15_472_464,
+        cpu: Cpu { cores: 8, max_khz: Some(3_190_000) },
+        ram_kib: 11_796_480,
         panel: Some((cfg.display.width, cfg.display.height)),
-        screen: cfg.display.diagonal,
-        os_version: Some("OS4.0.4.0.XPACNXM".into()),
-        android: Some("17".into()),
+        screen: Some(6.36),
+        os_version: Some("OS3.0.309.0.WMCCNXM".into()),
+        android: Some("16".into()),
         locale: Some("zh-CN".into()),
         security_patch: Some(PatchLevel { year: 2026, month: 10, day: 1 }),
-        kernel: "6.12.69-android16-6-g43b5ab7e247d-abogki561813157-4k".into(),
-        storage: Storage { total: 1_039_535_157_248, free: Some(620_652_802_048) },
+        kernel: "5.15.153-android13-8-g5f2c9a7b3d41".into(),
+        storage: Storage { total: 256_060_514_304, free: Some(121_332_547_584) },
         battery: Some(Battery {
             level: 95,
             charge: Charge::Charging,
-            temp: Some(350),
+            temp: Some(340),
             health: Some("Good".into()),
-            cycles: Some(300),
-            design: Some(6_800_000),
-            full: Some(6_543_000),
-            voltage: Some(4_442_000),
+            cycles: Some(412),
+            design: Some(4_500_000),
+            full: Some(4_388_000),
+            voltage: Some(4_412_000),
             // The recovery has no fast charging handshake with the charger.
             quick: false,
             plugged: true,
