@@ -166,10 +166,10 @@ fn main() -> Result<()> {
         }
     });
     let on_wallpaper = |screen: Screen, mut app: App| {
-        if screen == Screen::Desktop {
-            if let Some(picture) = &wallpaper {
-                app.set_wallpaper(picture.clone());
-            }
+        if screen == Screen::Desktop
+            && let Some(picture) = &wallpaper
+        {
+            app.set_wallpaper(picture.clone());
         }
         app
     };

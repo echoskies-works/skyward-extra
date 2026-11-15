@@ -181,22 +181,6 @@ pub(crate) mod spr {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const ISHTAR: &str = "mode_name=1440x3200x60cmd\nbit_clk_rate=1360000000\ndsc_mode=1\ntopology=sde_dualpipe_dscmerge\n\
-                          mode_name=1440x3200x120cmd\nsubmode_idx=1\ndsc_mode=1\ntopology=sde_dualpipe_dscmerge\n\
-                          mode_name=1080x2400x60cmd\ndsc_mode=0\ntopology=sde_singlepipe\n";
-
-    #[test]
-    fn reads_the_topology_of_the_named_mode() {
-        assert_eq!(SdeMode::find(ISHTAR, "1440x3200x120cmd").unwrap(), SdeMode { mixers: 2, dsc: true });
-        assert_eq!(SdeMode::find(ISHTAR, "1080x2400x60cmd").unwrap(), SdeMode { mixers: 1, dsc: false });
-        assert!(SdeMode::find(ISHTAR, "1440x3200x90cmd").is_err());
-    }
-}
-
 /// One frame as tightly packed RGBA rows: what the display controller sends
 /// to the screen.
 pub struct Frame {
@@ -921,5 +905,21 @@ mod scanout {
                 unsafe { libc::munmap(buf.map.cast(), buf.len) };
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ISHTAR: &str = "mode_name=1440x3200x60cmd\nbit_clk_rate=1360000000\ndsc_mode=1\ntopology=sde_dualpipe_dscmerge\n\
+                          mode_name=1440x3200x120cmd\nsubmode_idx=1\ndsc_mode=1\ntopology=sde_dualpipe_dscmerge\n\
+                          mode_name=1080x2400x60cmd\ndsc_mode=0\ntopology=sde_singlepipe\n";
+
+    #[test]
+    fn reads_the_topology_of_the_named_mode() {
+        assert_eq!(SdeMode::find(ISHTAR, "1440x3200x120cmd").unwrap(), SdeMode { mixers: 2, dsc: true });
+        assert_eq!(SdeMode::find(ISHTAR, "1080x2400x60cmd").unwrap(), SdeMode { mixers: 1, dsc: false });
+        assert!(SdeMode::find(ISHTAR, "1440x3200x90cmd").is_err());
     }
 }

@@ -335,7 +335,7 @@ impl Canvas {
         };
         anyhow::ensure!(buf.len() >= w as usize * h as usize * channels, "the picture is shorter than its size says");
         let mut out = Canvas::new(w, h);
-        for (at, px) in out.data.chunks_exact_mut(4).enumerate() {
+        for (at, px) in out.data.as_chunks_mut::<4>().0.iter_mut().enumerate() {
             let i = at * channels;
             let (r, g, b, a) = match channels {
                 4 => (buf[i], buf[i + 1], buf[i + 2], buf[i + 3]),
@@ -343,7 +343,7 @@ impl Canvas {
                 2 => (buf[i], buf[i], buf[i], buf[i + 1]),
                 _ => (buf[i], buf[i], buf[i], 255),
             };
-            px.copy_from_slice(&[r, g, b, a]);
+            *px = [r, g, b, a];
         }
         Ok(out)
     }
