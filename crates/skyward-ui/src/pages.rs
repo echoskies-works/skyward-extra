@@ -54,6 +54,9 @@ pub struct Ctx<'a> {
     pub band: Option<Band>,
     /// The time the page is drawn at: what the clock's counts read by.
     pub now: u64,
+    /// The picture the desktop is drawn on, already filling the screen; a
+    /// desktop without one is black.
+    pub wallpaper: Option<&'a Canvas>,
 }
 
 /// Rows `rows` of a page, and of them the columns `cols`, each from the
@@ -347,8 +350,13 @@ pub const DESKTOP_STATUS: Rgba = Rgba::rgb(224, 224, 224);
 pub fn desktop(cx: &Ctx) -> Frame {
     let (t, f, l) = (cx.t, cx.f, cx.state.lang);
     let m = &t.m;
-    // The wallpaper: plain black for now.
-    let mut c = Canvas::filled(m.w, m.h, DESKTOP_BG);
+    // The wallpaper: the picture read at startup, filling the screen, or
+    // plain black where the ramdisk carries none.
+    let mut c = match cx.wallpaper {
+        Some(picture) if (picture.w, picture.h) == (m.w, m.h) => picture.clone(),
+        Some(picture) => Canvas::covering(picture, m.w, m.h),
+        None => Canvas::filled(m.w, m.h, DESKTOP_BG),
+    };
     let mut out = Vec::new();
 
     let cell = m.w as f32 / DESKTOP_COLS as f32;

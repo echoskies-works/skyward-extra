@@ -1276,6 +1276,9 @@ pub struct App {
     w: u32,
     h: u32,
     px_per_dp: f32,
+    /// The picture the desktop is drawn on, already cropped and scaled to
+    /// fill the screen; a desktop black where none was read.
+    wallpaper: Option<Canvas>,
 }
 
 impl App {
@@ -1347,7 +1350,20 @@ impl App {
             w,
             h,
             px_per_dp,
+            wallpaper: None,
         }
+    }
+
+    /// Draw the desktop on `picture`, which is cropped and scaled to fill
+    /// the screen: wider than the screen it loses its sides, taller its top
+    /// and bottom, so it is never squeezed.
+    pub fn set_wallpaper(&mut self, picture: Canvas) {
+        self.wallpaper = Some(Canvas::covering(&picture, self.w, self.h));
+    }
+
+    /// The picture the desktop is drawn on, filling the screen.
+    pub fn wallpaper(&self) -> Option<&Canvas> {
+        self.wallpaper.as_ref()
     }
 
     /// The screen's corners are rounded to `radius` pixels: so are the

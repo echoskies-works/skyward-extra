@@ -326,6 +326,22 @@ fn untaken(told: &mut skyward_sys::ToldOnce, what: &str, why: Option<&anyhow::Er
     Ok(())
 }
 
+/// The picture the desktop is drawn on, as the ramdisk carries it: a
+/// ramdisk packed without one draws the desktop black, and a picture that
+/// will not decode leaves it so rather than keeping the pages from coming
+/// up.
+fn wallpaper() -> Option<Canvas> {
+    let path = format!("/{}", skyward_config::ramdisk::WALLPAPER);
+    let bytes = std::fs::read(&path).ok()?;
+    match Canvas::from_png(&bytes) {
+        Ok(picture) => Some(picture),
+        Err(e) => {
+            let _ = skyward_sys::kmsg(&format!("wallpaper {path} is not drawn: {e:#}"));
+            None
+        }
+    }
+}
+
 /// Read all the phone's details anew into `info`, which keeps what it has
 /// where they cannot be read.
 fn read_details(cfg: &DeviceConfig, info: &mut skyward_info::DeviceInfo, told: &mut skyward_sys::ToldOnce) -> Result<()> {
@@ -1338,6 +1354,9 @@ impl<'a> Pages<'a> {
             | Work::SystemStopped => start,
         };
         let mut app = App::new(first, w, h, cfg.display.density as f32 / 160.0);
+        if let Some(picture) = wallpaper() {
+            app.set_wallpaper(picture);
+        }
         app.set_screen_corners(cfg.display.corner_radius as f32);
         // The settings kept from the starts before are back before the first
         // frame, and before file transfer starts with its switch and the time

@@ -74,6 +74,11 @@ enum Cmd {
         /// The brand typeface's licence, which goes with it.
         #[arg(long)]
         brand_license: PathBuf,
+        /// The pictures the desktop may be drawn on. Each goes in the
+        /// ramdisk under its own file name, in the wallpapers' folder; the
+        /// desktop draws the one named there, and black if none is given.
+        #[arg(long = "wallpaper")]
+        wallpapers: Vec<PathBuf>,
         #[arg(long)]
         out: PathBuf,
     },
@@ -141,6 +146,7 @@ fn main() -> Result<()> {
             mono_license,
             brand,
             brand_license,
+            wallpapers,
             out,
         } => {
             let size = partition_size(&stock)?;
@@ -171,6 +177,16 @@ fn main() -> Result<()> {
             rd.add(paths::MONO_LICENSE, 0o644, read(&mono_license)?)?;
             rd.add(paths::BRAND, 0o644, read(&brand)?)?;
             rd.add(paths::BRAND_LICENSE, 0o644, read(&brand_license)?)?;
+            // The wallpapers, each under the file name it is given as: the
+            // desktop draws one of them, and the rest wait for the page
+            // that picks among them.
+            for picture in &wallpapers {
+                let name = picture
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .with_context(|| format!("{} is not named by a file name", picture.display()))?;
+                rd.add(&format!("{}/{name}", paths::WALLPAPERS), 0o644, read(picture)?)?;
+            }
             // A stock ramdisk may run logd without any scheduling profiles,
             // and logd stops as soon as it cannot find the one it asks for.
             if rd.find(paths::TASK_PROFILES).is_none() {

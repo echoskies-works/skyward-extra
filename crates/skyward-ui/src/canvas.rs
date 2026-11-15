@@ -316,6 +316,59 @@ impl Canvas {
         }
     }
 
+    /// The picture `bytes` holds as a PNG, as pixels: eight bits a channel,
+    /// a palette or greys turned to red, green and blue, and transparency
+    /// kept.
+    pub fn from_png(bytes: &[u8]) -> anyhow::Result<Canvas> {
+        let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+        decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+        let mut reader = decoder.read_info()?;
+        let mut buf = vec![0; reader.output_buffer_size()];
+        let info = reader.next_frame(&mut buf)?;
+        let (w, h) = (info.width, info.height);
+        let channels = match info.color_type {
+            png::ColorType::Rgba => 4,
+            png::ColorType::Rgb => 3,
+            png::ColorType::GrayscaleAlpha => 2,
+            png::ColorType::Grayscale => 1,
+            png::ColorType::Indexed => anyhow::bail!("a palette the decoder did not expand"),
+        };
+        anyhow::ensure!(buf.len() >= w as usize * h as usize * channels, "the picture is shorter than its size says");
+        let mut out = Canvas::new(w, h);
+        for (at, px) in out.data.chunks_exact_mut(4).enumerate() {
+            let i = at * channels;
+            let (r, g, b, a) = match channels {
+                4 => (buf[i], buf[i + 1], buf[i + 2], buf[i + 3]),
+                3 => (buf[i], buf[i + 1], buf[i + 2], 255),
+                2 => (buf[i], buf[i], buf[i], buf[i + 1]),
+                _ => (buf[i], buf[i], buf[i], 255),
+            };
+            px.copy_from_slice(&[r, g, b, a]);
+        }
+        Ok(out)
+    }
+
+    /// `src` drawn to fill `w` × `h` as a wallpaper fills a screen: kept in
+    /// proportion, enlarged until it covers both, and what runs past an edge
+    /// cut off from the middle — never squeezed to fit. A picture wider
+    /// than the screen loses its sides, a taller one its top and bottom.
+    pub fn covering(src: &Canvas, w: u32, h: u32) -> Canvas {
+        if src.w == 0 || src.h == 0 || w == 0 || h == 0 {
+            return Canvas::filled(w.max(1), h.max(1), Rgba::rgb(0, 0, 0));
+        }
+        let (want, have) = (w as f32 / h as f32, src.w as f32 / src.h as f32);
+        let part = if have > want {
+            let cw = ((src.h as f32 * want).round() as u32).clamp(1, src.w);
+            src.crop((src.w - cw) / 2, 0, cw, src.h)
+        } else {
+            let ch = ((src.w as f32 / want).round() as u32).clamp(1, src.h);
+            src.crop(0, (src.h - ch) / 2, src.w, ch)
+        };
+        let mut out = Canvas::new(w, h);
+        out.blit_scaled(&part, w as f32, h as f32);
+        out
+    }
+
     /// Lay `layer`, whose top-left corner goes at (`x`, `y`), over this
     /// opaque canvas at `alpha` of its strength.
     pub fn lay(&mut self, layer: &Canvas, x: i32, y: i32, alpha: f32) {

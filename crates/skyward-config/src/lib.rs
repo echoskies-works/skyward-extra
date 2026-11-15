@@ -19,6 +19,12 @@ pub mod ramdisk {
     pub const BRAND: &str = "skyward/LexendDeca-VariableFont_wght.ttf";
     /// The brand typeface's licence, which travels with every copy of it.
     pub const BRAND_LICENSE: &str = "skyward/LexendDeca-OFL.txt";
+    /// The folder the wallpapers sit in, each under its own name.
+    pub const WALLPAPERS: &str = "skyward/wallpapers";
+    /// The wallpaper the desktop is drawn on, of those the ramdisk carries.
+    /// A ramdisk that carries none draws the desktop black. Which one is a
+    /// page of its own's choice, once there is such a page.
+    pub const WALLPAPER: &str = "skyward/wallpapers/starsky.png";
     /// The recovery service binary init starts.
     pub const RECOVERY: &str = "system/bin/recovery";
     /// The first program of a system installed beside the installed one,

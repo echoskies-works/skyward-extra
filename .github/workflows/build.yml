@@ -151,6 +151,7 @@ jobs:
             --config "devices/$DEVICE.toml" --font resources/fonts/MiSansVF.ttf --mono resources/fonts/KirkMono-Regular.ttf \
             --mono-license resources/fonts/KirkMono-OFL.txt \
             --brand resources/fonts/LexendDeca-VariableFont_wght.ttf --brand-license resources/fonts/LexendDeca-OFL.txt \
+            --wallpaper resources/wallpapers/desk/starsky.png \
             --out "out/$name.img"
           echo "name=$name" >> "$GITHUB_OUTPUT"
       # The image is the whole partition, flashed as it is, and most of it
