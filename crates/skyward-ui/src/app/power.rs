@@ -146,6 +146,7 @@ impl App {
         self.curtain.set(false, now);
         self.display_on = false;
         self.power_menu = None;
+        self.power_blur = None;
         // The panel comes back on behind the lock, whatever it showed: the
         // page under it is kept as it was left, and lit again as it was.
         self.lock_now();
@@ -189,6 +190,7 @@ impl App {
     pub(super) fn show_power_menu(&mut self, now: u64) -> Vec<Effect> {
         self.chord = None;
         self.power_menu = Some(PowerMenu { chosen: 0, since: now });
+        self.power_blur = None;
         self.dirty = true;
         self.stir(now);
         if self.state.vibrate { vec![Effect::Haptic] } else { Vec::new() }
@@ -197,6 +199,7 @@ impl App {
     /// The power menu goes, and the phone goes on as it was.
     pub(super) fn hide_power_menu(&mut self) {
         self.power_menu = None;
+        self.power_blur = None;
         self.dirty = true;
     }
 
@@ -254,15 +257,21 @@ pub(super) fn power_menu_touch(&mut self, ev: Touch, now: u64) -> Vec<Effect> {
         }
     }
 
-    /// The power menu over the page: the page dimmed under it, the card come
-    /// up into the middle of the screen with its entries listed and the one
-    /// the keys stand on lit.
+    /// The power menu over the page: the page blurred and dimmed under it,
+    /// the card come up into the middle of the screen with its entries
+    /// listed and the one the keys stand on lit.
     pub(super) fn compose_power_menu(&mut self, out: &mut Canvas, f: &Fonts, now: u64) {
         let Some(menu) = self.power_menu.as_ref() else { return };
         let t = self.theme();
         let lang = self.state.lang;
         let m = &t.m;
         let along = POWER_MENU_IN.progress(now.saturating_sub(menu.since));
+        // The page stands soft under the card: blurred once when the menu
+        // comes up, and that soft copy shown for as long as it stands.
+        if self.power_blur.is_none() {
+            self.power_blur = Some(super::lock::soft_ground(out, m.w, m.h));
+        }
+        *out = self.power_blur.as_ref().expect("made just above").clone();
         out.dim(1.0 - POWER_MENU_DIM * along);
         let (card, rows) = power_menu_layout(&t);
         let radius = m.dp(26.0);

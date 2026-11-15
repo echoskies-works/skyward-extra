@@ -342,6 +342,22 @@ fn wallpaper() -> Option<Canvas> {
     }
 }
 
+/// The lock's own wallpaper, read apart from the desktop's: a ramdisk
+/// packed without one leaves the lock to the desktop's picture, and one
+/// that will not decode leaves it so rather than keeping the lock from
+/// coming up.
+fn lock_wallpaper() -> Option<Canvas> {
+    let path = format!("/{}", skyward_config::ramdisk::WALLPAPER_LOCK);
+    let bytes = std::fs::read(&path).ok()?;
+    match Canvas::from_png(&bytes) {
+        Ok(picture) => Some(picture),
+        Err(e) => {
+            let _ = skyward_sys::kmsg(&format!("wallpaper {path} is not drawn: {e:#}"));
+            None
+        }
+    }
+}
+
 /// Read all the phone's details anew into `info`, which keeps what it has
 /// where they cannot be read.
 fn read_details(cfg: &DeviceConfig, info: &mut skyward_info::DeviceInfo, told: &mut skyward_sys::ToldOnce) -> Result<()> {
@@ -1357,6 +1373,9 @@ impl<'a> Pages<'a> {
         if let Some(picture) = wallpaper() {
             app.set_wallpaper(picture);
         }
+        if let Some(picture) = lock_wallpaper() {
+            app.set_lock_wallpaper(picture);
+        }
         app.set_screen_corners(cfg.display.corner_radius as f32);
         // The settings kept from the starts before are back before the first
         // frame, and before file transfer starts with its switch and the time
@@ -1862,7 +1881,11 @@ impl<'a> Pages<'a> {
         // panel, which keeps the loop to the panel's pace; otherwise the CPU
         // gets at least a millisecond.
         let floor = if shown { 0 } else { 1 };
-        let until_due = self.app.deadline(now).map(|d| d.saturating_sub(now) as i32);
+        // The page has been drawn since `now` was taken, so what is left to
+        // wait is what the deadline has left, not the whole of what it asked
+        // for when it was: a frame that costs a while would otherwise be
+        // added to every frame's pace.
+        let until_due = self.app.deadline(now).map(|d| d.saturating_sub(monotonic_ms()) as i32);
         let timeout = if ahead { 0 } else { until_due.map_or(1000, |t| t.clamp(floor, 1000)) };
         sleeper.allow(self.may_sleep()?);
         let mut fds = vec![self.inputs.fd(), uevents.fd(), sleeper.fd()];

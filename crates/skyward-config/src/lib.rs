@@ -25,6 +25,10 @@ pub mod ramdisk {
     /// A ramdisk that carries none draws the desktop black. Which one is a
     /// page of its own's choice, once there is such a page.
     pub const WALLPAPER: &str = "skyward/wallpapers/starsky.png";
+    /// The wallpaper the lock screen stands over, of those the ramdisk
+    /// carries: its own, rather than the desktop's. A ramdisk that carries
+    /// none lets the lock fall back to the desktop's wallpaper.
+    pub const WALLPAPER_LOCK: &str = "skyward/wallpapers/night.png";
     /// The recovery service binary init starts.
     pub const RECOVERY: &str = "system/bin/recovery";
     /// The first program of a system installed beside the installed one,
@@ -557,7 +561,7 @@ impl DeviceConfig {
         }
         if let Some(haptics) = &cfg.haptics {
             let file = &haptics.resonance;
-            ensure!(Path::new(file).is_absolute(), "[haptics] resonance: {file} is not an absolute path");
+            ensure!(from_the_top(Path::new(file)), "[haptics] resonance: {file} is not an absolute path");
             let Strength { lightest, strongest } = haptics.strength;
             ensure!(
                 0.0 < lightest && lightest < strongest && strongest <= 1.0,
@@ -568,7 +572,7 @@ impl DeviceConfig {
             for library in &logd.libraries {
                 let path = Path::new(library);
                 let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
-                ensure!(path.is_absolute() && plain && path.file_name().is_some(), "[logd] libraries: {library} is not an absolute path to a file");
+                ensure!(from_the_top(path) && plain && path.file_name().is_some(), "[logd] libraries: {library} is not an absolute path to a file");
             }
         }
         for owners in &cfg.owners {
@@ -580,7 +584,7 @@ impl DeviceConfig {
             for file in &owners.paths {
                 let path = Path::new(file);
                 let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
-                ensure!(path.is_absolute() && plain && path.file_name().is_some(), "[[owners]] paths: {file} is not an absolute path to a file");
+                ensure!(from_the_top(path) && plain && path.file_name().is_some(), "[[owners]] paths: {file} is not an absolute path to a file");
             }
         }
         if let Some(stock) = &cfg.stock {
@@ -613,12 +617,21 @@ impl DeviceConfig {
                         );
                         ensure!(plain && !file.path.is_empty(), "[wlan] firmware: {} is not a path from the top of {partition}", file.path);
                     }
-                    None => ensure!(path.is_absolute(), "[wlan] firmware: {} is not an absolute path", file.path),
+                    None => ensure!(from_the_top(path), "[wlan] firmware: {} is not an absolute path", file.path),
                 }
             }
         }
         Ok(cfg)
     }
+}
+
+/// Whether `path` begins at the top of the filesystem the configuration
+/// describes, which is the phone's: such a path starts at `/`, and one that
+/// does not is refused. The computer reading the configuration may be a
+/// Windows, where `Path::is_absolute` asks a path for a drive letter and so
+/// says no to every path a phone has.
+fn from_the_top(path: &Path) -> bool {
+    path.has_root()
 }
 
 #[cfg(test)]

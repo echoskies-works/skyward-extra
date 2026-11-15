@@ -24,10 +24,12 @@ const LOCK_STEP: u32 = 10;
 /// the coarse mosaic of a copy kept too small. Two is about twenty pixels
 /// of the page itself — enough to read it as a picture, not as a shape.
 const LOCK_BLUR: usize = 2;
-/// How faint the veil over the picture is: dark enough for the clock and the
-/// words to read, light enough that the page behind is still seen.
-const VEIL_DARK: u8 = 64;
-const VEIL_LIGHT: u8 = 36;
+/// The lock's ink, fixed rather than the theme's: white and a step softer
+/// over a dark wallpaper, near-black and a step softer over a light one.
+const LOCK_INK: Rgba = Rgba::rgb(255, 255, 255);
+const LOCK_SOFT: Rgba = Rgba::rgb(224, 224, 224);
+const LOCK_INK_DARK: Rgba = Rgba::rgb(24, 24, 24);
+const LOCK_SOFT_DARK: Rgba = Rgba::rgb(96, 96, 96);
 
 /// The lock, once it is up: how far up it has been dragged, and where it is
 /// going now that the finger has lifted.
@@ -40,14 +42,17 @@ pub(super) struct Lock {
     pub(super) to: f32,
     /// The spring carrying it once the finger has gone.
     pub(super) spring: Option<Spring>,
-    /// The picture, the veil, the clock and the words, drawn once and moved
-    /// over the page whole.
+    /// The lock drawn whole — the wallpaper, the veil, the clock and the
+    /// words — moved up over the page as the finger drags it.
     pub(super) sheet: Option<Canvas>,
+    /// The page under the lock, blurred: shown for as long as the lock is up
+    /// and cleared toward the page itself as the lock is pulled away.
+    pub(super) blurred: Option<Canvas>,
 }
 
 impl Lock {
     fn new() -> Lock {
-        Lock { reveal: 0.0, to: 0.0, spring: None, sheet: None }
+        Lock { reveal: 0.0, to: 0.0, spring: None, sheet: None, blurred: None }
     }
 }
 
@@ -65,6 +70,7 @@ impl App {
     pub(super) fn lock_sheet_gone(&mut self) {
         if let Some(lock) = self.lock.as_mut() {
             lock.sheet = None;
+            lock.blurred = None;
         }
     }
 
@@ -81,49 +87,77 @@ impl App {
         self.h as f32 * LOCK_SWIPE
     }
 
-    /// The lock over what is shown: the page behind it kept soft, the veil
-    /// over that, and the clock and words over both. It slides up whole as a
-    /// finger drags it, showing the page again under it.
+    /// The lock over what is shown: the page under it kept soft, and the
+    /// lock's own wallpaper, veil, clock and words over that. The lock
+    /// slides up whole as a finger drags it, and as it goes the page under
+    /// it clears — shown blurred while the lock stands, it comes back sharp
+    /// as the lock is pulled away, rather than snapping from blur to focus
+    /// at the last.
     pub(super) fn compose_lock(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, clock: &str) {
         if self.lock.as_ref().is_some_and(|l| l.sheet.is_none()) {
             let sheet = self.lock_sheet(f, info, clock);
+            // The page under the lock, kept soft while the lock stands over
+            // it: blurred once here, from what the panel shows, and shown
+            // until the lock is gone.
+            let blurred = soft_ground(out, self.w, self.h);
             if let Some(lock) = self.lock.as_mut() {
                 lock.sheet = Some(sheet);
+                lock.blurred = Some(blurred);
             }
         }
         let Some(lock) = self.lock.as_ref() else { return };
-        let sheet = lock.sheet.as_ref().expect("the sheet made just above");
         let away = (lock.reveal * self.h as f32).round() as i32;
+        // The page under the lock stands blurred while the lock is over it,
+        // and clears toward itself as the lock is pulled away. The blur is
+        // kept for as long as the lock stands: the page is not touched while
+        // it is covered.
+        if let Some(blurred) = &lock.blurred {
+            out.lay(blurred, 0, 0, 1.0 - lock.reveal);
+        }
+        let sheet = lock.sheet.as_ref().expect("the sheet made just above");
         out.put(sheet, -away);
     }
 
-    /// The lock drawn whole: the page behind it, softened, the veil, and the
-    /// words over them.
+    /// The lock drawn whole: its own wallpaper, the status bar, the clock
+    /// and the words. The lock's wallpaper read at startup is the ground it
+    /// stands on whatever page it came over; where the ramdisk carries none,
+    /// the desktop's wallpaper stands in, and where neither does, the page
+    /// last shown. The wallpaper is shown as it is, with no veil laid over
+    /// it, and the ink of the status bar, the clock and the words follows
+    /// the wallpaper: light on a dark one, dark on a light one.
     fn lock_sheet(&self, f: &Fonts, info: &DeviceInfo, clock: &str) -> Canvas {
         let t = self.theme();
         let m = &t.m;
         let (w, h) = (m.w as f32, m.h as f32);
-        let mut c = Canvas::new(m.w, m.h);
-        match self.behind.as_ref().filter(|page| page.w > 0 && page.h > 0) {
-            Some(page) => c.blit_scaled(page, w, h),
-            None => c.clear(t.pal.bg),
-        }
-        // Only a veil, not a coat: the page behind is to be seen, dimmed just
-        // enough for the clock and the words to read over it. It lightens a
-        // light page and darkens a dark one.
-        let veil = match t.dark {
-            true => Rgba::rgb(0, 0, 0).with_alpha(VEIL_DARK),
-            false => Rgba::rgb(250, 250, 252).with_alpha(VEIL_LIGHT),
+        let mut sheet = Canvas::new(m.w, m.h);
+        let dark = match self.lock_wallpaper.as_ref().or(self.wallpaper.as_ref()) {
+            Some(picture) => {
+                sheet.blit_scaled(picture, w, h);
+                is_dark(picture)
+            }
+            None => match self.behind.as_ref().filter(|page| page.w > 0 && page.h > 0) {
+                Some(page) => {
+                    sheet.blit_scaled(page, w, h);
+                    is_dark(page)
+                }
+                None => {
+                    sheet.clear(t.pal.bg);
+                    t.dark
+                }
+            },
         };
-        c.shade_rows(0, m.h, |_, _| veil);
-        c.text_center(&f.title, clock, w / 2.0, h * LOCK_CLOCK_AT, m.dp(78.0), t.pal.text);
+        let (ink, soft) = if dark { (LOCK_INK, LOCK_SOFT) } else { (LOCK_INK_DARK, LOCK_SOFT_DARK) };
+        // The status bar the lock carries of its own, in the lock's ink over
+        // the wallpaper rather than the theme's over a page.
+        widgets::status_bar(&mut sheet, &t, f, &self.bar(clock, info), ink, dark);
+        sheet.text_center(&f.title, clock, w / 2.0, h * LOCK_CLOCK_AT, m.dp(78.0), ink);
         if let Some(battery) = info.battery.as_ref() {
             let said = format!("{}%", battery.level);
-            c.text_center(&f.body, &said, w / 2.0, h * LOCK_CLOCK_AT + m.dp(66.0), m.sub_px, t.pal.subtitle);
+            sheet.text_center(&f.body, &said, w / 2.0, h * LOCK_CLOCK_AT + m.dp(66.0), m.sub_px, soft);
         }
         let said = self.state.lang.pick(["上滑解锁", "上滑解鎖", "Swipe up to open"]);
-        c.text_center(&f.label, said, w / 2.0, h - m.dp(88.0), m.sub_px, t.pal.subtitle);
-        c
+        sheet.text_center(&f.label, said, w / 2.0, h - m.dp(88.0), m.sub_px, soft);
+        sheet
     }
 
     /// A finger on the lock: dragged up it goes away, let go short of the
@@ -211,10 +245,32 @@ impl App {
     }
 }
 
+/// A soft copy of `picture` at `w` by `h`: a pixel of every [`LOCK_STEP`]
+/// kept and blurred, stretched back over the screen. A lock or a menu that
+/// stands over a page wants this as its ground — the picture behind it reads
+/// as a picture, not as a shape, and blurring a tenth-scale copy costs a
+/// fraction of blurring the page whole.
+pub(super) fn soft_ground(picture: &Canvas, w: u32, h: u32) -> Canvas {
+    let (sw, sh) = (w.div_ceil(LOCK_STEP), h.div_ceil(LOCK_STEP));
+    let mut small = Canvas::new(sw, sh);
+    for y in 0..sh {
+        let row = (y * LOCK_STEP).min(h - 1) as usize * w as usize;
+        for x in 0..sw {
+            let from = (row + (x * LOCK_STEP).min(w - 1) as usize) * 4;
+            let to = ((y * sw + x) * 4) as usize;
+            small.data[to..to + 4].copy_from_slice(&picture.data[from..from + 4]);
+        }
+    }
+    soften(&mut small, LOCK_BLUR);
+    let mut out = Canvas::new(w, h);
+    out.blit_scaled(&small, w as f32, h as f32);
+    out
+}
+
 /// `c` with every pixel the mean of the `reach` pixels either side of it,
 /// past an edge counting the edge pixel again, three times over, which is
 /// close to a Gaussian of that spread.
-fn soften(c: &mut Canvas, reach: usize) {
+pub(super) fn soften(c: &mut Canvas, reach: usize) {
     if reach == 0 || c.w == 0 || c.h == 0 {
         return;
     }
@@ -256,6 +312,29 @@ fn soften(c: &mut Canvas, reach: usize) {
         }
     }
     c.data = a;
+}
+
+/// Whether `picture` is dark enough that light ink reads on it: the mean
+/// brightness of its pixels, a pixel of every [`LOCK_STEP`] taken, against
+/// the midpoint. The lock's clock and words take their ink from this rather
+/// than the theme, so they follow the wallpaper instead of the page.
+fn is_dark(picture: &Canvas) -> bool {
+    let (w, h) = (picture.w, picture.h);
+    if w == 0 || h == 0 {
+        return true;
+    }
+    let mut sum = 0u64;
+    let mut n = 0u64;
+    for y in (0..h).step_by(LOCK_STEP as usize) {
+        let row = y as usize * w as usize;
+        for x in (0..w).step_by(LOCK_STEP as usize) {
+            let p = &picture.data[(row + x as usize) * 4..][..3];
+            // The eye's weights: green counts most, blue least.
+            sum += (p[0] as u64 * 299 + p[1] as u64 * 587 + p[2] as u64 * 114) / 1000;
+            n += 1;
+        }
+    }
+    sum / n.max(1) < 128
 }
 
 #[cfg(test)]

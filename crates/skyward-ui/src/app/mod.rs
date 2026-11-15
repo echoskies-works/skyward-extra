@@ -1220,6 +1220,9 @@ pub struct App {
     /// The power menu, over the page while the phone is being asked to
     /// restart or go off.
     power_menu: Option<power::PowerMenu>,
+    /// The page the power menu came over, softened: its ground, kept for as
+    /// long as the menu stands, so blurring the page once is enough.
+    power_blur: Option<Canvas>,
     /// The lock screen, over whatever the panel shows from the moment it
     /// goes dark: the page it came over kept soft behind it, and the swipe
     /// up that puts it away.
@@ -1279,6 +1282,9 @@ pub struct App {
     /// The picture the desktop is drawn on, already cropped and scaled to
     /// fill the screen; a desktop black where none was read.
     wallpaper: Option<Canvas>,
+    /// The picture the lock screen stands over, its own rather than the
+    /// desktop's; where none was read the lock falls back to the desktop's.
+    lock_wallpaper: Option<Canvas>,
 }
 
 impl App {
@@ -1294,6 +1300,7 @@ impl App {
             button: None,
             chord: None,
             power_menu: None,
+            power_blur: None,
             lock: None,
             behind: None,
             seek: None,
@@ -1351,6 +1358,7 @@ impl App {
             h,
             px_per_dp,
             wallpaper: None,
+            lock_wallpaper: None,
         }
     }
 
@@ -1364,6 +1372,18 @@ impl App {
     /// The picture the desktop is drawn on, filling the screen.
     pub fn wallpaper(&self) -> Option<&Canvas> {
         self.wallpaper.as_ref()
+    }
+
+    /// Draw the lock on `picture`, cropped and scaled to fill the screen as
+    /// the desktop's is: the lock stands over its own wallpaper rather than
+    /// the desktop's.
+    pub fn set_lock_wallpaper(&mut self, picture: Canvas) {
+        self.lock_wallpaper = Some(Canvas::covering(&picture, self.w, self.h));
+    }
+
+    /// The picture the lock stands over, its own where one was read.
+    pub fn lock_wallpaper(&self) -> Option<&Canvas> {
+        self.lock_wallpaper.as_ref()
     }
 
     /// The screen's corners are rounded to `radius` pixels: so are the
@@ -1447,9 +1467,9 @@ impl App {
         let menu = self.power_menu.as_ref().map(|m| m.since + power::POWER_MENU_MS);
         // The clock's counts go on of their own accord, and the stopwatch
         // reads to the hundredth: the page is told to draw again a frame at
-        // a time while either count runs, rather than waiting for the
+        // a time while the count on it runs, rather than waiting for the
         // fallback below, which is a whole second.
-        let ticking = (self.display_on && self.state.clock.running()).then_some(now + clock::CLOCK_STEP_MS);
+        let ticking = (self.display_on && self.state.clock.running()).then(|| now + clock::step(&self.state.clock, now));
         [self.toast.as_ref().map(|t| t.1), easing, self.idle_due(), held, repeat, blink, darkens, chord, menu, ticking]
             .into_iter()
             .flatten()
@@ -1547,14 +1567,27 @@ impl App {
             self.dirty = true;
         }
         // The clock's counts go on of their own accord: while either goes,
-        // the page is drawn again each frame so the reading follows, and a
-        // timer that reaches its end stops there with a tap of the motor.
+        // the rows the reading is drawn in are drawn again each frame so the
+        // reading follows, and a timer that reaches its end stops there with
+        // a tap of the motor.
         if self.state.clock.running() {
             if self.display_on {
-                self.dirty = true;
+                match self.frame.as_ref().and_then(|fr| fr.live) {
+                    // One band of rows, drawn again once however many ticks
+                    // come before the next frame: the same rows queued twice
+                    // would have them drawn twice over.
+                    Some((first, end)) => {
+                        if !self.stale.contains(&(first, end)) {
+                            self.refresh_rows(first, end);
+                        }
+                    }
+                    // A page that has not said which of its rows move: all
+                    // of it is drawn again.
+                    None => self.dirty = true,
+                }
             }
             if self.state.clock.arrive(now) {
-                self.dirty = true;
+                self.refresh();
                 fx.push(Effect::Haptic);
             }
         }

@@ -165,11 +165,22 @@ fn main() -> Result<()> {
             None
         }
     });
+    // The lock's own wallpaper, read apart from the desktop's, so the lock
+    // is drawn over the picture it will stand over on the phone.
+    let lock_wallpaper = std::fs::read(root.join("resources/wallpapers/lock/night.png")).ok().and_then(|bytes| match Canvas::from_png(&bytes) {
+        Ok(picture) => Some(picture),
+        Err(e) => {
+            eprintln!("lock wallpaper: {e:#}");
+            None
+        }
+    });
     let on_wallpaper = |screen: Screen, mut app: App| {
-        if screen == Screen::Desktop
-            && let Some(picture) = &wallpaper
-        {
+        let _ = screen;
+        if let Some(picture) = &wallpaper {
             app.set_wallpaper(picture.clone());
+        }
+        if let Some(picture) = &lock_wallpaper {
+            app.set_lock_wallpaper(picture.clone());
         }
         app
     };
@@ -302,7 +313,9 @@ fn main() -> Result<()> {
         ("00z-lock-swiped-4-dark", 0.93),
     ];
     for (name, part) in unlock {
-        let mut app = opened(Screen::Settings, w, h, ppd);
+        let mut app = on_wallpaper(Screen::Settings, App::new(Screen::Settings, w, h, ppd));
+        app.state.lang = lang;
+        app.state.data = Data::Open;
         app.state.dark = true;
         let mut behind = Canvas::new(w, h);
         app.compose(&mut behind, &fonts, &info, "21:40", 0);
@@ -1327,7 +1340,9 @@ fn main() -> Result<()> {
     let mut missed = Vec::new();
     for (name, screen, dark, act) in moments {
         let drew = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-            let mut app = opened(screen, w, h, ppd);
+            let mut app = on_wallpaper(screen, App::new(screen, w, h, ppd));
+            app.state.lang = lang;
+            app.state.data = Data::Open;
             app.set_screen_corners(cfg.display.corner_radius as f32);
             app.state.dark = dark;
             app.frame(&fonts, &info);
