@@ -364,15 +364,20 @@ pub fn desktop(cx: &Ctx) -> Frame {
     };
     let mut out = Vec::new();
 
-    let cell = m.w as f32 / DESKTOP_COLS as f32;
-    let tile = m.dp(58.0);
-    let row_h = m.dp(104.0);
+    // The grid, measured off a phone's own desktop at 1080 wide: a tile
+    // 164 px square with 90 px between tiles, so four tiles and their gaps
+    // come to 925 px and leave 77 px at each side; a row is 299 px apart.
+    let tile = m.dp(62.5);
+    let gap = m.dp(34.2);
+    let row_w = tile * DESKTOP_COLS as f32 + gap * (DESKTOP_COLS - 1) as f32;
+    let margin_x = (m.w as f32 - row_w) / 2.0;
+    let row_h = m.dp(113.9);
     // The first row clears the status bar, but not by much: a phone's own
     // desktop puts its first row of tiles close under the bar rather than
     // leaving a band of empty wallpaper above it. `bar_bottom` is where a
     // page with a title puts its content, and that clearance is for a title
     // the desktop does not have, so the row starts inside it.
-    let top = widgets::bar_bottom(t) - m.dp(24.0);
+    let top = widgets::bar_bottom(t) - m.dp(14.0);
     let ink = Rgba::rgb(255, 255, 255);
 
     // Which page is showing, and how far a finger has pulled it towards the
@@ -387,7 +392,7 @@ pub fn desktop(cx: &Ctx) -> Frame {
     for (at, app) in DESKTOP_APPS[first..last].iter().enumerate() {
         let col = (at % DESKTOP_COLS) as f32;
         let row = (at / DESKTOP_COLS) as f32;
-        let x = cell * (col + 0.5) + shift;
+        let x = margin_x + tile / 2.0 + col * (tile + gap) + shift;
         let y = top + row * row_h;
         let cy = y + tile / 2.0;
         let (x0, y0) = (x - tile / 2.0, cy - tile / 2.0);
@@ -399,7 +404,7 @@ pub fn desktop(cx: &Ctx) -> Frame {
         let (lit, deep) = (mix(app.color, ink, 0.14), mix(app.color, DESKTOP_BG, 0.10));
         icons::tile_graded(&mut c, x0, y0, tile, lit, deep);
         icons::glyph(&mut c, app.icon, x, cy, tile * 0.64, ink);
-        c.text_center(&f.label, l.pick(app.name), x, cy + tile / 2.0 + m.dp(17.0), m.sub_px, ink);
+        c.text_center(&f.label, l.pick(app.name), x, cy + tile / 2.0 + m.dp(12.5), m.dp(12.3), ink);
         // The whole cell answers a touch, as a phone's desktop icon does —
         // including the ones with nothing behind them, which answer by
         // stopping rather than by opening.
@@ -407,7 +412,7 @@ pub fn desktop(cx: &Ctx) -> Frame {
             Opens::Page(screen) => Action::Open(screen),
             Opens::NotYet(tag) => Action::NotReady(tag),
         };
-        out.push(Hit { rect: Rect::new(x - cell / 2.0, y, cell, row_h), action });
+        out.push(Hit { rect: Rect::new(x - (tile + gap) / 2.0, y, tile + gap, row_h), action });
     }
 
     // A dot a page, and the one showing lit. One page alone needs none: a
