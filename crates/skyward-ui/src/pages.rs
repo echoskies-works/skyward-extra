@@ -438,14 +438,26 @@ pub fn desktop(cx: &Ctx) -> Frame {
 /// How many keys a calculator's row holds, and how many rows it holds.
 const CALC_COLS: usize = 4;
 
+/// The calculator's own orange: the one colour on the page that is not the
+/// theme's. A phone's calculator sets the keys that change the sum and the
+/// operators apart with it, and leaves the figures black on white.
+const CALC_ORANGE: Rgba = Rgba::rgb(255, 105, 0);
+
+/// The two words across the top of the page. The left one is the sum being
+/// worked; the right one is the page that converts units, which is named
+/// here and not built, so it is drawn quiet and answers no touch.
+const CALC_TABS: [Text; 2] = [["计算", "計算", "Calculate"], ["换算", "換算", "Convert"]];
+
 /// The calculator's keys, in the order a calculator lays them out, with
-/// `=` where the right hand of the last row ends.
+/// `=` where the right hand of the last row ends. The left of the last row
+/// is the key that flips a number's sign, as this one does instead of the
+/// phone's own key that shrinks the calculator to a window.
 const CALC_KEYS: [[CalcKey; CALC_COLS]; 5] = [
     [CalcKey::Clear, CalcKey::Erase, CalcKey::Percent, CalcKey::Op(CalcOp::Div)],
     [CalcKey::Digit(7), CalcKey::Digit(8), CalcKey::Digit(9), CalcKey::Op(CalcOp::Mul)],
     [CalcKey::Digit(4), CalcKey::Digit(5), CalcKey::Digit(6), CalcKey::Op(CalcOp::Sub)],
     [CalcKey::Digit(1), CalcKey::Digit(2), CalcKey::Digit(3), CalcKey::Op(CalcOp::Add)],
-    [CalcKey::Digit(0), CalcKey::Negate, CalcKey::Dot, CalcKey::Eq],
+    [CalcKey::Negate, CalcKey::Digit(0), CalcKey::Dot, CalcKey::Eq],
 ];
 
 const CALC_DIGITS: [&str; 10] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
@@ -469,73 +481,127 @@ fn calc_text(key: CalcKey) -> &'static str {
     }
 }
 
-/// The tile behind a key: the operator tiles take the page's accent, the
-/// ones that change the sum take its track, and the figures take a card.
+/// The tile behind a key: every key is a card, white over the grey page, and
+/// only `=` is filled with the orange, so it reads as the key the sum is
+/// answered with.
 fn calc_fill(t: &Theme, key: CalcKey) -> Rgba {
     match key {
-        CalcKey::Op(_) | CalcKey::Eq => t.pal.accent,
-        CalcKey::Clear | CalcKey::Erase | CalcKey::Percent | CalcKey::Negate => t.pal.track,
-        CalcKey::Digit(_) | CalcKey::Dot => t.pal.card,
+        CalcKey::Eq => CALC_ORANGE,
+        _ => t.pal.card,
     }
 }
 
-/// The words on a key, white over the accent and the page's text colour
-/// elsewhere.
+/// The words on a key: the figures in the page's ink, `=` in white over its
+/// orange, and everything else in the orange the phone's calculator sets its
+/// operators in.
 fn calc_ink(t: &Theme, key: CalcKey) -> Rgba {
     match key {
-        CalcKey::Op(_) | CalcKey::Eq => Rgba::rgb(255, 255, 255),
-        _ => t.pal.text,
+        CalcKey::Eq => Rgba::rgb(255, 255, 255),
+        CalcKey::Digit(_) | CalcKey::Dot => t.pal.text,
+        _ => CALC_ORANGE,
     }
 }
 
-/// The calculator: the sum so far across the page under the title, the
-/// keys laid out under it four to a row, as a phone's calculator lays its
-/// own out.
+/// How large a key's word is drawn. The phone's calculator sets `AC` small
+/// enough for its two letters to sit in a key and the operators widest of
+/// all; its typeface draws `+` and `÷` at the height of a figure, where this
+/// one draws them shorter, so the signs are given that height back here.
+fn calc_px(t: &Theme, key: CalcKey) -> f32 {
+    let dp = |v: f32| t.m.dp(v);
+    match key {
+        CalcKey::Digit(_) | CalcKey::Dot => dp(30.5),
+        CalcKey::Clear => dp(21.0),
+        CalcKey::Op(_) => dp(45.7),
+        // The phone draws a key here that fills the tile; the sign that
+        // stands in its place is set large enough to carry the same weight.
+        CalcKey::Negate => dp(36.0),
+        _ => dp(27.4),
+    }
+}
+
+/// The calculator: the two words across its top, the sum over the keys and
+/// the keys four to a row, measured off the phone's own calculator at 1080
+/// wide — keys 205 px square in a 921 px block, 33 px apart across and 29 px
+/// down, the last row 122 px above the foot of the screen.
 pub fn calculator(cx: &Ctx) -> Frame {
     let (t, f, l) = (cx.t, cx.f, cx.state.lang);
     let m = &t.m;
-    let mut c = page(cx);
+    // The phone's calculator greys its page a shade past the theme's, which
+    // is what makes the white keys read as keys rather than patches.
+    let ground = if t.dark { t.pal.bg } else { Rgba::rgb(247, 247, 247) };
+    let mut c = sheet(cx, m.h, ground);
     let mut out = Vec::new();
 
-    let left = m.margin;
-    let right = m.w as f32 - m.margin;
+    // The two words, the one being worked in the page's ink and the other
+    // quiet, centred over the figures.
+    let tab_px = m.dp(22.5);
+    let on = l.pick(CALC_TABS[0]);
+    let off = l.pick(CALC_TABS[1]);
+    let on_w = c.text_width(&f.heading, on, tab_px);
+    let off_w = c.text_width(&f.heading, off, tab_px);
+    let tab_gap = m.dp(25.0);
+    let tab_x = (m.w as f32 - (on_w + tab_gap + off_w)) / 2.0;
+    let tab_base = m.dp(81.2);
+    c.text(&f.heading, on, tab_x, tab_base, tab_px, t.pal.text, None);
+    c.text(&f.heading, off, tab_x + on_w + tab_gap, tab_base, tab_px, t.pal.subtitle, None);
+
+    let left = m.dp(30.3);
+    let right = m.w as f32 - left;
     let avail = right - left;
 
-    // The keys take the bottom of the page, the last row down to the
-    // margin.
-    let gap = m.dp(12.0);
+    // The keys take the foot of the page, the last row down to the foot
+    // margin, and the sum sits over them at the right.
+    let gap = m.dp(12.6);
+    let row_gap = m.dp(11.0);
     let rows = CALC_KEYS.len() as f32;
-    let key_h = m.dp(80.0);
-    let grid_h = key_h * rows + gap * (rows - 1.0);
-    let top = m.h as f32 - m.margin - grid_h;
+    let key_h = m.dp(64.0);
+    let grid_h = key_h * rows + row_gap * (rows - 1.0);
+    let top = m.h as f32 - m.dp(46.5) - grid_h;
     let key_w = (avail - gap * (CALC_COLS as f32 - 1.0)) / CALC_COLS as f32;
 
-    // The sum so far sits over the keys, its figures shrunk to fit the
-    // line where there are many of them.
+    // The sum so far, right against the caret the phone keeps after it, its
+    // figures shrunk to fit the line where there are many of them. The gap
+    // the typeface leaves at the right of its last figure is taken up here,
+    // so the sum ends where the phone's does.
+    let caret_w = m.dp(2.3);
+    let caret_x = right - m.dp(1.2);
+    let ink_x = caret_x + m.dp(2.2);
     let shown = cx.state.calc.shown();
-    let mut px = m.dp(62.0);
+    let mut px = m.dp(50.3);
     let mut wide = c.text_width(&f.heading, &shown, px);
-    while wide > avail && px > m.dp(22.0) {
+    while wide > ink_x - left && px > m.dp(20.0) {
         px -= m.dp(2.0);
         wide = c.text_width(&f.heading, &shown, px);
     }
-    let base = top - m.dp(52.0);
-    c.text(&f.heading, &shown, right - wide, base, px, t.pal.text, None);
+    let base = top - m.dp(65.2);
+    c.text(&f.heading, &shown, ink_x - wide, base, px, t.pal.text, None);
+    // The caret is as tall as a line of the phone's figures, standing well
+    // past the digits on either side of the baseline.
+    let caret_h = m.dp(98.3);
+    let caret_cy = top - m.dp(75.1);
+    c.fill_rect(caret_x, caret_cy - caret_h / 2.0, caret_w, caret_h, CALC_ORANGE);
 
     for (r, row) in CALC_KEYS.iter().enumerate() {
         for (k, key) in row.iter().enumerate() {
             let x = left + (key_w + gap) * k as f32;
-            let y = top + (key_h + gap) * r as f32;
-            c.fill_round_rect(x, y, key_w, key_h, m.dp(18.0), calc_fill(t, *key));
-            c.text_center(&f.heading, calc_text(*key), x + key_w / 2.0, y + key_h / 2.0, m.dp(30.0), calc_ink(t, *key));
+            let y = top + (key_h + row_gap) * r as f32;
+            c.fill_round_rect(x, y, key_w, key_h, m.dp(16.0), calc_fill(t, *key));
+            c.text_center(&f.heading, calc_text(*key), x + key_w / 2.0, y + key_h / 2.0, calc_px(t, *key), calc_ink(t, *key));
             // The whole key answers a touch.
             out.push(Hit { rect: Rect::new(x, y, key_w, key_h), action: Action::Calc(*key) });
         }
     }
 
-    // No `<` here: an app opened from the desktop leaves it the way the
-    // desktop's own apps do, by a swipe up from the foot of the screen.
-    Frame { back: false, ..Frame::new(t, c, out, l.pick(CALC_TITLE), m.content_top) }
+    // No `<` and no large title here: an app opened from the desktop leaves
+    // it the way the desktop's own apps do, by a swipe up from the foot of
+    // the screen, and the calculator's top line carries its two words
+    // instead of a page's name.
+    Frame {
+        back: false,
+        header: false,
+        bg: ground,
+        ..Frame::new(t, c, out, "", m.content_top)
+    }
 }
 
 /// The clock's two faces, in the order the bar at its foot lays them out.
