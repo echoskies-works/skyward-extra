@@ -619,6 +619,11 @@ pub fn clock(cx: &Ctx) -> Frame {
     };
     c.text_center(&f.heading, &reading, mid, read_cy, px, t.pal.text);
 
+    // The reading is the one thing here that goes on changing while nothing
+    // is touched: the rows it is drawn in are the rows the page is told to
+    // draw again as the count runs, and the rest of the page stays as drawn.
+    let live = ((read_cy - px).max(0.0) as u32, (read_cy + px).min(m.h as f32) as u32);
+
     // The stopwatch's paper: as many entries as the room between the
     // reading and the keys takes, the newest at the foot of it.
     if clock.face == ClockFace::Stopwatch {
@@ -690,7 +695,7 @@ pub fn clock(cx: &Ctx) -> Frame {
     }
 
     // No `<` here either: the clock leaves the way the desktop's own apps do.
-    Frame { back: false, ..Frame::new(t, c, out, l.pick(CLOCK_TITLE), m.content_top) }
+    Frame { back: false, live: Some(live), ..Frame::new(t, c, out, l.pick(CLOCK_TITLE), m.content_top) }
 }
 
 /// Recovery home, laid out like the Settings root: title, search, a device

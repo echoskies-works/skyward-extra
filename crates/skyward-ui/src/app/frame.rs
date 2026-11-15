@@ -49,6 +49,10 @@ pub struct Frame {
     /// The round button at the right end of the bar: what it shows, and
     /// what touching it does.
     pub button: Option<(widgets::Glyph, Action)>,
+    /// The rows of the page that go on changing of their own accord, as a
+    /// count runs: drawn again a frame at a time, and nothing else of the
+    /// page with them.
+    pub live: Option<(u32, u32)>,
 }
 
 /// A strip held at the bottom of the screen over the page, such as the
@@ -210,6 +214,7 @@ impl Frame {
             dock: None,
             caret: None,
             button: None,
+            live: None,
         }
     }
 

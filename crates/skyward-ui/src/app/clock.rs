@@ -32,9 +32,28 @@ pub(super) const CLOCK_MOST: u64 = 60;
 pub(super) const CLOCK_LEAST: u64 = 1;
 
 /// How long between the frames the page is drawn again by while a count
-/// runs: thirty a second, which is enough for a reading to the hundredth
-/// and well short of what a frame here costs.
-pub(super) const CLOCK_STEP_MS: u64 = 33;
+/// runs: sixty a second, so the hundredths move one or two at a frame. The
+/// page is told to draw again only the rows its reading is in, which is
+/// what lets it keep to that pace.
+pub(super) const CLOCK_STEP_MS: u64 = 16;
+
+/// How long until the reading next changes, while a count on the face shown
+/// runs. The stopwatch reads to the hundredth, so it takes a frame on; the
+/// timer reads only to the second, so it takes the rest of the second it is
+/// showing. A face left standing still takes a second, which is near enough
+/// for a count on the other face that runs out to be tapped for then.
+pub(super) fn step(clock: &Clock, now: u64) -> u64 {
+    match clock.face {
+        ClockFace::Stopwatch if clock.stop_since.is_some() => CLOCK_STEP_MS,
+        // The reading is rounded up to the second it is shown by, so it
+        // changes as the count comes down onto a whole second.
+        ClockFace::Timer if clock.left_since.is_some() => match clock.timer(now) % 1_000 {
+            0 => 1_000,
+            left => left,
+        },
+        _ => 1_000,
+    }
+}
 
 /// The clock's own state, as its page last left it. The readings are not
 /// kept: both counts are worked out from the clock the page is given, so
@@ -96,5 +115,72 @@ impl Clock {
             return true;
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::testing::*;
+    use crate::app::{App, Ctx, Frame, Screen};
+    use crate::canvas::Canvas;
+    use crate::font::Fonts;
+    use skyward_info::DeviceInfo;
+
+    const W: u32 = 400;
+    const H: u32 = 800;
+    const PPD: f32 = 2.0;
+
+    /// The page as it stands at `now` drawn from nothing, to compare what
+    /// the frame kept against.
+    fn anew(app: &App, f: &Fonts, i: &DeviceInfo, now: u64) -> Frame {
+        let t = app.theme();
+        crate::pages::render(
+            Screen::Clock,
+            &Ctx { t: &t, f, info: i, state: &app.state, term: None, band: None, now, wallpaper: app.wallpaper.as_ref() },
+        )
+    }
+
+    #[test]
+    fn the_reading_is_drawn_again_as_the_stopwatch_runs() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Clock, W, H, PPD);
+        let start = 1_000;
+        app.state.clock.stop_since = Some(start);
+        app.compose(&mut Canvas::new(W, H), &f, &i, "12:00", start);
+        // A moment of the count later, the page kept is the page as it now
+        // stands: the reading has to follow the count.
+        app.tick(start + 500);
+        app.compose(&mut Canvas::new(W, H), &f, &i, "12:00", start + 500);
+        let kept = &app.frame.as_ref().expect("composed").canvas;
+        assert!(kept.data == anew(&app, &f, &i, start + 500).canvas.data, "the reading follows the count");
+    }
+
+    #[test]
+    fn the_reading_is_drawn_again_as_the_timer_runs_down() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Clock, W, H, PPD);
+        let start = 1_000;
+        app.state.clock.face = ClockFace::Timer;
+        app.state.clock.left_since = Some(start);
+        app.compose(&mut Canvas::new(W, H), &f, &i, "12:00", start);
+        app.tick(start + 1_200);
+        app.compose(&mut Canvas::new(W, H), &f, &i, "12:00", start + 1_200);
+        let kept = &app.frame.as_ref().expect("composed").canvas;
+        assert!(kept.data == anew(&app, &f, &i, start + 1_200).canvas.data, "the reading runs down");
+    }
+
+    #[test]
+    fn the_stopwatch_is_waited_for_a_frame_and_the_timer_for_the_second_it_shows() {
+        let mut clock = Clock::default();
+        assert_eq!(step(&clock, 0), 1_000, "a clock at rest is waited for a second at a time");
+        clock.stop_since = Some(0);
+        assert_eq!(step(&clock, 4_000), CLOCK_STEP_MS, "the stopwatch reads to the hundredth: a frame on");
+        // The timer is rounded up to the second it shows, so it changes as
+        // the count comes down onto a whole second, not as a second passes.
+        clock.face = ClockFace::Timer;
+        clock.left_since = Some(0);
+        assert_eq!(step(&clock, 1_250), 750, "a moment short of the second it shows next");
+        assert_eq!(step(&clock, 2_000), 1_000, "lands on a whole second, the next one after it");
     }
 }
