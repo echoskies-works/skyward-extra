@@ -703,20 +703,19 @@ fn timer_text(ms: u64) -> String {
 /// The words under the dial before the watch has ever run.
 const CLOCK_HINT: Text = ["点击启动秒表", "點擊啟動碼錶", "Tap to start the stopwatch"];
 
-/// The dial as two pictures: the plate it is faced with and the ring of
-/// marks on it, both drawn for a panel 1080 across — the plate 800 square,
-/// its face 661 across, the marks 570. They are laid on at that size, the
-/// marks inside the face with the white the plate leaves around them.
+/// The dial: a disc the colour of a card, its own shadow under it, drawn by
+/// the page rather than laid on from a picture. Nothing is on it yet — the
+/// marks, the `60` and `15`, the ring and the hand all come later; the count
+/// under it carries the reading for now.
 ///
-/// No hand is drawn over them yet: the count under the dial carries the
-/// reading for now.
-const DIAL_PLATE: &[u8] = include_bytes!("../../../resources/clock/clockbase.png");
-const DIAL_MARKS: &[u8] = include_bytes!("../../../resources/clock/clockdeco.png");
-const DIAL_W: f32 = 800.0;
-/// The ring the marks are stretched to, on the plate's own 800: a little
-/// inside the 661 the face is across, so the white it was drawn with stays
-/// around them.
-const DIAL_MARKS_W: f32 = 620.0;
+/// Across in dp. The picture it replaced showed a face 661 px wide on a
+/// 1080 panel; this is a shade under that, so the dial reads as the same
+/// instrument set a little further back.
+const DIAL_D: f32 = 236.0;
+/// How far the dial's shadow is blurred, in dp. Small on purpose: it has to
+/// have faded out well above the count, or its grey would sit on the
+/// figures.
+const DIAL_SHADOW: f32 = 12.0;
 
 /// Where the stopwatch's parts sit in dp: the dial's centre from the top of
 /// the page, the count's centre and size under it, the short rule the paper
@@ -745,26 +744,13 @@ pub fn clock_paper_room(m: &crate::theme::Metrics) -> usize {
     ((clock_paper_foot(m) - m.dp(PAPER_TOP)) / m.dp(PAPER_ROW)).floor().max(0.0) as usize
 }
 
-/// The dial's two pictures, decoded once and kept: they are read off the
-/// binary and laid on whole wherever the watch is shown.
-fn dial_art() -> &'static (Canvas, Canvas) {
-    static ART: std::sync::OnceLock<(Canvas, Canvas)> = std::sync::OnceLock::new();
-    ART.get_or_init(|| {
-        let plate = Canvas::from_png(DIAL_PLATE).expect("the dial's plate is a PNG");
-        let marks = Canvas::from_png(DIAL_MARKS).expect("the dial's marks are a PNG");
-        (plate, marks)
-    })
-}
-
-/// The dial laid on centred at (`cx`, `cy`), grown with the panel: a wider
-/// one shows the same dial bigger, the pictures kept in the proportion they
-/// were drawn in.
-fn clock_dial(c: &mut Canvas, m: &crate::theme::Metrics, cx: f32, cy: f32) {
-    let (plate, marks) = dial_art();
-    let side = DIAL_W * m.w as f32 / 1080.0;
-    c.draw_image(plate, cx - side / 2.0, cy - side / 2.0, side, side);
-    let across = side * DIAL_MARKS_W / DIAL_W;
-    c.draw_image(marks, cx - across / 2.0, cy - across / 2.0, across, across);
+/// The dial laid on centred at (`cx`, `cy`): the shadow first, so the disc
+/// is drawn over the half of it that falls inside, the disc itself after.
+fn clock_dial(c: &mut Canvas, m: &crate::theme::Metrics, t: &crate::theme::Theme, cx: f32, cy: f32) {
+    let d = m.dp(DIAL_D);
+    let (x, y) = (cx - d / 2.0, cy - d / 2.0);
+    c.shadow_round_rect(x, y, d, d, d / 2.0, m.dp(DIAL_SHADOW), t.pal.shadow);
+    c.fill_circle(cx, cy, d / 2.0, t.pal.card);
 }
 
 /// The clock: the two words across the top that switch between the time
@@ -813,14 +799,14 @@ pub fn clock(cx: &Ctx) -> Frame {
     // switched.
     let sd = m.dp(48.0);
 
-    // The stopwatch is read off a dial: the plate and its marks laid on, the
-    // count small under it, and the paper of entries hanging from a short
-    // rule under the count. The timer has no dial, so its count takes the
-    // middle of the room the words and the keys leave.
+    // The stopwatch is read off a dial: a bare disc, the count small under
+    // it, and the paper of entries hanging from a short rule under the count.
+    // The timer has no dial, so its count takes the middle of the room the
+    // words and the keys leave.
     let mut scroll = None;
     let live = match clock.face {
         ClockFace::Stopwatch => {
-            clock_dial(&mut c, m, mid, m.dp(DIAL_CY));
+            clock_dial(&mut c, m, t, mid, m.dp(DIAL_CY));
             let reading = stopwatch_text(clock.stopwatch(cx.now));
             // The typeface's own weight, not the one the pages set their
             // titles in: the count is read rather than looked at.
