@@ -206,6 +206,10 @@ pub struct Fonts {
     pub strong: Face,
     /// How fast data goes, in the status bar.
     pub speed: Face,
+    /// The typeface's own standard weight, unasked for by any of the roles
+    /// above: the stopwatch's count is set in it, as the Smartisan clock
+    /// sets its own.
+    pub regular: Face,
     /// The About page wordmark, set in a typeface of its own.
     pub display: Face,
     /// The terminal's monospaced face, for the characters it has.
@@ -288,6 +292,8 @@ impl Fonts {
             status: face(w.status)?,
             strong: face(w.strong)?,
             speed: face(w.speed)?,
+            // The face's own standard weight, not one fitted to a role.
+            regular: face(400.0)?,
             // The wordmark is the brand's own lettering, not the UI's.
             display: Face::new(brand_data, 0, BRAND_WEIGHT)?,
             // A single-weight file: the coordinate asks for the weight it is.

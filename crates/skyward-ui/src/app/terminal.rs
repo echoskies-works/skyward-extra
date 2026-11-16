@@ -88,9 +88,18 @@ impl App {
 
     /// Scroll as a finger going down `rows` rows' heights does, or up for
     /// fewer than none: the terminal's screen back to what the shell wrote
-    /// before, the editor's text to the lines before.
+    /// before, the editor's text to the lines before, the stopwatch's paper
+    /// to the entries taken before.
     pub(super) fn scroll_rows(&mut self, rows: isize) {
-        if self.screen() == Screen::Editor {
+        if self.screen() == Screen::Clock {
+            // The paper keeps its foot where the newest entry is, and its
+            // top no further back than the oldest one.
+            let room = crate::pages::clock_paper_room(&self.theme().m);
+            let clock = &mut self.state.clock;
+            let least = clock.laps.len().saturating_sub(room) as isize;
+            clock.paper = (clock.paper as isize - rows).clamp(0, least) as usize;
+            self.refresh();
+        } else if self.screen() == Screen::Editor {
             self.state.editor.as_mut().expect("the editor page shows a file").scroll(-rows);
             self.refresh_text();
         } else if let Some(term) = self.term.as_mut() {

@@ -263,14 +263,17 @@ fn main() -> Result<()> {
         Going,
         Lapped,
         Paused,
+        /// More entries taken than the page shows, so the paper is scrolled.
+        Many,
         Timer,
     }
-    let clock: [(&str, bool, ClockShot); 6] = [
+    let clock: [(&str, bool, ClockShot); 7] = [
         ("00-03-clock-stopwatch-idle-light", false, ClockShot::Idle),
         ("00-03-clock-stopwatch-going-light", false, ClockShot::Going),
         ("00-03-clock-stopwatch-lapped-light", false, ClockShot::Lapped),
         ("00-03-clock-stopwatch-lapped-dark", true, ClockShot::Lapped),
         ("00-03-clock-stopwatch-paused-light", false, ClockShot::Paused),
+        ("00-03-clock-stopwatch-many-light", false, ClockShot::Many),
         ("00-03-clock-timer-light", false, ClockShot::Timer),
     ];
     for (name, dark, shot) in clock {
@@ -300,6 +303,19 @@ fn main() -> Result<()> {
                     c.stop = 83_450;
                     c.laps = paper();
                 }
+                ClockShot::Many => {
+                    c.stop_since = Some(0);
+                    let mut at = 0;
+                    c.laps = (1..=40u64)
+                        .map(|k| {
+                            let split = 12_000 + k * 1_337 % 9_000;
+                            at += split;
+                            Lap { split, total: at }
+                        })
+                        .collect();
+                    // The paper opened at its foot, where the newest entry is.
+                    c.paper = c.laps.len();
+                }
                 ClockShot::Timer => {
                     let length = 25 * 60_000;
                     c.span = length;
@@ -311,6 +327,7 @@ fn main() -> Result<()> {
         let _ = match shot {
             ClockShot::Going => app.tick(3_240),
             ClockShot::Lapped => app.tick(83_450),
+            ClockShot::Many => app.tick(app.state.clock.laps.last().map_or(0, |lap| lap.total) + 1_000),
             ClockShot::Timer => app.tick(38_000),
             ClockShot::Idle | ClockShot::Paused => Vec::new(),
         };

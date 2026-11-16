@@ -85,6 +85,7 @@ impl App {
                         clock.stop = 0;
                         clock.stop_since = None;
                         clock.laps.clear();
+                        clock.paper = 0;
                     }
                     ClockFace::Timer => {
                         clock.left = clock.span;
@@ -104,6 +105,9 @@ impl App {
                         clock.laps.remove(0);
                     }
                     clock.laps.push(Lap { split, total });
+                    // The entry just taken is the one to see: the paper
+                    // drops to its foot as a till's paper comes out.
+                    clock.paper = clock.laps.len();
                     self.refresh();
                 }
             }

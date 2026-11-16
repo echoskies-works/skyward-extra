@@ -666,6 +666,9 @@ enum Drag {
     /// down at `start`. Letting go past a quarter of the screen turns it to
     /// the page beside the one it was on; short of that, it goes back.
     Page { start: f32 },
+    /// A finger dragged level across the clock: it turns to the face beside
+    /// the one shown, once, and nothing more of the drag counts.
+    Face,
     Slider(Slider, Rect),
     Confirm { which: Confirm, track: Rect, grab: f32 },
     /// Scrolling a terminal's screen back through what the shell wrote, or

@@ -4,6 +4,19 @@
 use super::*;
 
 impl App {
+    /// Turn the clock to the face beside the one shown: a finger dragged
+    /// level across the page turns it as the two words across its top do.
+    pub(super) fn turn_face(&mut self, onward: bool) {
+        let clock = &mut self.state.clock;
+        // There are the two faces and no more: a pull one way shows the one
+        // to the right of the watch, a pull the other way the watch itself.
+        clock.face = match (clock.face, onward) {
+            (ClockFace::Stopwatch, true) => ClockFace::Timer,
+            _ => ClockFace::Stopwatch,
+        };
+        self.refresh();
+    }
+
     pub fn touch(&mut self, ev: Touch, f: &Fonts, now: u64) -> Vec<Effect> {
         self.now = now;
         // A finger on the dark panel lights nothing, as on the phone's own
@@ -182,6 +195,14 @@ impl App {
                             self.dirty = true;
                             Drag::Page { start: x0 }
                         }
+                        _ if self.screen() == Screen::Clock && dx.abs() > slop && dx.abs() > dy.abs() => {
+                            // Dragged level across the clock, it turns to the
+                            // face beside the one shown — the way the words
+                            // across its top turn it, and the same way round:
+                            // a pull to the left shows the one to the right.
+                            self.turn_face(dx < 0.0);
+                            Drag::Face
+                        }
                         _ if dy < -slop && dy.abs() > dx.abs() && y0 > m.h as f32 - m.dp(FOOT_DP) && !self.working() => {
                             // Over the desktop there is nowhere further to go
                             // than the tasks themselves.
@@ -281,6 +302,7 @@ impl App {
                 }
                 Drag::Waking => self.drag = Drag::Waking,
                 Drag::Held => self.drag = Drag::Held,
+                Drag::Face => self.drag = Drag::Face,
                 // A finger on the lock, which is swiped by its own path in
                 // `lock_touch` and never reaches here.
                 Drag::Lock { from } => self.drag = Drag::Lock { from },
@@ -776,6 +798,36 @@ mod tests {
         app.compose(&mut c, &f, &i, "12:00", 1000);
         assert_eq!(grey_at(&c, x, y), over(t.pal.button_press, t.pal.search).r);
     }
+
+    #[test]
+    fn dragging_level_across_the_clock_turns_it_to_the_other_face() {
+        let f = fonts();
+        let mut app = App::new(Screen::Clock, W, H, PPD);
+        assert_eq!(app.state.clock.face, ClockFace::Stopwatch, "it opens on the watch");
+        // A pull to the left shows the face to its right.
+        app.touch(Touch::Down(900.0, 1600.0), &f, 0);
+        app.touch(Touch::Move(700.0, 1605.0), &f, 0);
+        app.touch(Touch::Up, &f, 0);
+        assert_eq!(app.state.clock.face, ClockFace::Timer);
+        // And a pull to the right brings the watch back.
+        app.touch(Touch::Down(500.0, 1600.0), &f, 0);
+        app.touch(Touch::Move(700.0, 1605.0), &f, 0);
+        app.touch(Touch::Up, &f, 0);
+        assert_eq!(app.state.clock.face, ClockFace::Stopwatch);
+    }
+
+    #[test]
+    fn a_drag_down_the_clock_leaves_the_face_shown() {
+        let f = fonts();
+        let mut app = App::new(Screen::Clock, W, H, PPD);
+        // Nothing to scroll on a watch that has taken no entry, so the
+        // page stays as it is, whichever way the finger goes.
+        app.touch(Touch::Down(720.0, 1000.0), &f, 0);
+        app.touch(Touch::Move(720.0, 1400.0), &f, 0);
+        app.touch(Touch::Up, &f, 0);
+        assert_eq!(app.state.clock.face, ClockFace::Stopwatch);
+    }
+
 
     #[test]
     fn swipe_from_the_left_edge_goes_back() {

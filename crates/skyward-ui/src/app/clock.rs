@@ -69,6 +69,9 @@ pub struct Clock {
     pub stop_since: Option<u64>,
     /// The entries taken, the newest last.
     pub laps: Vec<Lap>,
+    /// Which of them is at the top of the paper, when there are more than
+    /// the page shows: what a finger has scrolled down to, the oldest first.
+    pub paper: usize,
     /// The timer: how long it is set for, how much of it was left when it
     /// was last stopped, and when it went on again since.
     pub span: u64,
@@ -83,6 +86,7 @@ impl Default for Clock {
             stop: 0,
             stop_since: None,
             laps: Vec::new(),
+            paper: 0,
             span: CLOCK_SPAN,
             left: CLOCK_SPAN,
             left_since: None,

@@ -316,6 +316,64 @@ impl Canvas {
         }
     }
 
+    /// `src` drawn with its top-left corner at (`x`, `y`), `w` × `h` across
+    /// this canvas, its transparency kept: a picture with soft edges mixes
+    /// with what lies under it by its own alpha, where `blit_scaled` covers
+    /// its box whole. Each pixel takes the bilinear sample of the four of
+    /// `src` about where it falls, so a picture laid at the size it was
+    /// drawn is copied alike.
+    pub fn draw_image(&mut self, src: &Canvas, x: f32, y: f32, w: f32, h: f32) {
+        if src.w == 0 || src.h == 0 || w <= 0.0 || h <= 0.0 {
+            return;
+        }
+        let (sx, sy) = (src.w as f32 / w, src.h as f32 / h);
+        let (x0, x1) = self.columns(x.floor() as i32, (x + w).ceil() as i32);
+        let (y0, y1) = self.rows(y.floor() as i32, (y + h).ceil() as i32);
+        // Where a sample falls between the pixels of `src`, and which four
+        // those are.
+        let near = |v: f32, n: u32| {
+            let v = v.clamp(0.0, (n - 1) as f32);
+            let (i, f) = (v.floor() as u32, v.fract());
+            (i, (i + 1).min(n - 1), f)
+        };
+        let px = |x: u32, y: u32| {
+            let i = ((y * src.w + x) * 4) as usize;
+            [src.data[i], src.data[i + 1], src.data[i + 2], src.data[i + 3]]
+        };
+        for row in y0..y1 {
+            let (sy0, sy1, fy) = near((row as f32 + 0.5 - y) * sy - 0.5, src.h);
+            for col in x0..x1 {
+                let (sx0, sx1, fx) = near((col as f32 + 0.5 - x) * sx - 0.5, src.w);
+                let (a, b, c, d) = (px(sx0, sy0), px(sx1, sy0), px(sx0, sy1), px(sx1, sy1));
+                let sample = |k: usize| {
+                    let top = a[k] as f32 + (b[k] as f32 - a[k] as f32) * fx;
+                    let bottom = c[k] as f32 + (d[k] as f32 - c[k] as f32) * fx;
+                    top + (bottom - top) * fy
+                };
+                let cover = sample(3);
+                if cover < 1.0 {
+                    continue;
+                }
+                let i = self.at(col, row);
+                let dst = &mut self.data[i..i + 4];
+                if cover >= 255.0 {
+                    dst[0] = sample(0).round().clamp(0.0, 255.0) as u8;
+                    dst[1] = sample(1).round().clamp(0.0, 255.0) as u8;
+                    dst[2] = sample(2).round().clamp(0.0, 255.0) as u8;
+                    dst[3] = 255;
+                } else {
+                    // Straight alpha: colour as `src` holds it, mixed over
+                    // what is there by the cover.
+                    let a = cover / 255.0;
+                    for (k, d) in dst.iter_mut().enumerate().take(3) {
+                        *d = (sample(k) * a + *d as f32 * (1.0 - a)).round().clamp(0.0, 255.0) as u8;
+                    }
+                    dst[3] = 255;
+                }
+            }
+        }
+    }
+
     /// The picture `bytes` holds as a PNG, as pixels: eight bits a channel,
     /// a palette or greys turned to red, green and blue, and transparency
     /// kept.

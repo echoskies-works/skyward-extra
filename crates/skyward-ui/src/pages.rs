@@ -700,6 +700,73 @@ fn timer_text(ms: u64) -> String {
     format!("{:02}:{:02}", s / 60, s % 60)
 }
 
+/// The words under the dial before the watch has ever run.
+const CLOCK_HINT: Text = ["点击启动秒表", "點擊啟動碼錶", "Tap to start the stopwatch"];
+
+/// The dial as two pictures: the plate it is faced with and the ring of
+/// marks on it, both drawn for a panel 1080 across — the plate 800 square,
+/// its face 661 across, the marks 570. They are laid on at that size, the
+/// marks inside the face with the white the plate leaves around them.
+///
+/// No hand is drawn over them yet: the count under the dial carries the
+/// reading for now.
+const DIAL_PLATE: &[u8] = include_bytes!("../../../resources/clock/clockbase.png");
+const DIAL_MARKS: &[u8] = include_bytes!("../../../resources/clock/clockdeco.png");
+const DIAL_W: f32 = 800.0;
+/// The ring the marks are stretched to, on the plate's own 800: a little
+/// inside the 661 the face is across, so the white it was drawn with stays
+/// around them.
+const DIAL_MARKS_W: f32 = 620.0;
+
+/// Where the stopwatch's parts sit in dp: the dial's centre from the top of
+/// the page, the count's centre and size under it, the short rule the paper
+/// hangs from, and where the paper starts and how tall a row of it is.
+const DIAL_CY: f32 = 272.0;
+const READ_CY: f32 = 462.0;
+const READ_PX: f32 = 30.5;
+/// The count run past an hour, when `H:MM:SS.cc` needs the room.
+const READ_LONG_PX: f32 = 24.0;
+const RULE_CY: f32 = 505.0;
+const RULE_W: f32 = 226.0;
+const HINT_CY: f32 = 528.0;
+const HINT_PX: f32 = 11.5;
+const PAPER_TOP: f32 = 515.0;
+const PAPER_ROW: f32 = 30.0;
+
+/// The foot of the stopwatch's paper: the top of the keys, less the gap the
+/// rule under the paper is drawn in.
+fn clock_paper_foot(m: &crate::theme::Metrics) -> f32 {
+    m.h as f32 - m.margin - m.dp(26.0) - m.dp(74.0) / 2.0 - m.dp(48.0) / 2.0 - m.dp(20.0)
+}
+
+/// How many entries of the paper the room between the rule and the keys
+/// takes: past that, the paper is scrolled through.
+pub fn clock_paper_room(m: &crate::theme::Metrics) -> usize {
+    ((clock_paper_foot(m) - m.dp(PAPER_TOP)) / m.dp(PAPER_ROW)).floor().max(0.0) as usize
+}
+
+/// The dial's two pictures, decoded once and kept: they are read off the
+/// binary and laid on whole wherever the watch is shown.
+fn dial_art() -> &'static (Canvas, Canvas) {
+    static ART: std::sync::OnceLock<(Canvas, Canvas)> = std::sync::OnceLock::new();
+    ART.get_or_init(|| {
+        let plate = Canvas::from_png(DIAL_PLATE).expect("the dial's plate is a PNG");
+        let marks = Canvas::from_png(DIAL_MARKS).expect("the dial's marks are a PNG");
+        (plate, marks)
+    })
+}
+
+/// The dial laid on centred at (`cx`, `cy`), grown with the panel: a wider
+/// one shows the same dial bigger, the pictures kept in the proportion they
+/// were drawn in.
+fn clock_dial(c: &mut Canvas, m: &crate::theme::Metrics, cx: f32, cy: f32) {
+    let (plate, marks) = dial_art();
+    let side = DIAL_W * m.w as f32 / 1080.0;
+    c.draw_image(plate, cx - side / 2.0, cy - side / 2.0, side, side);
+    let across = side * DIAL_MARKS_W / DIAL_W;
+    c.draw_image(marks, cx - across / 2.0, cy - across / 2.0, across, across);
+}
+
 /// The clock: the two words across the top that switch between the time
 /// counted up and the time counted down, the reading large under them, and
 /// the keys that work it at the foot. The stopwatch's entries are kept on a
@@ -711,8 +778,6 @@ pub fn clock(cx: &Ctx) -> Frame {
     let mut c = page(cx);
     let mut out = Vec::new();
 
-    let left = m.margin;
-    let avail = m.w as f32 - m.margin * 2.0;
     let mid = m.w as f32 / 2.0;
 
     // The two words, the one being shown in the page's ink and the other
@@ -743,67 +808,93 @@ pub fn clock(cx: &Ctx) -> Frame {
     let top = cy - d / 2.0;
     let at = |k: usize| mid + (k as f32 - 1.0) * (d + key_gap) - d / 2.0;
 
-    // The reading. The stopwatch keeps it high, with its paper under it; the
-    // timer has nothing under it, so it takes the middle of the room the
-    // words and the keys leave.
-    let read_cy = match clock.face {
-        ClockFace::Stopwatch => m.dp(200.0),
-        ClockFace::Timer => (tab_base + top) / 2.0,
-    };
-    let reading = match clock.face {
-        ClockFace::Stopwatch => stopwatch_text(clock.stopwatch(cx.now)),
-        ClockFace::Timer => timer_text(clock.timer(cx.now)),
-    };
-    // The timer's reading is the whole of the page under the title; the
-    // stopwatch's is set narrower, and narrower again once it runs long.
-    let px = match (clock.face, reading.chars().count() > 8) {
-        (_, true) => m.dp(40.0),
-        (ClockFace::Timer, false) => m.dp(76.0),
-        (ClockFace::Stopwatch, false) => m.dp(60.0),
-    };
-    c.text_center(&f.heading, &reading, mid, read_cy, px, t.pal.text);
+    // The stopwatch's own keys are smaller than the timer's three, on the
+    // same line, so the foot of the page stays where it is as the faces are
+    // switched.
+    let sd = m.dp(48.0);
 
-    // The reading is the one thing here that goes on changing while nothing
-    // is touched: the rows it is drawn in are the rows the page is told to
-    // draw again as the count runs, and the rest of the page stays as drawn.
-    let live = ((read_cy - px).max(0.0) as u32, (read_cy + px).min(m.h as f32) as u32);
+    // The stopwatch is read off a dial: the plate and its marks laid on, the
+    // count small under it, and the paper of entries hanging from a short
+    // rule under the count. The timer has no dial, so its count takes the
+    // middle of the room the words and the keys leave.
+    let mut scroll = None;
+    let live = match clock.face {
+        ClockFace::Stopwatch => {
+            clock_dial(&mut c, m, mid, m.dp(DIAL_CY));
+            let reading = stopwatch_text(clock.stopwatch(cx.now));
+            // The typeface's own weight, not the one the pages set their
+            // titles in: the count is read rather than looked at.
+            let px = m.dp(if reading.chars().count() > 8 { READ_LONG_PX } else { READ_PX });
+            let read_cy = m.dp(READ_CY);
+            c.text_center(&f.regular, &reading, mid, read_cy, px, t.pal.text);
 
-    // The stopwatch's paper: as many entries as the room between the
-    // reading and the keys takes, the newest at the foot of it.
-    if clock.face == ClockFace::Stopwatch {
-        let paper_top = read_cy + m.dp(54.0);
-        let paper_bottom = top - m.dp(22.0);
-        let row_h = m.dp(32.0);
-        let room = ((paper_bottom - paper_top) / row_h).max(0.0) as usize;
-        let shown = clock.laps.len().min(room);
-        if shown > 0 {
-            let first = clock.laps.len() - shown;
-            // The entries come up from the foot, the newest last, and the
-            // rule goes over the topmost of them rather than over the
-            // reading: a slip with a few entries still reads as one piece.
-            let oldest = paper_bottom - (shown - 1) as f32 * row_h - row_h / 2.0;
-            c.fill_rect(left, oldest - row_h / 2.0 - m.dp(10.0), avail, 1.0, t.pal.chevron);
-            for (k, lap) in clock.laps[first..].iter().enumerate() {
-                let y = paper_bottom - (shown - k - 1) as f32 * row_h - row_h / 2.0;
-                let n = format!("#{}", first + k + 1);
-                c.text_vc(&f.heading, &n, left + m.dp(8.0), y, m.dp(19.0), t.pal.text, None);
-                c.text_center(&f.heading, &stopwatch_text(lap.split), mid, y, m.dp(19.0), t.pal.text);
-                let total = stopwatch_text(lap.total);
-                let w = c.text_width(&f.heading, &total, m.dp(19.0));
-                c.text_vc(&f.heading, &total, left + avail - m.dp(8.0) - w, y, m.dp(19.0), t.pal.text, None);
+            // The rule the paper hangs from: short, so it reads as a slip of
+            // its own rather than a division of the page. It belongs to the
+            // paper, so it shows when there is one to show — under the short
+            // words before the watch has run, and over the entries once it
+            // has been worked. A watch running with nothing taken yet has
+            // neither, and its page is the dial and the count alone.
+            let rule_w = m.dp(RULE_W);
+            let (rl, rr) = (mid - rule_w / 2.0, mid + rule_w / 2.0);
+            let rule_y = m.dp(RULE_CY);
+
+            let started = clock.stop_since.is_some() || clock.stop > 0 || !clock.laps.is_empty();
+            let paper = m.dp(PAPER_TOP);
+            // The paper stops short of the keys, and a rule under it closes
+            // the room taken when there are more entries than it shows.
+            let foot = clock_paper_foot(m);
+            let row_h = m.dp(PAPER_ROW);
+            let count = clock.laps.len();
+            let room = clock_paper_room(m);
+            if !started {
+                c.fill_rect(rl, rule_y, rule_w, 1.0, t.pal.chevron);
+                c.text_center(&f.label, l.pick(CLOCK_HINT), mid, m.dp(HINT_CY), m.dp(HINT_PX), t.pal.value);
+            } else if count > 0 && room > 0 {
+                c.fill_rect(rl, rule_y, rule_w, 1.0, t.pal.chevron);
+                let shown = count.min(room);
+                if count > room {
+                    c.fill_rect(rl, foot, rule_w, 1.0, t.pal.chevron);
+                    // What does not fit is scrolled through under the finger
+                    // rather than cut off: the room taken, and the height of
+                    // a row within it.
+                    scroll = Some((Rect::new(rl, paper, rule_w, foot - paper), row_h));
+                }
+                // The entries run down from the rule, the oldest first, the
+                // count kept at the left of the row and the split taken at
+                // its right.
+                let first = clock.paper.min(count - shown);
+                for k in 0..shown {
+                    let lap = &clock.laps[first + k];
+                    let y = paper + row_h * (k as f32 + 0.5);
+                    let n = (first + k + 1).to_string();
+                    c.text_vc(&f.label, &n, rl + m.dp(4.0), y, m.dp(13.0), t.pal.value, None);
+                    let total = stopwatch_text(lap.total);
+                    c.text_vc(&f.heading, &total, rl + m.dp(30.0), y, m.dp(17.0), t.pal.text, None);
+                    let split = format!("+ {}", stopwatch_text(lap.split));
+                    let w = c.text_width(&f.label, &split, m.dp(13.0));
+                    c.text_vc(&f.label, &split, rr - m.dp(6.0) - w, y, m.dp(13.0), t.pal.value, None);
+                }
             }
+            // The count is the one thing here that goes on changing while
+            // nothing is touched: the rows it is drawn in are the rows the
+            // page is told to draw again as it runs, and nothing else is.
+            Some(((read_cy - px).max(0.0) as u32, (read_cy + px).min(m.h as f32) as u32))
         }
-    }
+        ClockFace::Timer => {
+            let read_cy = (tab_base + top) / 2.0;
+            let reading = timer_text(clock.timer(cx.now));
+            let px = m.dp(if reading.chars().count() > 8 { 40.0 } else { 76.0 });
+            c.text_center(&f.heading, &reading, mid, read_cy, px, t.pal.text);
+            Some(((read_cy - px).max(0.0) as u32, (read_cy + px).min(m.h as f32) as u32))
+        }
+    };
 
     // The stopwatch's keys: white discs with a picture on them, one before it
     // has ever run and two after. The pair changes with the state — take an
     // entry and stop it while it goes, put it back to nothing and set it off
-    // again while it rests. They are smaller than the timer's three and sit on
-    // the same line, so the foot of the page stays where it is as the faces
-    // are switched. No shadow: the cards the rest of the system draws carry
-    // one, but here the disc alone reads as a key at this size, and a shadow
-    // under a row of small circles only smudges them.
-    let sd = m.dp(48.0);
+    // again while it rests. No shadow: the cards the rest of the system draw
+    // carry one, but here the disc alone reads as a key at this size, and a
+    // shadow under a row of small circles only smudges them.
     let sgap = m.dp(32.0);
     let sat = |k: usize| mid + (k as f32 - 0.5) * (sd + sgap) - sd / 2.0;
     if clock.face == ClockFace::Stopwatch {
@@ -872,7 +963,8 @@ pub fn clock(cx: &Ctx) -> Frame {
     Frame {
         back: false,
         header: false,
-        live: Some(live),
+        live,
+        scrollback: scroll,
         ..Frame::new(t, c, out, "", m.content_top)
     }
 }
