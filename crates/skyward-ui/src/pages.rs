@@ -629,7 +629,10 @@ enum Glyph {
 
 /// Draw one of those pictures, `h` tall and centred on (`cx`, `cy`), in `ink`.
 fn clock_glyph(c: &mut Canvas, glyph: Glyph, cx: f32, cy: f32, h: f32, ink: Rgba) {
-    let t = h * 0.18;
+    // The stroke the `<` of every other page is drawn with, give or take:
+    // a tenth of the picture's height, which on a key is the 1.8 dp the bar
+    // sets its chevron in. Thicker lines turned the P into a block.
+    let t = h * 0.10;
     match glyph {
         Glyph::Lap => {
             // Stems and bars rather than a font's P: the watch draws it
@@ -637,7 +640,6 @@ fn clock_glyph(c: &mut Canvas, glyph: Glyph, cx: f32, cy: f32, h: f32, ink: Rgba
             // Every bar runs half a pixel past the one it meets, or the
             // join would thin out where the two are antialiased against
             // each other and leave a pale notch in the corner.
-            let t = h * 0.20;
             let (w, belt) = (h * 0.66, h * 0.50);
             let (x, y) = (cx - w / 2.0, cy - h / 2.0);
             let e = 0.5;
@@ -647,10 +649,10 @@ fn clock_glyph(c: &mut Canvas, glyph: Glyph, cx: f32, cy: f32, h: f32, ink: Rgba
             c.fill_rect(x - e, y + belt - t - e, w + e * 2.0, t + e * 2.0, ink);
         }
         Glyph::Pause => {
-            let (bar, gap) = (h * 0.24, h * 0.26);
+            let gap = h * 0.30;
             let y = cy - h / 2.0;
-            c.fill_round_rect(cx - gap / 2.0 - bar, y, bar, h, bar * 0.3, ink);
-            c.fill_round_rect(cx + gap / 2.0, y, bar, h, bar * 0.3, ink);
+            c.fill_rect(cx - gap / 2.0 - t, y, t, h, ink);
+            c.fill_rect(cx + gap / 2.0, y, t, h, ink);
         }
         Glyph::Start => {
             let w = h * 0.86;
@@ -659,14 +661,13 @@ fn clock_glyph(c: &mut Canvas, glyph: Glyph, cx: f32, cy: f32, h: f32, ink: Rgba
         Glyph::Reset => {
             // Three quarters of a ring, open at the upper left, with the head
             // on the end left turning backwards — the way the count would go
-            // if it were let run on. The ring is kept thin enough that the
-            // hole inside it still reads at this size.
-            let (r, start, sweep) = (h * 0.40, -2.25, 5.20);
+            // if it were let run on.
+            let (r, start, sweep) = (h * 0.42, -2.25, 5.20);
             c.stroke_arc(cx, cy, r, start, sweep, t, ink);
             let (sx, sy) = (cx + r * start.cos(), cy + r * start.sin());
             let (dx, dy) = (start.sin(), -start.cos());
             let (nx, ny) = (start.cos(), start.sin());
-            let (back, half) = (t * 0.45, t * 0.85);
+            let (back, half) = (t * 0.55, t * 1.30);
             c.fill_convex(
                 &[
                     (sx + dx * t * 1.25, sy + dy * t * 1.25),
@@ -677,6 +678,24 @@ fn clock_glyph(c: &mut Canvas, glyph: Glyph, cx: f32, cy: f32, h: f32, ink: Rgba
             );
         }
     }
+}
+
+/// The radius of the disc the stopwatch's keys sit on, in dp: the very disc
+/// every other page draws its `<` on (`widgets::back_disc` is the same
+/// 21.7), so a key here reads as one of the system's round controls instead
+/// of a plain circle of its own.
+const KEY_R: f32 = 21.7;
+
+/// One of the stopwatch's keys: that chip, with a picture on it. The chip is
+/// laid whole every time — the bar's own fades in with the bar as the page
+/// scrolls under it, but a key at the foot of the page has no scrolling to
+/// wait for, so it is never half shown.
+fn clock_key(c: &mut Canvas, t: &Theme, cx: f32, cy: f32, glyph: Glyph) -> Rect {
+    let r = t.m.dp(KEY_R);
+    let (art, ox, oy) = widgets::chip_at(t, cx, cy, r);
+    c.lay(&art, ox, oy, 1.0);
+    clock_glyph(c, glyph, cx, cy, r * 0.84, t.pal.text);
+    Rect::new(cx - r, cy - r, r * 2.0, r * 2.0)
 }
 
 /// A count of milliseconds as a stopwatch reads it: `MM:SS.cc`, and
@@ -733,13 +752,17 @@ const PAPER_TOP: f32 = 515.0;
 const PAPER_ROW: f32 = 30.0;
 
 /// The foot of the stopwatch's paper: the top of the keys, less the gap the
-/// rule under the paper is drawn in.
+/// rule under the paper is drawn in. Measured up from the foot of the
+/// screen, so the paper — never the keys, never the count — is what gives
+/// when a panel is shorter than the one the page was laid out on.
 fn clock_paper_foot(m: &crate::theme::Metrics) -> f32 {
-    m.h as f32 - m.margin - m.dp(26.0) - m.dp(74.0) / 2.0 - m.dp(48.0) / 2.0 - m.dp(20.0)
+    m.h as f32 - m.margin - m.dp(26.0) - m.dp(74.0) / 2.0 - m.dp(KEY_R) - m.dp(20.0)
 }
 
 /// How many entries of the paper the room between the rule and the keys
-/// takes: past that, the paper is scrolled through.
+/// takes: past that, the paper is scrolled through. A panel short enough
+/// that not one entry fits gives none rather than drawing over the keys or
+/// off the screen, and the rule goes with them.
 pub fn clock_paper_room(m: &crate::theme::Metrics) -> usize {
     ((clock_paper_foot(m) - m.dp(PAPER_TOP)) / m.dp(PAPER_ROW)).floor().max(0.0) as usize
 }
@@ -793,11 +816,6 @@ pub fn clock(cx: &Ctx) -> Frame {
     let cy = m.h as f32 - m.margin - m.dp(26.0) - d / 2.0;
     let top = cy - d / 2.0;
     let at = |k: usize| mid + (k as f32 - 1.0) * (d + key_gap) - d / 2.0;
-
-    // The stopwatch's own keys are smaller than the timer's three, on the
-    // same line, so the foot of the page stays where it is as the faces are
-    // switched.
-    let sd = m.dp(48.0);
 
     // The stopwatch is read off a dial: a bare disc, the count small under
     // it, and the paper of entries hanging from a short rule under the count.
@@ -875,12 +893,13 @@ pub fn clock(cx: &Ctx) -> Frame {
         }
     };
 
-    // The stopwatch's keys: white discs with a picture on them, one before it
-    // has ever run and two after. The pair changes with the state — take an
-    // entry and stop it while it goes, put it back to nothing and set it off
-    // again while it rests. No shadow: the cards the rest of the system draw
-    // carry one, but here the disc alone reads as a key at this size, and a
-    // shadow under a row of small circles only smudges them.
+    // The stopwatch's keys: the system's own round chip with a picture on
+    // it, one before the watch has ever run and two after. The pair changes
+    // with the state — take an entry and stop it while it goes, put it back
+    // to nothing and set it off again while it rests. They are smaller than
+    // the timer's three and sit on the same line, so the foot of the page
+    // stays where it is as the faces are switched.
+    let sd = m.dp(KEY_R * 2.0);
     let sgap = m.dp(32.0);
     let sat = |k: usize| mid + (k as f32 - 0.5) * (sd + sgap) - sd / 2.0;
     if clock.face == ClockFace::Stopwatch {
@@ -895,17 +914,13 @@ pub fn clock(cx: &Ctx) -> Frame {
                 [(Glyph::Reset, Action::ClockReset), (Glyph::Start, Action::ClockGo)]
             };
             for (k, (glyph, action)) in pair.into_iter().enumerate() {
-                let x = sat(k);
-                c.fill_circle(x + sd / 2.0, cy, sd / 2.0, t.pal.card);
-                clock_glyph(&mut c, glyph, x + sd / 2.0, cy, sd * 0.42, t.pal.subtitle);
-                out.push(Hit { rect: Rect::new(x, cy - sd / 2.0, sd, sd), action });
+                let rect = clock_key(&mut c, t, sat(k) + sd / 2.0, cy, glyph);
+                out.push(Hit { rect, action });
             }
         } else {
             // The one key is the same disc of the same size: it is the count
             // that has not started, not the key that is drawn differently.
-            c.fill_circle(mid, cy, sd / 2.0, t.pal.card);
-            clock_glyph(&mut c, Glyph::Start, mid, cy, sd * 0.42, t.pal.subtitle);
-            let rect = Rect::new(mid - sd / 2.0, cy - sd / 2.0, sd, sd);
+            let rect = clock_key(&mut c, t, mid, cy, Glyph::Start);
             out.push(Hit { rect, action: Action::ClockGo });
         }
     }
@@ -4847,6 +4862,26 @@ mod tests {
 
     fn at(item: usize, done: u64, of: u64, checking: bool) -> BackupAt {
         BackupAt { item, done, of, checking }
+    }
+
+    /// The clock is laid out on the 411.6 × 914 dp panel the pages were
+    /// drawn on. A shorter one keeps its count and its keys where they are
+    /// and takes the difference out of the paper between them: the entries
+    /// get fewer, and never run over the keys or off the screen.
+    #[test]
+    fn a_short_panel_takes_the_room_from_the_paper_not_from_the_keys() {
+        let tall = Theme::light(1080, 2400, 2.624);
+        let short = Theme::light(1080, 1800, 2.624);
+        assert!(clock_paper_room(&short.m) < clock_paper_room(&tall.m), "a shorter panel holds fewer entries");
+        for h in [2400u32, 2200, 2000, 1800, 1600, 1400, 1200] {
+            let m = &Theme::light(1080, h, 2.624).m;
+            let (foot, room) = (clock_paper_foot(m), clock_paper_room(m));
+            let used = m.dp(PAPER_TOP) + room as f32 * m.dp(PAPER_ROW);
+            if room > 0 {
+                assert!(used <= foot + 0.01, "at {h} px the paper ends {} dp past its foot", (used - foot) / m.px_per_dp);
+            }
+            assert!(foot < m.h as f32 - m.margin - m.dp(26.0), "at {h} px the paper reaches into the keys");
+        }
     }
 
     #[test]

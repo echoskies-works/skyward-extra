@@ -907,6 +907,14 @@ pub fn back_chip(t: &Theme) -> (Canvas, i32, i32) {
     chip(t, back_disc(t))
 }
 
+/// The same chip about a disc of its own, centred at (`cx`, `cy`) of radius
+/// `r`: for the pages that lay one somewhere the bar's `<` is not. The bar's
+/// chip fades in with the bar as the page scrolls under it; one laid this
+/// way is always whole, so the caller needs no scroll level to give it.
+pub fn chip_at(t: &Theme, cx: f32, cy: f32, r: f32) -> (Canvas, i32, i32) {
+    chip(t, (cx, cy, r))
+}
+
 /// Such a chip about the disc centred at (`cx`, `cy`) of radius `r`.
 fn chip(t: &Theme, (cx, cy, r): (f32, f32, f32)) -> (Canvas, i32, i32) {
     let m = &t.m;
