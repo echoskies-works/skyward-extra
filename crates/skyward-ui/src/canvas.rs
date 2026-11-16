@@ -1175,6 +1175,76 @@ impl Canvas {
         }
     }
 
+    /// Fill a picture made of polygons with the even-odd rule: a point counts
+    /// as inside when it is inside an odd number of them. That is what leaves
+    /// the flag's cut-out and the ring's hole empty — the same rule an SVG
+    /// fills a `d` with, so tables flattened from drawings keep their voids.
+    ///
+    /// `paths` are in the picture's own box, centred on (0, 0); `size` is that
+    /// box's height, and `at` is where the centre goes. Each row is sampled
+    /// four times down its height and covered exactly across, which is plenty
+    /// at the size these are drawn and much cheaper than a supersampled point
+    /// test.
+    pub fn fill_path(&mut self, paths: &[&[(f32, f32)]], at: (f32, f32), size: f32, color: Rgba) {
+        let put = |p: (f32, f32)| (at.0 + p.0 * size, at.1 + p.1 * size);
+        let (mut x0, mut x1, mut y0, mut y1) = (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+        for &p in paths.iter().flat_map(|sub| sub.iter()) {
+            let (x, y) = put(p);
+            x0 = x0.min(x);
+            x1 = x1.max(x);
+            y0 = y0.min(y);
+            y1 = y1.max(y);
+        }
+        let (wide, tall) = (x1 - x0, y1 - y0);
+        if !(wide.is_finite() && tall.is_finite()) || wide <= 0.0 || tall <= 0.0 {
+            return;
+        }
+        let (left, right) = self.columns(x0.floor() as i32 - 1, x1.ceil() as i32 + 1);
+        let (top, bottom) = self.rows(y0.floor() as i32 - 1, y1.ceil() as i32 + 1);
+        let width = (right - left).max(0) as usize;
+        if width == 0 || bottom <= top {
+            return;
+        }
+        const SUB: usize = 4;
+        let mut covers = vec![0.0f32; width];
+        let mut crossings: Vec<f32> = Vec::with_capacity(16);
+        for py in top..bottom {
+            covers.fill(0.0);
+            for k in 0..SUB {
+                let y = py as f32 + (k as f32 + 0.5) / SUB as f32;
+                crossings.clear();
+                for sub in paths {
+                    for i in 0..sub.len() {
+                        let (ax, ay) = put(sub[i]);
+                        let (bx, by) = put(sub[(i + 1) % sub.len()]);
+                        if (ay <= y) == (by <= y) {
+                            continue;
+                        }
+                        crossings.push(ax + (y - ay) * (bx - ax) / (by - ay));
+                    }
+                }
+                crossings.sort_unstable_by(|a, b| a.total_cmp(b));
+                for &[from, to] in crossings.as_chunks::<2>().0 {
+                    let first = (from.floor() as i32).max(left);
+                    let last = (to.ceil() as i32).min(right);
+                    for px in first..last {
+                        let a = from.max(px as f32);
+                        let b = to.min(px as f32 + 1.0);
+                        if b > a {
+                            covers[(px - left) as usize] += b - a;
+                        }
+                    }
+                }
+            }
+            for (i, cover) in covers.iter().enumerate() {
+                let cov = (cover / SUB as f32).clamp(0.0, 1.0);
+                if cov > 0.0 {
+                    self.blend(left + i as i32, py, color, cov);
+                }
+            }
+        }
+    }
+
     pub fn text_width(&self, face: &Face, text: &str, px: f32) -> f32 {
         let scale = face.scale(px);
         let sf = face.font.as_scaled(scale);
@@ -1498,6 +1568,20 @@ mod tests {
         }
         assert_eq!(c.px(150, 150).expect("on the canvas")[0], 243, "inside is left for the rectangle");
         assert_eq!(c.px(360, 150).expect("on the canvas")[0], 243, "it reaches no further than three deviations");
+    }
+
+    #[test]
+    fn a_path_is_filled_even_odd_so_the_hole_a_drawing_cuts_stays_hollow() {
+        // Two squares, one inside the other. Filling both even-odd leaves the
+        // middle empty, because it is inside two of them — the rule the flag's
+        // cut-out and the ring's hole are drawn with.
+        let mut c = Canvas::filled(40, 40, Rgba::rgb(255, 255, 255));
+        let outer = [(-0.45, -0.45), (0.45, -0.45), (0.45, 0.45), (-0.45, 0.45)];
+        let hole = [(-0.2, -0.2), (0.2, -0.2), (0.2, 0.2), (-0.2, 0.2)];
+        c.fill_path(&[&outer, &hole], (20.0, 20.0), 40.0, Rgba::rgb(0, 0, 0));
+        assert_eq!(c.px(20, 20).unwrap()[0], 255, "the hole is inside both, so it stays empty");
+        assert!(c.px(5, 5).unwrap()[0] < 10, "the ring between them is inside one, so it is inked");
+        assert_eq!(c.px(0, 0).unwrap()[0], 255, "nothing is inked past the outer edge");
     }
 
     /// A canvas two pixels wide whose row k is grey k.

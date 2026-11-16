@@ -10,6 +10,7 @@ pub mod focus;
 pub mod font;
 pub mod geom;
 pub mod glow;
+mod glyphs;
 pub mod icons;
 pub mod lang;
 pub mod motion;

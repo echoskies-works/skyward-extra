@@ -629,55 +629,18 @@ enum Glyph {
 
 /// Draw one of those pictures, `h` tall and centred on (`cx`, `cy`), in `ink`.
 fn clock_glyph(c: &mut Canvas, glyph: Glyph, cx: f32, cy: f32, h: f32, ink: Rgba) {
-    // The stroke the `<` of every other page is drawn with, give or take:
-    // a tenth of the picture's height, which on a key is the 1.8 dp the bar
-    // sets its chevron in. Thicker lines turned the P into a block.
-    let t = h * 0.10;
-    match glyph {
-        Glyph::Lap => {
-            // Stems and bars rather than a font's P: the watch draws it
-            // square, and square is what the rest of the page is made of.
-            // Every bar runs half a pixel past the one it meets, or the
-            // join would thin out where the two are antialiased against
-            // each other and leave a pale notch in the corner.
-            let (w, belt) = (h * 0.66, h * 0.50);
-            let (x, y) = (cx - w / 2.0, cy - h / 2.0);
-            let e = 0.5;
-            c.fill_rect(x - e, y - e, t + e * 2.0, h + e * 2.0, ink);
-            c.fill_rect(x - e, y - e, w + e * 2.0, t + e * 2.0, ink);
-            c.fill_rect(x + w - t - e, y - e, t + e * 2.0, belt + e * 2.0, ink);
-            c.fill_rect(x - e, y + belt - t - e, w + e * 2.0, t + e * 2.0, ink);
-        }
-        Glyph::Pause => {
-            let gap = h * 0.30;
-            let y = cy - h / 2.0;
-            c.fill_rect(cx - gap / 2.0 - t, y, t, h, ink);
-            c.fill_rect(cx + gap / 2.0, y, t, h, ink);
-        }
-        Glyph::Start => {
-            let w = h * 0.86;
-            c.fill_convex(&[(cx - w / 2.0, cy - h / 2.0), (cx + w / 2.0, cy), (cx - w / 2.0, cy + h / 2.0)], ink);
-        }
-        Glyph::Reset => {
-            // Three quarters of a ring, open at the upper left, with the head
-            // on the end left turning backwards — the way the count would go
-            // if it were let run on.
-            let (r, start, sweep) = (h * 0.42, -2.25, 5.20);
-            c.stroke_arc(cx, cy, r, start, sweep, t, ink);
-            let (sx, sy) = (cx + r * start.cos(), cy + r * start.sin());
-            let (dx, dy) = (start.sin(), -start.cos());
-            let (nx, ny) = (start.cos(), start.sin());
-            let (back, half) = (t * 0.55, t * 1.30);
-            c.fill_convex(
-                &[
-                    (sx + dx * t * 1.25, sy + dy * t * 1.25),
-                    (sx - dx * back + nx * half, sy - dy * back + ny * half),
-                    (sx - dx * back - nx * half, sy - dy * back - ny * half),
-                ],
-                ink,
-            );
-        }
-    }
+    // The pictures are the drawings themselves, flattened to polygons by
+    // `svg2glyph.py` — stems, bars, the flag's cut-out and the ring's hole all
+    // come out of the even-odd fill exactly as the drawing tool drew them.
+    // Their height is what `h` is: every key's ink reaches the same top and
+    // bottom, which is what makes three different pictures sit as one set.
+    let paths = match glyph {
+        Glyph::Lap => crate::glyphs::GLYPH_LAP,
+        Glyph::Pause => crate::glyphs::GLYPH_PAUSE,
+        Glyph::Start => crate::glyphs::GLYPH_START,
+        Glyph::Reset => crate::glyphs::GLYPH_RESET,
+    };
+    c.fill_path(paths, (cx, cy), h, ink);
 }
 
 /// The radius of the disc the stopwatch's keys sit on, in dp: the very disc
