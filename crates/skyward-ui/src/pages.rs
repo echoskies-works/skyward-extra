@@ -604,9 +604,9 @@ pub fn calculator(cx: &Ctx) -> Frame {
     }
 }
 
-/// The clock's two faces, in the order the bar at its foot lays them out.
+/// The clock's two faces, in the order it names them across its top.
 const CLOCK_FACES: [(ClockFace, Text); 2] =
-    [(ClockFace::Stopwatch, ["秒表", "碼錶", "Stopwatch"]), (ClockFace::Timer, ["计时器", "計時器", "Timer"])];
+    [(ClockFace::Stopwatch, ["秒表", "碼錶", "Stopwatch"]), (ClockFace::Timer, ["计时", "計時", "Timer"])];
 
 /// The keys under the reading: the stopwatch's are the one that puts it
 /// back to nothing with its paper thrown away, the one that takes an entry
@@ -639,11 +639,11 @@ fn timer_text(ms: u64) -> String {
     format!("{:02}:{:02}", s / 60, s % 60)
 }
 
-/// The clock: the reading large in the middle of the page, the keys that
-/// work it under that, and a bar at the foot that switches between the time
-/// counted up and the time counted down. The stopwatch's entries are kept
-/// on a slip under the reading, the newest at its foot as a till's paper
-/// comes out.
+/// The clock: the two words across the top that switch between the time
+/// counted up and the time counted down, the reading large under them, and
+/// the keys that work it at the foot. The stopwatch's entries are kept on a
+/// slip under the reading, the newest at its foot as a till's paper comes
+/// out.
 pub fn clock(cx: &Ctx) -> Frame {
     let (t, f, l) = (cx.t, cx.f, cx.state.lang);
     let (m, clock) = (&t.m, &cx.state.clock);
@@ -654,36 +654,40 @@ pub fn clock(cx: &Ctx) -> Frame {
     let avail = m.w as f32 - m.margin * 2.0;
     let mid = m.w as f32 / 2.0;
 
-    // The bar at the foot: one key for each face, the one shown filled with
-    // the accent and the other left on the page's card colour.
-    let tab_h = m.dp(46.0);
-    let tab_gap = m.dp(10.0);
-    let tab_w = (avail - tab_gap) / CLOCK_FACES.len() as f32;
-    let tab_top = m.h as f32 - m.margin - tab_h;
+    // The two words, the one being shown in the page's ink and the other
+    // quiet, set as the calculator sets its own.
+    let tab_px = m.dp(22.5);
+    let tab_gap = m.dp(25.0);
+    let tab_base = m.dp(81.2);
+    let words: Vec<f32> =
+        CLOCK_FACES.iter().map(|(_, name)| c.text_width(&f.heading, l.pick(*name), tab_px)).collect();
+    let strip = words.iter().sum::<f32>() + tab_gap * (words.len() - 1) as f32;
+    let mut tab_x = (m.w as f32 - strip) / 2.0;
+    let pad = m.dp(10.0);
     for (k, (face, name)) in CLOCK_FACES.iter().enumerate() {
-        let x = left + (tab_w + tab_gap) * k as f32;
-        let shown = *face == cx.state.clock.face;
-        let (fill, ink) = if shown { (t.pal.accent, Rgba::rgb(255, 255, 255)) } else { (t.pal.card, t.pal.text) };
-        c.fill_round_rect(x, tab_top, tab_w, tab_h, tab_h / 2.0, fill);
-        c.text_center(&f.heading, l.pick(*name), x + tab_w / 2.0, tab_top + tab_h / 2.0, m.row_title_px, ink);
-        out.push(Hit { rect: Rect::new(x, tab_top, tab_w, tab_h), action: Action::ClockFace(*face) });
+        let ink = if *face == clock.face { t.pal.text } else { t.pal.subtitle };
+        c.text(&f.heading, l.pick(*name), tab_x, tab_base, tab_px, ink, None);
+        // The word answers a touch, with a little room around it.
+        let rect = Rect::new(tab_x - pad, tab_base - tab_px - pad, words[k] + pad * 2.0, tab_px + pad * 2.0);
+        out.push(Hit { rect, action: Action::ClockFace(*face) });
+        tab_x += words[k] + tab_gap;
     }
 
     // The keys, a row of three with the one that starts and stops the count
     // in the middle of it: the stopwatch's either side of it, the timer's
     // under it.
     let d = m.dp(74.0);
-    let gap = m.dp(30.0);
-    let cy = tab_top - m.dp(52.0) - d / 2.0;
+    let key_gap = m.dp(30.0);
+    let cy = m.h as f32 - m.margin - m.dp(26.0) - d / 2.0;
     let top = cy - d / 2.0;
-    let at = |k: usize| mid + (k as f32 - 1.0) * (d + gap) - d / 2.0;
+    let at = |k: usize| mid + (k as f32 - 1.0) * (d + key_gap) - d / 2.0;
 
     // The reading. The stopwatch keeps it high, with its paper under it; the
     // timer has nothing under it, so it takes the middle of the room the
-    // title and the keys leave.
+    // words and the keys leave.
     let read_cy = match clock.face {
-        ClockFace::Stopwatch => m.content_top + m.dp(126.0),
-        ClockFace::Timer => (m.content_top + top) / 2.0,
+        ClockFace::Stopwatch => m.dp(200.0),
+        ClockFace::Timer => (tab_base + top) / 2.0,
     };
     let reading = match clock.face {
         ClockFace::Stopwatch => stopwatch_text(clock.stopwatch(cx.now)),
@@ -774,7 +778,14 @@ pub fn clock(cx: &Ctx) -> Frame {
     }
 
     // No `<` here either: the clock leaves the way the desktop's own apps do.
-    Frame { back: false, live: Some(live), ..Frame::new(t, c, out, l.pick(CLOCK_TITLE), m.content_top) }
+    // No large title either: the two words are the top of the page, as they
+    // are on the calculator.
+    Frame {
+        back: false,
+        header: false,
+        live: Some(live),
+        ..Frame::new(t, c, out, "", m.content_top)
+    }
 }
 
 /// Recovery home, laid out like the Settings root: title, search, a device
