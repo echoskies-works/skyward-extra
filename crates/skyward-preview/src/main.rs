@@ -254,21 +254,23 @@ fn main() -> Result<()> {
         println!("wrote {}", path.display());
     }
 
-    // The clock's two faces as they are worked: the stopwatch at rest, one
-    // going with nothing yet on its paper, one going with a few entries in
-    // both themes, and the timer counting down from the twenty-five minutes
-    // it was set for.
+    // The clock's two faces as they are worked: the stopwatch before it has
+    // ever run, one going with nothing yet on its paper, one going with a few
+    // entries in both themes, one stopped with those entries beside it, and
+    // the timer counting down from the twenty-five minutes it was set for.
     enum ClockShot {
         Idle,
         Going,
         Lapped,
+        Paused,
         Timer,
     }
-    let clock: [(&str, bool, ClockShot); 5] = [
+    let clock: [(&str, bool, ClockShot); 6] = [
         ("00-03-clock-stopwatch-idle-light", false, ClockShot::Idle),
         ("00-03-clock-stopwatch-going-light", false, ClockShot::Going),
         ("00-03-clock-stopwatch-lapped-light", false, ClockShot::Lapped),
         ("00-03-clock-stopwatch-lapped-dark", true, ClockShot::Lapped),
+        ("00-03-clock-stopwatch-paused-light", false, ClockShot::Paused),
         ("00-03-clock-timer-light", false, ClockShot::Timer),
     ];
     for (name, dark, shot) in clock {
@@ -280,16 +282,23 @@ fn main() -> Result<()> {
                 ClockShot::Timer => ClockFace::Timer,
                 _ => ClockFace::Stopwatch,
             };
+            let paper = || {
+                vec![
+                    Lap { split: 30_000, total: 30_000 },
+                    Lap { split: 31_000, total: 61_000 },
+                    Lap { split: 22_450, total: 83_450 },
+                ]
+            };
             match shot {
                 ClockShot::Idle => {}
                 ClockShot::Going => c.stop_since = Some(0),
                 ClockShot::Lapped => {
                     c.stop_since = Some(0);
-                    c.laps = vec![
-                        Lap { split: 30_000, total: 30_000 },
-                        Lap { split: 31_000, total: 61_000 },
-                        Lap { split: 22_450, total: 83_450 },
-                    ];
+                    c.laps = paper();
+                }
+                ClockShot::Paused => {
+                    c.stop = 83_450;
+                    c.laps = paper();
                 }
                 ClockShot::Timer => {
                     let length = 25 * 60_000;
@@ -303,7 +312,7 @@ fn main() -> Result<()> {
             ClockShot::Going => app.tick(3_240),
             ClockShot::Lapped => app.tick(83_450),
             ClockShot::Timer => app.tick(38_000),
-            ClockShot::Idle => Vec::new(),
+            ClockShot::Idle | ClockShot::Paused => Vec::new(),
         };
         let path = out.join(format!("{name}.png"));
         write_png(&path, &whole_page(&mut app, &fonts, &info))?;

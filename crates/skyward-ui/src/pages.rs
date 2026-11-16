@@ -608,15 +608,76 @@ pub fn calculator(cx: &Ctx) -> Frame {
 const CLOCK_FACES: [(ClockFace, Text); 2] =
     [(ClockFace::Stopwatch, ["秒表", "碼錶", "Stopwatch"]), (ClockFace::Timer, ["计时", "計時", "Timer"])];
 
-/// The keys under the reading: the stopwatch's are the one that puts it
-/// back to nothing with its paper thrown away, the one that takes an entry
-/// on the paper, and the one that starts and stops it. The timer's are the
-/// minute it is set fewer, the key that starts and stops it, and the minute
-/// more.
-const CLOCK_RESET: Text = ["复位", "歸零", "Reset"];
-const CLOCK_LAP: Text = ["打点", "打點", "Lap"];
+/// The words the timer's keys carry: the one that starts and stops the count.
+/// The stopwatch's keys carry pictures instead, as the Smartisan clock on the
+/// Nut Pro 3 draws them — see `Glyph`.
 const CLOCK_START: Text = ["开始", "開始", "Start"];
 const CLOCK_PAUSE: Text = ["暂停", "暫停", "Pause"];
+
+/// The pictures on the stopwatch's keys. The watch names none of them: what
+/// the key does is told by the picture, and the pair changes with the state.
+enum Glyph {
+    /// A square P: take an entry on the paper.
+    Lap,
+    /// Two bars: stop the count where it is.
+    Pause,
+    /// A turning arrow: put the watch back to nothing and throw the paper.
+    Reset,
+    /// A triangle: set the count going.
+    Start,
+}
+
+/// Draw one of those pictures, `h` tall and centred on (`cx`, `cy`), in `ink`.
+fn clock_glyph(c: &mut Canvas, glyph: Glyph, cx: f32, cy: f32, h: f32, ink: Rgba) {
+    let t = h * 0.18;
+    match glyph {
+        Glyph::Lap => {
+            // Stems and bars rather than a font's P: the watch draws it
+            // square, and square is what the rest of the page is made of.
+            // Every bar runs half a pixel past the one it meets, or the
+            // join would thin out where the two are antialiased against
+            // each other and leave a pale notch in the corner.
+            let t = h * 0.20;
+            let (w, belt) = (h * 0.66, h * 0.50);
+            let (x, y) = (cx - w / 2.0, cy - h / 2.0);
+            let e = 0.5;
+            c.fill_rect(x - e, y - e, t + e * 2.0, h + e * 2.0, ink);
+            c.fill_rect(x - e, y - e, w + e * 2.0, t + e * 2.0, ink);
+            c.fill_rect(x + w - t - e, y - e, t + e * 2.0, belt + e * 2.0, ink);
+            c.fill_rect(x - e, y + belt - t - e, w + e * 2.0, t + e * 2.0, ink);
+        }
+        Glyph::Pause => {
+            let (bar, gap) = (h * 0.24, h * 0.26);
+            let y = cy - h / 2.0;
+            c.fill_round_rect(cx - gap / 2.0 - bar, y, bar, h, bar * 0.3, ink);
+            c.fill_round_rect(cx + gap / 2.0, y, bar, h, bar * 0.3, ink);
+        }
+        Glyph::Start => {
+            let w = h * 0.86;
+            c.fill_convex(&[(cx - w / 2.0, cy - h / 2.0), (cx + w / 2.0, cy), (cx - w / 2.0, cy + h / 2.0)], ink);
+        }
+        Glyph::Reset => {
+            // Three quarters of a ring, open at the upper left, with the head
+            // on the end left turning backwards — the way the count would go
+            // if it were let run on. The ring is kept thin enough that the
+            // hole inside it still reads at this size.
+            let (r, start, sweep) = (h * 0.40, -2.25, 5.20);
+            c.stroke_arc(cx, cy, r, start, sweep, t, ink);
+            let (sx, sy) = (cx + r * start.cos(), cy + r * start.sin());
+            let (dx, dy) = (start.sin(), -start.cos());
+            let (nx, ny) = (start.cos(), start.sin());
+            let (back, half) = (t * 0.45, t * 0.85);
+            c.fill_convex(
+                &[
+                    (sx + dx * t * 1.25, sy + dy * t * 1.25),
+                    (sx - dx * back + nx * half, sy - dy * back + ny * half),
+                    (sx - dx * back - nx * half, sy - dy * back - ny * half),
+                ],
+                ink,
+            );
+        }
+    }
+}
 
 /// A count of milliseconds as a stopwatch reads it: `MM:SS.cc`, and
 /// `H:MM:SS.cc` once it has run an hour. It stops at 999 hours, 59
@@ -734,6 +795,44 @@ pub fn clock(cx: &Ctx) -> Frame {
         }
     }
 
+    // The stopwatch's keys: white discs with a picture on them, one before it
+    // has ever run and two after. The pair changes with the state — take an
+    // entry and stop it while it goes, put it back to nothing and set it off
+    // again while it rests. They are smaller than the timer's three and sit on
+    // the same line, so the foot of the page stays where it is as the faces
+    // are switched. No shadow: the cards the rest of the system draws carry
+    // one, but here the disc alone reads as a key at this size, and a shadow
+    // under a row of small circles only smudges them.
+    let sd = m.dp(48.0);
+    let sgap = m.dp(32.0);
+    let sat = |k: usize| mid + (k as f32 - 0.5) * (sd + sgap) - sd / 2.0;
+    if clock.face == ClockFace::Stopwatch {
+        let going = clock.stop_since.is_some();
+        // Nothing to reset and nothing to take an entry of before the first
+        // run, so the watch offers the one key and keeps its paper shut.
+        let started = going || clock.stop > 0 || !clock.laps.is_empty();
+        if started {
+            let pair: [(Glyph, Action); 2] = if going {
+                [(Glyph::Lap, Action::ClockLap), (Glyph::Pause, Action::ClockGo)]
+            } else {
+                [(Glyph::Reset, Action::ClockReset), (Glyph::Start, Action::ClockGo)]
+            };
+            for (k, (glyph, action)) in pair.into_iter().enumerate() {
+                let x = sat(k);
+                c.fill_circle(x + sd / 2.0, cy, sd / 2.0, t.pal.card);
+                clock_glyph(&mut c, glyph, x + sd / 2.0, cy, sd * 0.42, t.pal.subtitle);
+                out.push(Hit { rect: Rect::new(x, cy - sd / 2.0, sd, sd), action });
+            }
+        } else {
+            // The one key is the same disc of the same size: it is the count
+            // that has not started, not the key that is drawn differently.
+            c.fill_circle(mid, cy, sd / 2.0, t.pal.card);
+            clock_glyph(&mut c, Glyph::Start, mid, cy, sd * 0.42, t.pal.subtitle);
+            let rect = Rect::new(mid - sd / 2.0, cy - sd / 2.0, sd, sd);
+            out.push(Hit { rect, action: Action::ClockGo });
+        }
+    }
+
     let mut key = |k: usize, name: &str, action: Option<Action>, main: bool| {
         let x = at(k);
         let (fill, ink) = match (main, action.is_some()) {
@@ -749,18 +848,8 @@ pub fn clock(cx: &Ctx) -> Frame {
     };
 
     match clock.face {
-        ClockFace::Stopwatch => {
-            let going = clock.stop_since.is_some();
-            key(0, l.pick(CLOCK_RESET), Some(Action::ClockReset), false);
-            // No entry is taken of a watch that is not going.
-            key(1, l.pick(CLOCK_LAP), going.then_some(Action::ClockLap), false);
-            let (name, action) = if going {
-                (l.pick(CLOCK_PAUSE), Action::ClockGo)
-            } else {
-                (l.pick(CLOCK_START), Action::ClockGo)
-            };
-            key(2, name, Some(action), true);
-        }
+        // The stopwatch's keys are drawn above, with the pictures on them.
+        ClockFace::Stopwatch => {}
         ClockFace::Timer => {
             let going = clock.left_since.is_some();
             // The length is set while the timer is stopped, by the minute,
