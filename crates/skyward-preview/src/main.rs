@@ -237,36 +237,57 @@ fn main() -> Result<()> {
         println!("wrote {}", path.display());
     }
 
-    // The clock's two faces as they are worked: the stopwatch going with a
-    // few entries on its paper, and the timer counting down from the
-    // twenty-five minutes it was set for.
-    let clock: [(&str, bool, ClockFace); 3] = [
-        ("00-03-clock-stopwatch-light", false, ClockFace::Stopwatch),
-        ("00-03-clock-stopwatch-dark", true, ClockFace::Stopwatch),
-        ("00-03-clock-timer-light", false, ClockFace::Timer),
+    // The clock's two faces as they are worked: the stopwatch at rest, one
+    // going with nothing yet on its paper, one going with a few entries in
+    // both themes, and the timer counting down from the twenty-five minutes
+    // it was set for.
+    enum ClockShot {
+        Idle,
+        Going,
+        Lapped,
+        Timer,
+    }
+    let clock: [(&str, bool, ClockShot); 5] = [
+        ("00-03-clock-stopwatch-idle-light", false, ClockShot::Idle),
+        ("00-03-clock-stopwatch-going-light", false, ClockShot::Going),
+        ("00-03-clock-stopwatch-lapped-light", false, ClockShot::Lapped),
+        ("00-03-clock-stopwatch-lapped-dark", true, ClockShot::Lapped),
+        ("00-03-clock-timer-light", false, ClockShot::Timer),
     ];
-    for (name, dark, face) in clock {
+    for (name, dark, shot) in clock {
         let mut app = opened(Screen::Clock, w, h, ppd);
         app.state.dark = dark;
-        app.state.clock.face = face;
-        match face {
-            ClockFace::Stopwatch => {
-                app.state.clock.stop_since = Some(0);
-                app.state.clock.laps = vec![
-                    Lap { split: 30_000, total: 30_000 },
-                    Lap { split: 31_000, total: 61_000 },
-                    Lap { split: 22_450, total: 83_450 },
-                ];
-                app.tick(83_450);
-            }
-            ClockFace::Timer => {
-                let length = 25 * 60_000;
-                app.state.clock.span = length;
-                app.state.clock.left = length;
-                app.state.clock.left_since = Some(0);
-                app.tick(38_000);
+        {
+            let c = &mut app.state.clock;
+            c.face = match shot {
+                ClockShot::Timer => ClockFace::Timer,
+                _ => ClockFace::Stopwatch,
+            };
+            match shot {
+                ClockShot::Idle => {}
+                ClockShot::Going => c.stop_since = Some(0),
+                ClockShot::Lapped => {
+                    c.stop_since = Some(0);
+                    c.laps = vec![
+                        Lap { split: 30_000, total: 30_000 },
+                        Lap { split: 31_000, total: 61_000 },
+                        Lap { split: 22_450, total: 83_450 },
+                    ];
+                }
+                ClockShot::Timer => {
+                    let length = 25 * 60_000;
+                    c.span = length;
+                    c.left = length;
+                    c.left_since = Some(0);
+                }
             }
         }
+        let _ = match shot {
+            ClockShot::Going => app.tick(3_240),
+            ClockShot::Lapped => app.tick(83_450),
+            ClockShot::Timer => app.tick(38_000),
+            ClockShot::Idle => Vec::new(),
+        };
         let path = out.join(format!("{name}.png"));
         write_png(&path, &whole_page(&mut app, &fonts, &info))?;
         println!("wrote {}", path.display());
