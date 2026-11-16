@@ -18,7 +18,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// This extension's own version. It moves on its own schedule: `VERSION`
 /// tracks the Skyward release the code was last brought up to, which is a
 /// different clock.
-pub const SWEX_VERSION: &str = "0.1.1";
+pub const SWEX_VERSION: &str = "0.1.2";
 
 /// The version as the About page says it: this extension's, and in
 /// brackets the Skyward release underneath.
