@@ -128,9 +128,26 @@ type MountShot<'a> = (&'a str, bool, &'a DeviceInfo, Option<MountFailure>, &'a [
 /// File name, page, dark theme, and what to set before the page is drawn.
 type PageShot<'a> = (&'a str, Screen, bool, &'a dyn Fn(&mut App));
 
+/// Where the shots go: the first argument when it names a directory, else the
+/// workspace's `skyward-preview/` baked in through `SWEX_PREVIEW_OUT` at build
+/// time, else `./preview-out`.
+///
+/// The baked-in path is there because this only builds under WSL: there
+/// `CARGO_MANIFEST_DIR` points into `~/aether-skyward`, and no relative path
+/// from it can reach the Windows workspace that holds the source snapshot.
+/// Build with `SWEX_PREVIEW_OUT=<workspace>/skyward-preview` and the binary
+/// writes its shots there without being told; a leading `--`-option is never
+/// taken for the directory.
+fn out_dir(args: &[String]) -> PathBuf {
+    match args.get(1).map(String::as_str).filter(|a| !a.starts_with("--")) {
+        Some(dir) => PathBuf::from(dir),
+        None => option_env!("SWEX_PREVIEW_OUT").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("preview-out")),
+    }
+}
+
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    let out = PathBuf::from(args.get(1).map(String::as_str).unwrap_or("preview-out"));
+    let out = out_dir(&args);
     std::fs::create_dir_all(&out)?;
     let lang = match args.iter().position(|a| a == "--lang") {
         Some(k) => Lang::for_locale(args.get(k + 1).ok_or_else(|| anyhow!("--lang needs a locale"))?)?,

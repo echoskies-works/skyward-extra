@@ -17,5 +17,6 @@ TODO.md
 notes/
 # 官方原厂 recovery/镜像等本地参考素材，不进仓库
 stock/
-# 预览出图目录
+# 预览出图的兜底目录：正常出图由编译期的 SWEX_PREVIEW_OUT 指向工作区的
+# skyward-preview/，只有没设那个变量时才落回 ./preview-out。仍然不进仓库。
 preview-out/
