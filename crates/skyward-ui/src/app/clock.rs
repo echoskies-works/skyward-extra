@@ -31,6 +31,96 @@ const CLOCK_SPAN: u64 = 5 * 60_000;
 pub(super) const CLOCK_MOST: u64 = 60;
 pub(super) const CLOCK_LEAST: u64 = 1;
 
+/// How long the hand takes to sweep back to zero when the watch is reset,
+/// and how long it takes to fade between charcoal and blue when the watch
+/// starts, stops or settles after that sweep. Both in milliseconds.
+pub const HAND_REWIND_MS: u64 = 320;
+pub const HAND_TINT_MS: u64 = 220;
+
+/// The second hand's own motion, separate from the count it shows. Its
+/// colour fades between charcoal and blue as the watch starts and stops;
+/// on a reset it sweeps the way back to zero before fading to charcoal.
+/// All the numbers are integers so the clock stays comparable.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HandAnim {
+    /// Where the colour fade began and where it is going, in thousandths:
+    /// 0 is charcoal, 1000 is Xiaomi's blue.
+    tint_from: u16,
+    tint_to: u16,
+    tint_since: u64,
+    /// Where the backward sweep started, in hundredths of a degree. `None`
+    /// when the hand is not sweeping. The fade stays blue until it ends.
+    rewind_from: Option<u16>,
+    rewind_since: u64,
+}
+
+impl HandAnim {
+    /// How blue the hand reads now, 0 (charcoal) to 1 (blue).
+    pub fn tint(&self, now: u64) -> f32 {
+        let t = (now.saturating_sub(self.tint_since)).min(HAND_TINT_MS) as f32 / HAND_TINT_MS as f32;
+        let eased = t * t * (3.0 - 2.0 * t);
+        (self.tint_from as f32 + (self.tint_to as f32 - self.tint_from as f32) * eased) / 1000.0
+    }
+
+    /// Start a fade to `to` (0 or 1000) from wherever the colour is now.
+    fn fade(&mut self, to: u16, now: u64) {
+        self.tint_from = (self.tint(now) * 1000.0).round() as u16;
+        self.tint_to = to;
+        self.tint_since = now;
+    }
+
+    /// The start and the pause both fade the hand to the colour of that
+    /// state: blue while the count moves, charcoal once it stands.
+    pub fn follow(&mut self, running: bool, now: u64) {
+        self.fade(if running { 1000 } else { 0 }, now);
+    }
+
+    /// The hand's angle while sweeping back, in degrees; `None` when the
+    /// count's own angle should be used. Ease out so the sweep starts fast
+    /// and settles onto zero, as Smartisan's does.
+    pub fn rewind_deg(&self, now: u64) -> Option<f32> {
+        let from = self.rewind_from?;
+        let t = (now.saturating_sub(self.rewind_since)).min(HAND_REWIND_MS) as f32 / HAND_REWIND_MS as f32;
+        let eased = 1.0 - (1.0 - t).powi(3);
+        Some(from as f32 / 100.0 * (1.0 - eased))
+    }
+
+    /// The sweep has reached zero and can give the hand back to the count.
+    fn rewind_done(&self, now: u64) -> bool {
+        self.rewind_from.is_some() && now >= self.rewind_since.saturating_add(HAND_REWIND_MS)
+    }
+
+    /// Begin a reset sweep from the angle the hand was showing, then turn it
+    /// blue for the trip home.
+    pub fn reset(&mut self, deg: f32, now: u64) {
+        self.rewind_from = Some((deg.clamp(0.0, 360.0) * 100.0).round() as u16);
+        self.rewind_since = now;
+        self.fade(1000, now);
+    }
+
+    /// Called once the sweep is over: hand the angle back to the count and
+    /// let the colour fade to charcoal.
+    fn end_rewind(&mut self, now: u64) {
+        self.rewind_from = None;
+        self.fade(0, now);
+    }
+
+    /// Whether anything here still needs a frame drawn: a fade under way,
+    /// or a sweep not yet at zero.
+    pub fn moving(&self, now: u64) -> bool {
+        self.tint_from != self.tint_to && now < self.tint_since.saturating_add(HAND_TINT_MS)
+            || self.rewind_from.is_some() && now < self.rewind_since.saturating_add(HAND_REWIND_MS)
+    }
+
+    /// Once the reset sweep lands, fade the hand to charcoal. Everything
+    /// else — start and pause — is driven by the action that caused it.
+    fn settle(&mut self, now: u64) {
+        if self.rewind_done(now) {
+            self.end_rewind(now);
+        }
+    }
+}
+
 /// How long between the frames the page is drawn again by while a count
 /// runs: sixty a second, so the hundredths move one or two at a frame. The
 /// page is told to draw again only the rows its reading is in, which is
@@ -44,7 +134,7 @@ pub(super) const CLOCK_STEP_MS: u64 = 16;
 /// for a count on the other face that runs out to be tapped for then.
 pub(super) fn step(clock: &Clock, now: u64) -> u64 {
     match clock.face {
-        ClockFace::Stopwatch if clock.stop_since.is_some() => CLOCK_STEP_MS,
+        ClockFace::Stopwatch if clock.stop_since.is_some() || clock.hand.moving(now) => CLOCK_STEP_MS,
         // The reading is rounded up to the second it is shown by, so it
         // changes as the count comes down onto a whole second.
         ClockFace::Timer if clock.left_since.is_some() => match clock.timer(now) % 1_000 {
@@ -69,6 +159,8 @@ pub struct Clock {
     pub stop_since: Option<u64>,
     /// The entries taken, the newest last.
     pub laps: Vec<Lap>,
+    /// The second hand's colour fade and reset sweep.
+    pub hand: HandAnim,
     /// Which of them is at the top of the paper, when there are more than
     /// the page shows: what a finger has scrolled down to, the oldest first.
     pub paper: usize,
@@ -86,6 +178,7 @@ impl Default for Clock {
             stop: 0,
             stop_since: None,
             laps: Vec::new(),
+            hand: HandAnim::default(),
             paper: 0,
             span: CLOCK_SPAN,
             left: CLOCK_SPAN,
@@ -108,6 +201,37 @@ impl Clock {
     /// Whether either count is going.
     pub fn running(&self) -> bool {
         self.stop_since.is_some() || self.left_since.is_some()
+    }
+
+    /// Where the stopwatch's hand points at `now`, clockwise from twelve.
+    /// One turn a minute: at sixty seconds the count leaves the minute and
+    /// the angle comes back to zero without a jump. A reset sweeps it back
+    /// the way it came before the count takes over again.
+    pub fn hand_deg(&self, now: u64) -> f32 {
+        if let Some(deg) = self.hand.rewind_deg(now) {
+            return deg;
+        }
+        (self.stopwatch(now) % 60_000) as f32 / 60_000.0 * 360.0
+    }
+
+    /// How blue the hand reads now. When no fade or sweep is under way the
+    /// colour simply follows whether the count runs, so a clock set up
+    /// without pressing a key — a preview, a restored state — still draws
+    /// the right ink.
+    pub fn hand_tint(&self, now: u64) -> f32 {
+        if self.hand.moving(now) {
+            self.hand.tint(now)
+        } else if self.stop_since.is_some() {
+            1.0
+        } else {
+            0.0
+        }
+    }
+
+    /// Once a reset sweep lands, hand the angle back to the count and fade
+    /// the blue out. Called on every tick; cheap when nothing is sweeping.
+    pub fn settle_hand(&mut self, now: u64) {
+        self.hand.settle(now);
     }
 
     /// The timer has run out: it stops at nothing, waiting to be started
@@ -143,6 +267,64 @@ mod tests {
             Screen::Clock,
             &Ctx { t: &t, f, info: i, state: &app.state, term: None, band: None, now, wallpaper: app.wallpaper.as_ref() },
         )
+    }
+
+    #[test]
+    fn the_hand_turns_once_a_minute_from_zero() {
+        let mut clock = Clock::default();
+        assert_eq!(clock.hand_deg(0), 0.0, "an untouched watch reads zero");
+        clock.stop_since = Some(1_000);
+        assert!((clock.hand_deg(1_000) - 0.0).abs() < 0.01, "the start is at zero");
+        assert!((clock.hand_deg(16_000) - 90.0).abs() < 0.01, "a quarter minute is a quarter turn");
+        assert!((clock.hand_deg(31_000) - 180.0).abs() < 0.01, "half a minute is half a turn");
+        // Sixty seconds lands on the minute: the angle comes back to zero,
+        // not a full turn, so there is no jump between 359° and 0°.
+        assert!(clock.hand_deg(60_999) > 359.0, "a hair before the minute it is nearly all the way round");
+        assert!(clock.hand_deg(61_000) < 0.01, "back at the minute the hand is at zero");
+        assert!((clock.hand_deg(62_000) - 6.0).abs() < 0.01, "a second in it has moved on");
+        // Pausing freezes the angle where the count stopped.
+        clock.stop = clock.stopwatch(16_000);
+        clock.stop_since = None;
+        assert!((clock.hand_deg(99_000) - 90.0).abs() < 0.01, "a paused hand holds its angle");
+    }
+
+    #[test]
+    fn a_reset_sweeps_the_hand_home_then_fades_it_grey() {
+        // A watch paused a quarter of the way round, then reset.
+        let mut clock = Clock { stop: 15_000, stop_since: None, ..Clock::default() };
+        assert!((clock.hand_deg(1_000) - 90.0).abs() < 0.01, "the paused hand stands at a quarter turn");
+        let deg = clock.hand_deg(1_000);
+        clock.hand.reset(deg, 1_000);
+        clock.stop = 0; // the reset action clears the count as the sweep begins
+        // The sweep starts at the angle it was showing, blue on its way.
+        let start = clock.hand_deg(1_000);
+        assert!((start - 90.0).abs() < 0.01, "the sweep begins where the hand was");
+        assert!(clock.hand_tint(1_000 + HAND_TINT_MS) > 0.99, "the hand is blue during the sweep");
+        // Ease out: more than half the way back well before the end.
+        let mid = clock.hand_deg(1_000 + HAND_REWIND_MS / 2);
+        assert!(mid < 45.0, "the sweep eases out early, got {mid} degrees");
+        // When it lands the count takes over at zero and the blue fades.
+        clock.settle_hand(1_000 + HAND_REWIND_MS);
+        assert_eq!(clock.hand_deg(1_000 + HAND_REWIND_MS), 0.0, "the sweep ends at zero");
+        assert!(clock.hand_tint(1_000 + HAND_REWIND_MS) > 0.99, "still blue the moment it lands");
+        assert!(clock.hand_tint(1_000 + HAND_REWIND_MS + HAND_TINT_MS) < 0.01, "then fades to charcoal");
+        assert!(!clock.hand.moving(1_000 + HAND_REWIND_MS + HAND_TINT_MS + 1), "and stops asking for frames");
+    }
+
+    #[test]
+    fn starting_and_pausing_fade_the_hand_between_grey_and_blue() {
+        let mut clock = Clock::default();
+        assert!(clock.hand_tint(0) < 0.01, "a new watch is charcoal");
+        clock.stop_since = Some(1_000);
+        clock.hand.follow(true, 1_000);
+        assert!(clock.hand_tint(1_000) < 0.01, "the fade starts at grey");
+        assert!(clock.hand_tint(1_000 + HAND_TINT_MS / 2) > 0.4, "halfway through it is mostly blue");
+        assert!(clock.hand_tint(1_000 + HAND_TINT_MS) > 0.99, "then fully blue");
+        clock.stop = clock.stopwatch(2_000);
+        clock.stop_since = None;
+        clock.hand.follow(false, 2_000);
+        assert!(clock.hand.moving(2_000), "pausing starts a fade too");
+        assert!(clock.hand_tint(2_000 + HAND_TINT_MS) < 0.01, "back to charcoal");
     }
 
     #[test]

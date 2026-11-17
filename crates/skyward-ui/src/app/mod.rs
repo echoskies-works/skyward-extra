@@ -1591,11 +1591,15 @@ impl App {
         if self.blink_at(now).is_some_and(|(on, _)| on != self.caret_shown) || self.morph.is_some() || self.turn.is_some() {
             self.dirty = true;
         }
+        // A reset sweep ends on its own: once the hand lands, give its
+        // angle back to the count and start fading it to charcoal.
+        self.state.clock.settle_hand(now);
         // The clock's counts go on of their own accord: while either goes,
         // the rows the reading is drawn in are drawn again each frame so the
-        // reading follows, and a timer that reaches its end stops there with
-        // a tap of the motor.
-        if self.state.clock.running() {
+        // reading follows. The hand's own sweep and fade need the same
+        // frames, so the dial keeps up. A timer reaching its end stops there
+        // with a tap of the motor.
+        if self.state.clock.running() || self.state.clock.hand.moving(now) {
             if self.display_on {
                 match self.frame.as_ref().and_then(|fr| fr.live) {
                     // One band of rows, drawn again once however many ticks

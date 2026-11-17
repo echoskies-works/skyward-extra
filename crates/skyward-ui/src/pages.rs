@@ -854,14 +854,46 @@ fn clock_deck() -> &'static Canvas {
     })
 }
 
+/// The dial's still parts — shadow, disc, minute ring and the two numerals —
+/// drawn once into a cache and laid down with a single `draw_image` each
+/// frame. Only the hand changes as the watch runs, so nothing else on the
+/// dial is paid for again. Keyed by width in pixels, density and theme, so
+/// the one cache serves every page size and both palettes.
+fn clock_face(m: &crate::theme::Metrics, t: &crate::theme::Theme, f: &Fonts) -> &'static Canvas {
+    use std::collections::HashMap;
+    type FaceCache = std::sync::Mutex<HashMap<(u32, u32, bool), &'static Canvas>>;
+    static FACES: std::sync::OnceLock<FaceCache> = std::sync::OnceLock::new();
+    let key = (m.w, m.h, t.dark);
+    let faces = FACES.get_or_init(|| std::sync::Mutex::new(HashMap::new()));
+    if let Some(face) = faces.lock().expect("no poison").get(&key) {
+        return face;
+    }
+    let d = m.dp(DIAL_D);
+    let pad = m.dp(DIAL_FACE_PAD);
+    let side = (d + pad * 2.0).ceil() as u32;
+    let mut face = Canvas::new(side, side);
+    let cc = side as f32 / 2.0;
+    face.shadow_round_rect(cc - d / 2.0, cc - d / 2.0, d, d, d / 2.0, m.dp(DIAL_SHADOW), t.pal.shadow);
+    face.fill_circle(cc, cc, d / 2.0, t.pal.card);
+    let span = d * DECK_OF_DIAL / DECK_MARK;
+    face.draw_image(clock_deck(), cc - span / 2.0, cc - span / 2.0, span, span);
+    let r = d / 2.0 * DIAL_NUM_R;
+    let px = m.dp(DIAL_NUM_PX);
+    face.text_center(&f.regular, DIAL_NUMS[0], cc, cc - r, px, t.pal.text);
+    face.text_center(&f.regular, DIAL_NUMS[1], cc + r, cc, px, t.pal.text);
+    let face: &'static Canvas = Box::leak(Box::new(face));
+    let mut faces = faces.lock().expect("no poison");
+    faces.entry(key).or_insert(face)
+}
+
 /// The blue Xiaomi paints its second hand, sampled off the reference shot.
 const HAND_BLUE: Rgba = Rgba::rgb(52, 130, 255);
 /// The hand when the watch stands: a quiet charcoal, so the dial does not
 /// claim attention until the count runs. The pin stays white either way.
 const HAND_STILL: Rgba = Rgba::rgb(88, 92, 98);
-/// Where that hand lies in the reference, clockwise from twelve. It stands
-/// still for now: ticking comes with the marks and numbers.
-const HAND_DEG: f32 = 228.0;
+/// Room left around the disc for its shadow to fade out. Three sigma, plus
+/// a pixel of air: this is the margin the cached face is drawn into.
+const DIAL_FACE_PAD: f32 = 3.0 * DIAL_SHADOW + 2.0;
 /// The fine needle, from the centre to its point. Opposite it a fine line
 /// runs out from the hub before widening into the counterweight: Xiaomi
 /// leaves about 30 px of thin line before the thick part starts on a 600 px
@@ -911,37 +943,21 @@ pub fn clock_paper_room(m: &crate::theme::Metrics) -> usize {
     ((clock_paper_foot(m) - m.dp(PAPER_TOP)) / m.dp(PAPER_ROW)).floor().max(0.0) as usize
 }
 
-/// The dial laid on centred at (`cx`, `cy`): the shadow first, so the disc
-/// is drawn over the half of it that falls inside, the disc itself after,
-/// then the ring, the two numerals and the hand on top of that. `going` is
-/// whether the stopwatch is running: the hand takes Xiaomi's blue only while
-/// the count moves, and a charcoal when it stands.
+/// The dial laid on centred at (`cx`, `cy`): the still face comes from the
+/// cache in one blit, then the hand is drawn over it. `deg` is the hand's
+/// angle clockwise from twelve and `tint` is how blue it reads, 0 charcoal
+/// to 1 Xiaomi blue.
+#[allow(clippy::too_many_arguments)]
 fn clock_dial(
     c: &mut Canvas, m: &crate::theme::Metrics, t: &crate::theme::Theme, f: &Fonts,
-    cx: f32, cy: f32, going: bool,
+    cx: f32, cy: f32, deg: f32, tint: f32,
 ) {
-    let d = m.dp(DIAL_D);
-    let (x, y) = (cx - d / 2.0, cy - d / 2.0);
-    c.shadow_round_rect(x, y, d, d, d / 2.0, m.dp(DIAL_SHADOW), t.pal.shadow);
-    c.fill_circle(cx, cy, d / 2.0, t.pal.card);
+    let face = clock_face(m, t, f);
+    let side = face.w as f32;
+    c.draw_image(face, cx - side / 2.0, cy - side / 2.0, side, side);
 
-    // The ring: scaled so its marks land where Smartisan's do. The picture's
-    // marks sit at DECK_MARK of its half width; we want that at DECK_OF_DIAL
-    // of the disc's radius, so the picture is laid out at
-    //   span = dial_d * DECK_OF_DIAL / DECK_MARK
-    // and centred on the disc.
-    let span = d * DECK_OF_DIAL / DECK_MARK;
-    c.draw_image(clock_deck(), cx - span / 2.0, cy - span / 2.0, span, span);
-
-    // The numerals: 60 at twelve, 15 at three, set in the page's own face
-    // at the radius Smartisan gives them, centred on that point.
-    let r = d / 2.0 * DIAL_NUM_R;
-    let px = m.dp(DIAL_NUM_PX);
-    c.text_center(&f.regular, DIAL_NUMS[0], cx, cy - r, px, t.pal.text);
-    c.text_center(&f.regular, DIAL_NUMS[1], cx + r, cy, px, t.pal.text);
-
-    let ink = if going { HAND_BLUE } else { HAND_STILL };
-    let a = HAND_DEG * std::f32::consts::PI / 180.0;
+    let ink = mix(HAND_STILL, HAND_BLUE, tint);
+    let a = deg * std::f32::consts::PI / 180.0;
     let (ux, uy) = (a.sin(), -a.cos());
     let tip = m.dp(HAND_TIP);
     let gap = m.dp(HAND_TAIL_GAP);
@@ -1012,11 +1028,12 @@ pub fn clock(cx: &Ctx) -> Frame {
     let mut scroll = None;
     let live = match clock.face {
         ClockFace::Stopwatch => {
-            // The hand is blue only while the count moves: a watch at rest
-            // or paused keeps the charcoal one. `stop_since` is set exactly
-            // while it runs, the same flag that asks for a frame each tick.
-            let going = clock.stop_since.is_some();
-            clock_dial(&mut c, m, t, f, mid, m.dp(DIAL_CY), going);
+            // The hand turns once a minute with the count and fades between
+            // charcoal and blue as the watch starts, stops and settles. Its
+            // angle and colour are both pure reads of the clock's own state.
+            let deg = clock.hand_deg(cx.now);
+            let tint = clock.hand_tint(cx.now);
+            clock_dial(&mut c, m, t, f, mid, m.dp(DIAL_CY), deg, tint);
             let reading = stopwatch_text(clock.stopwatch(cx.now));
             // The typeface's own weight, not the one the pages set their
             // titles in: the count is read rather than looked at.
@@ -1071,10 +1088,12 @@ pub fn clock(cx: &Ctx) -> Frame {
                     c.text_vc(&f.label, &split, rr - m.dp(6.0) - w, y, m.dp(13.0), t.pal.value, None);
                 }
             }
-            // The count is the one thing here that goes on changing while
-            // nothing is touched: the rows it is drawn in are the rows the
-            // page is told to draw again as it runs, and nothing else is.
-            Some(((read_cy - px).max(0.0) as u32, (read_cy + px).min(m.h as f32) as u32))
+            // The hand and the count are the two things here that go on
+            // changing while nothing is touched. One band from the dial's
+            // top down past the reading covers both, so each frame lays the
+            // cached face down once, turns the hand and sets the count.
+            let dial_top = m.dp(DIAL_CY - DIAL_D / 2.0 - DIAL_FACE_PAD).max(0.0);
+            Some((dial_top as u32, (read_cy + px).min(m.h as f32) as u32))
         }
         ClockFace::Timer => {
             let read_cy = (tab_base + keys_top) / 2.0;
@@ -5071,20 +5090,20 @@ mod tests {
     fn the_hand_is_blue_only_while_the_watch_runs() {
         let t = Theme::light(1080, 2400, 2.624);
         let f = crate::font::bundled();
-        let (cx, cy) = (540.0, t.m.dp(DIAL_CY));
+        let (cx, cy, deg) = (540.0, t.m.dp(DIAL_CY), 228.0);
         // A point 60% of the way from the hub toward the tip, on the needle.
-        let a = HAND_DEG * std::f32::consts::PI / 180.0;
+        let a = deg * std::f32::consts::PI / 180.0;
         let (ux, uy) = (a.sin(), -a.cos());
         let px = cx + ux * t.m.dp(HAND_TIP) * 0.6;
         let py = cy + uy * t.m.dp(HAND_TIP) * 0.6;
         let i = (py as usize * 1080 + px as usize) * 4;
-        let ink = |going: bool| {
+        let ink = |tint: f32| {
             let mut c = Canvas::new(1080, 2400);
-            clock_dial(&mut c, &t.m, &t, &f, cx, cy, going);
+            clock_dial(&mut c, &t.m, &t, &f, cx, cy, deg, tint);
             [c.data[i], c.data[i + 1], c.data[i + 2]]
         };
-        let running = ink(true);
-        let still = ink(false);
+        let running = ink(1.0);
+        let still = ink(0.0);
         assert!(running[2] > running[0] + 60, "a running hand must read blue, got {running:?}");
         assert!((still[0] as i32 - still[2] as i32).abs() < 20, "a standing hand must be grey, got {still:?}");
     }

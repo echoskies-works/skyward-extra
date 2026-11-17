@@ -71,8 +71,12 @@ impl App {
                         Some(_) => {
                             clock.stop = clock.stopwatch(now);
                             clock.stop_since = None;
+                            clock.hand.follow(false, now);
                         }
-                        None => clock.stop_since = Some(now),
+                        None => {
+                            clock.stop_since = Some(now);
+                            clock.hand.follow(true, now);
+                        }
                     },
                     ClockFace::Timer => match clock.left_since {
                         Some(_) => {
@@ -93,6 +97,11 @@ impl App {
                 let clock = &mut self.state.clock;
                 match clock.face {
                     ClockFace::Stopwatch => {
+                        // Sweep the hand back from where it stands before
+                        // the count is cleared: the angle comes from `stop`,
+                        // which is about to go to nothing.
+                        let from = clock.hand_deg(now);
+                        clock.hand.reset(from, now);
                         clock.stop = 0;
                         clock.stop_since = None;
                         clock.laps.clear();
