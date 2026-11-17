@@ -887,6 +887,11 @@ fn ruler_ticks(dark: bool) -> &'static Canvas {
 /// patch always reaches from the left edge to that zero. The ticks come
 /// from Smartisan's own artwork; the figures stay in the page's type. The
 /// returned rect is the part of the page a finger may drag.
+///
+/// The bar is drawn on a canvas of its own and cut to its rounded frame
+/// before it goes down. The scale runs past both ends as it rolls, so it is
+/// the frame, not the scale, that says where the scale stops showing — and
+/// the corners stay round however far a stroke or a figure overruns them.
 #[allow(clippy::too_many_arguments)]
 fn timer_ruler(
     c: &mut Canvas, m: &crate::theme::Metrics, f: &Fonts, cx: f32, cy: f32, rw: f32, rh: f32, value: f32, dark: bool,
@@ -898,38 +903,52 @@ fn timer_ruler(
     };
     let (x, y) = (cx - rw / 2.0, cy - rh / 2.0);
     let r = m.dp(RULER_R);
-    c.fill_round_rect(x, y, rw, rh, r, edge);
-    let (ix, iy) = (x + 1.0, y + 1.0);
+    let mut bar = Canvas::new(rw.ceil() as u32, rh.ceil() as u32);
+    bar.fill_round_rect(0.0, 0.0, rw, rh, r, edge);
+    let (ix, iy) = (1.0, 1.0);
     let (iw, ih) = (rw - 2.0, rh - 2.0);
-    c.fill_round_rect_graded(ix, iy, iw, ih, (r - 1.0).max(0.0), &|t| mix(green_top, green_foot, t));
+    bar.fill_round_rect_graded(ix, iy, iw, ih, (r - 1.0).max(0.0), &|t| mix(green_top, green_foot, t));
+
+    // The rest is placed against the bar's own left edge, half its width
+    // from the fixed mark.
+    let mid = rw / 2.0;
 
     // The left patch is tied to the zero mark: at the start it fills the
     // half before the fixed line, and as the scale rolls on it narrows until
     // zero passes out of sight. Its right edge stays a straight cut.
     let minute = m.dp(RULER_MINUTE_DP);
-    let white_end = (cx - value * minute).clamp(ix, ix + iw);
+    let white_end = (mid - value * minute).clamp(ix, ix + iw);
     let white_w = white_end - ix;
     if white_w > 0.0 {
         let wr = (r - 1.0).min(white_w / 2.0).min(ih / 2.0);
-        c.fill_round_rect(ix, iy, white_w, ih, wr, RULER_WHITE);
+        bar.fill_round_rect(ix, iy, white_w, ih, wr, RULER_WHITE);
         if white_w > wr {
-            c.fill_rect(ix + wr, iy, white_w - wr, ih, RULER_WHITE);
+            // Square off the right end with the frame's own coverage: a
+            // plain rect would fill its last row whole and paint over the
+            // one-pixel line the frame keeps along the foot.
+            bar.fill_round_rect(ix + wr, iy, white_w - wr, ih, 0.0, RULER_WHITE);
         }
-        // Three left-pointing arrow-and-dot groups, as on the reference:
-        // `◀··· ◀··· ◀···`, clear of the zero at the patch's right edge.
-        if white_w > m.dp(85.0) {
-            let dot_cy = iy + ih / 2.0;
-            let gap = m.dp(5.0);
-            let arrow = m.dp(5.0);
-            let start = ix + white_w * 0.22;
-            let between = m.dp(20.0);
-            for g in 0..3 {
-                let tip = start + g as f32 * between;
-                c.line(tip + arrow, dot_cy - m.dp(3.0), tip, dot_cy, 1.0, ink);
-                c.line(tip + arrow, dot_cy + m.dp(3.0), tip, dot_cy, 1.0, ink);
-                for k in 1..=3 {
-                    c.fill_circle(tip + arrow + k as f32 * gap, dot_cy, m.dp(1.2), ink);
-                }
+        // Three marks, as the reference draws them: a solid left-pointing
+        // triangle with three dots behind it, the first tip 35 dp in from
+        // the patch's edge and a mark every 27.6 dp. A mark that would run
+        // past the patch is left out whole, so a narrowing patch drops the
+        // far ones instead of spilling into the scale.
+        let lead = ix + m.dp(35.0);
+        let group = m.dp(27.6);
+        let arrow = m.dp(4.1);
+        let half = m.dp(1.75);
+        let dot = m.dp(1.0);
+        let dot_gap = m.dp(5.0);
+        let dot_cy = iy + ih / 2.0;
+        for g in 0..3 {
+            let tip = lead + g as f32 * group;
+            let back = tip + arrow;
+            if back + dot_gap * 3.0 + dot > ix + white_w - m.dp(1.0) {
+                break;
+            }
+            bar.fill_convex(&[(tip, dot_cy), (back, dot_cy - half), (back, dot_cy + half)], ink);
+            for k in 1..=3 {
+                bar.fill_circle(back + k as f32 * dot_gap, dot_cy, dot, ink);
             }
         }
     }
@@ -937,48 +956,55 @@ fn timer_ruler(
     // The tick artwork belongs to the scale, so it rolls with it. Draw it
     // into a strip that starts at the zero edge: that keeps every stroke
     // off the white patch without needing a clip, and lets the picture's
-    // own spacing decide how fine the marks are.
+    // own spacing decide how fine the marks are. The strip begins as the
+    // very pixels the bar holds there, so no tint of ours shows behind the
+    // strokes; a see-through one would have the picture's soft edge
+    // multiplied once by `draw_image` and again by `lay`, which paints it
+    // black.
     let deco = ruler_ticks(dark);
     let tick_h = deco.h as f32 * minute / RULER_DECO_MINUTE_PX;
     let top = iy + m.dp(RULER_TICK_TOP);
     let green_x = white_end.max(ix);
     let green_w = (ix + iw - green_x).max(0.0);
     if green_w > 0.0 && tick_h > 0.0 {
-        let mut strip = Canvas::new(green_w.ceil() as u32, tick_h.ceil() as u32);
-        // Fill the strip with the very rows the ruler has under it, row for
-        // row, so no tint of our own shows behind the strokes. A transparent
-        // strip would have the picture's soft edge multiplied once by
-        // `draw_image` and again by `lay`, which paints it black.
-        let strip_top = top.round() as i32;
-        for row in 0..strip.h {
-            let fy = (strip_top + row as i32) as f32 + 0.5;
-            strip.fill_rect(0.0, row as f32, strip.w as f32, 1.0, mix(green_top, green_foot, fy));
-        }
-        let first_pair = ((value + (green_x - cx) / minute) / 2.0).floor() as i32 - 2;
-        let last_pair = ((value + (green_x + green_w - cx) / minute) / 2.0).ceil() as i32 + 2;
-        for pair in first_pair..=last_pair {
-            let even = pair * 2;
-            if even < 0 || even >= CLOCK_MOST as i32 {
-                continue;
+        let sx = green_x.round().max(0.0) as u32;
+        let sy = top.round().max(0.0) as u32;
+        let sw = (green_w.ceil() as u32).min(bar.w.saturating_sub(sx));
+        let sh = (tick_h.ceil() as u32).min(bar.h.saturating_sub(sy));
+        if sw > 0 && sh > 0 {
+            let mut strip = bar.crop(sx, sy, sw, sh);
+            let first_pair = ((value + (green_x - mid) / minute) / 2.0).floor() as i32 - 2;
+            let last_pair = ((value + (green_x + green_w - mid) / minute) / 2.0).ceil() as i32 + 2;
+            for pair in first_pair..=last_pair {
+                let even = pair * 2;
+                if even < 0 || even >= CLOCK_MOST as i32 {
+                    continue;
+                }
+                let at = mid + (even as f32 - value) * minute;
+                strip.draw_image(deco, at - sx as f32, 0.0, 2.0 * minute, tick_h);
             }
-            let at = cx + (even as f32 - value) * minute;
-            strip.draw_image(deco, at - green_x, 0.0, 2.0 * minute, tick_h);
+            bar.lay(&strip, sx as i32, sy as i32, 1.0);
         }
-        c.lay(&strip, green_x.round() as i32, top.round() as i32, 1.0);
     }
 
     // The figures stay in the page's type, just below the ticks where
     // Smartisan puts them, rather than pressed against the bar's foot.
     for n in 0..=CLOCK_MOST as u32 {
-        let px = cx + (n as f32 - value) * minute;
+        let px = mid + (n as f32 - value) * minute;
         if px < white_end || px > ix + iw {
             continue;
         }
-        c.text_center(&f.label, &n.to_string(), px, iy + ih * RULER_NUM_CY, m.dp(RULER_NUM_PX), ink);
+        bar.text_center(&f.label, &n.to_string(), px, iy + ih * RULER_NUM_CY, m.dp(RULER_NUM_PX), ink);
     }
 
     // The mark itself is the one thing on the ruler that never moves.
-    c.line(cx, iy, cx, iy + ih, 1.5, mark);
+    bar.line(mid, iy, mid, iy + ih, 1.5, mark);
+
+    // The frame is the mask: a figure whose glyph runs over an end, strokes
+    // rolling out of a corner, anything the scale wrote past the rounded
+    // outline is gone before the bar is laid down.
+    bar.mask_round(0.0, 0.0, rw, rh, r);
+    c.lay(&bar, x.round() as i32, y.round() as i32, 1.0);
     Rect::new(x, y, rw, rh)
 }
 

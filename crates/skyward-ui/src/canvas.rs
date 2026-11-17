@@ -427,6 +427,27 @@ impl Canvas {
         out
     }
 
+    /// Clear every pixel of this canvas that falls outside the rounded
+    /// rectangle at (`x`, `y`) of `w` × `h` and corner `r`, leaving what
+    /// lies inside untouched. A band drawn on a canvas of its own is cut
+    /// to its frame this way: whatever runs past the frame's sides and
+    /// corners is gone by the time it is laid down.
+    pub fn mask_round(&mut self, x: f32, y: f32, w: f32, h: f32, r: f32) {
+        assert!(self.whole(), "a frame is cut from a canvas that holds all of itself");
+        let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+        let (hx, hy) = (w / 2.0, h / 2.0);
+        let r = r.min(hx).min(hy);
+        let row = self.w as usize * 4;
+        for (y, line) in self.data.chunks_exact_mut(row).enumerate() {
+            let fy = y as f32 + 0.5;
+            for (x, px) in line.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+                if rr_sdf(x as f32 + 0.5, fy, cx, cy, hx, hy, r) > 0.0 {
+                    *px = [0, 0, 0, 0];
+                }
+            }
+        }
+    }
+
     /// Lay `layer`, whose top-left corner goes at (`x`, `y`), over this
     /// opaque canvas at `alpha` of its strength.
     pub fn lay(&mut self, layer: &Canvas, x: i32, y: i32, alpha: f32) {
@@ -1654,6 +1675,18 @@ mod tests {
         let part = src.crop(1, 2, 1, 3);
         assert_eq!((part.w, part.h), (1, 3));
         assert_eq!(part.data.chunks(4).map(|p| p[0]).collect::<Vec<_>>(), [2, 3, 4]);
+    }
+
+    #[test]
+    fn a_rounded_frame_cuts_away_the_corners_it_does_not_hold() {
+        let mut c = Canvas::filled(40, 30, Rgba::rgb(255, 0, 0));
+        c.mask_round(0.0, 0.0, 40.0, 30.0, 10.0);
+        let at = |x: usize, y: usize| c.data[(y * 40 + x) * 4 + 3];
+        assert_eq!(at(0, 0), 0, "the corner lies outside the frame");
+        assert_eq!(at(39, 29), 0, "and so does the one across it");
+        assert_eq!(at(20, 15), 255, "the middle is left as it was");
+        assert_eq!(at(20, 0), 255, "so is the top edge between the corners");
+        assert_eq!(at(0, 15), 255, "and the left edge between them");
     }
 }
 
