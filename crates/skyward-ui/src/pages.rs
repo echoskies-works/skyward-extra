@@ -731,9 +731,13 @@ enum Glyph {
     Reset,
     /// A triangle: set the count going.
     Start,
-    /// A bar: take a minute off the timer's length.
+    /// A bar: take a minute off the timer's length. Kept for when the timer
+    /// can be set again, once its ruler carries the slide.
+    #[allow(dead_code)]
     Minus,
-    /// Two bars crossed: put a minute on the timer's length.
+    /// Two bars crossed: put a minute on the timer's length. Kept for the
+    /// same reason as `Minus`.
+    #[allow(dead_code)]
     Plus,
 }
 
@@ -810,6 +814,21 @@ fn timer_text(ms: u64) -> String {
     let s = ms.div_ceil(1_000);
     format!("{:02}:{:02}", s / 60, s % 60)
 }
+
+/// The timer's ruler: a rounded bar above the keys, where Smartisan puts
+/// the slide the count is set with. For now it is only a standing rectangle;
+/// the marks, the digits and the selection line wait for a closer look at
+/// the reference shot. Width and height are in dp, the corner a fraction of
+/// the height as the reference shows.
+const RULER_W: f32 = 252.0;
+const RULER_H: f32 = 30.0;
+const RULER_R: f32 = 3.0;
+/// Air between the ruler's foot and the tops of the keys, in dp.
+const RULER_GAP: f32 = 12.0;
+/// The bar's pale green in the light theme, sampled from the reference; the
+/// dark theme gets a deeper green so the bar still sits off the page.
+const RULER_LIGHT: Rgba = Rgba::rgb(230, 235, 232);
+const RULER_DARK: Rgba = Rgba::rgb(64, 78, 72);
 
 /// The words under the dial before the watch has ever run.
 const CLOCK_HINT: Text = ["点击启动秒表", "點擊啟動碼錶", "Tap to start the stopwatch"];
@@ -1100,6 +1119,16 @@ pub fn clock(cx: &Ctx) -> Frame {
             let reading = timer_text(clock.timer(cx.now));
             let px = m.dp(if reading.chars().count() > 8 { 40.0 } else { 76.0 });
             c.text_center(&f.heading, &reading, mid, read_cy, px, t.pal.text);
+
+            // The ruler: a standing rectangle just above the keys, in the
+            // place Smartisan gives its slide. Unlike that slide it is set
+            // apart from the keys, not held between them.
+            let rw = m.dp(RULER_W);
+            let rh = m.dp(RULER_H);
+            let ruler_cy = keys_top - m.dp(RULER_GAP) - rh / 2.0;
+            let ink = if t.dark { RULER_DARK } else { RULER_LIGHT };
+            c.fill_round_rect(mid - rw / 2.0, ruler_cy - rh / 2.0, rw, rh, m.dp(RULER_R), ink);
+
             Some(((read_cy - px).max(0.0) as u32, (read_cy + px).min(m.h as f32) as u32))
         }
     };
@@ -1130,23 +1159,18 @@ pub fn clock(cx: &Ctx) -> Frame {
         }
     }
 
-    // The timer's keys: the length down by a minute, the count started or
-    // stopped, the length up by one. The two for the length answer nothing
-    // while the timer runs, and nothing at either end of the hour it is
-    // given; they stay drawn, quiet, so the row never moves.
+    // The timer's keys: the same pair the stopwatch shows at rest — put it
+    // back to its length, and set it going. The ruler that used to sit
+    // between a longer row now stands above this one. The timer cannot be
+    // set from this page yet, so the two keys are all it offers for now.
     if clock.face == ClockFace::Timer {
-        let going = clock.left_since.is_some();
-        let minutes = clock.span / 60_000;
-        let keys: [(Glyph, Option<Action>); 3] = [
-            (Glyph::Minus, (minutes > 1 && !going).then_some(Action::ClockSpan(minutes - 1))),
-            (Glyph::Plus, (minutes < 60 && !going).then_some(Action::ClockSpan(minutes + 1))),
-            (if going { Glyph::Pause } else { Glyph::Start }, Some(Action::ClockGo)),
+        let keys: [(Glyph, Action); 2] = [
+            (Glyph::Reset, Action::ClockReset),
+            (Glyph::Start, Action::ClockGo),
         ];
         for (k, (glyph, action)) in keys.into_iter().enumerate() {
-            let rect = clock_key(&mut c, t, sat(k, 3), cy, glyph, action.is_some());
-            if let Some(action) = action {
-                out.push(Hit { rect, action });
-            }
+            let rect = clock_key(&mut c, t, sat(k, 2), cy, glyph, true);
+            out.push(Hit { rect, action });
         }
     }
 
