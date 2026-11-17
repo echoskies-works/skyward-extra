@@ -253,7 +253,7 @@ struct DeskApp {
 }
 
 /// The desktop's icons, laid out four to a row in the order written here.
-const DESKTOP_APPS: [DeskApp; 7] = [
+const DESKTOP_APPS: [DeskApp; 8] = [
     DeskApp {
         name: ["恢复模式", "恢復模式", "Recovery"],
         icon: Icon::Gear,
@@ -280,10 +280,11 @@ const DESKTOP_APPS: [DeskApp; 7] = [
     },
     // The player stands a page of its own, empty for now: it opens rather
     // than stopping the system, so the way in is settled before there is
-    // anything to hear. The browser and the tasks page are still nothing but
-    // their icons, and a touch on either stops the system with the code for
-    // an app that is not built, so the icon answers rather than doing
-    // nothing — the panel that catches the stop says which it was, in words.
+    // anything to hear. The browser, the tasks page and the weather page
+    // are still nothing but their icons, and a touch on any of them stops
+    // the system with the code for an app that is not built, so the icon
+    // answers rather than doing nothing — the panel that catches the stop
+    // says which it was, in words.
     DeskApp {
         name: ["音乐", "音樂", "Music"],
         icon: Icon::Music,
@@ -301,6 +302,14 @@ const DESKTOP_APPS: [DeskApp; 7] = [
         icon: Icon::Tasks,
         color: Rgba::rgb(0x7a, 0x5c, 0xf0),
         opens: Opens::NotYet("tasks"),
+    },
+    // The weather page is the same kind of nothing for now, and answers the
+    // same way, so that a tap on it is never silence.
+    DeskApp {
+        name: ["天气", "天氣", "Weather"],
+        icon: Icon::Weather,
+        color: Rgba::rgb(0x2c, 0xa6, 0xdd),
+        opens: Opens::NotYet("weather"),
     },
 ];
 

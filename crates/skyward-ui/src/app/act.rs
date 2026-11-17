@@ -1025,7 +1025,7 @@ mod tests {
         // kind of stop it was, the word says which app. Tapping one must not
         // open anything first — there is nothing to open. The player used to
         // answer this way too and now stands a page of its own.
-        for (tag, name) in [("browser", "浏览器"), ("tasks", "任务管理器")] {
+        for (tag, name) in [("browser", "浏览器"), ("tasks", "任务管理器"), ("weather", "天气")] {
             let fx = tap(&mut app, &f, &i, Action::NotReady(tag));
             assert!(
                 matches!(fx.as_slice(), [Effect::Stop { code: NOT_READY, reason: Some(said) }] if *said == tag),
@@ -1042,6 +1042,6 @@ mod tests {
         // crash screen, which is the one place it is needed.
         let mut tags = crate::pages::not_built();
         tags.sort();
-        assert_eq!(tags, ["browser", "tasks"]);
+        assert_eq!(tags, ["browser", "tasks", "weather"]);
     }
 }

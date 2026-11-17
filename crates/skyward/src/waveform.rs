@@ -132,6 +132,19 @@ mod tests {
     }
 
     #[test]
+    fn the_timer_note_drives_a_fifth_of_a_second_then_turns_over() {
+        let samples = alarm(172.4);
+        let at = |ms: f32| (ms * RATE as f32 / 1000.0).round() as usize;
+        assert_eq!(samples.len(), at(ALARM_DRIVE_MS + ALARM_BRAKE_MS), "the note the driver repeats");
+        assert_eq!(samples[0], 0);
+        assert_eq!(*samples.iter().max().unwrap(), i8::MAX);
+        let quarter = (RATE as f32 / 172.4 / 4.0).round() as usize;
+        assert!(samples[quarter] > 120, "it drives first");
+        assert!(samples[at(ALARM_DRIVE_MS) + quarter] < -100, "then turns over");
+        assert!(samples[at(ALARM_DRIVE_MS + ALARM_BRAKE_MS) - 1].abs() < 8, "it comes to before the repeat");
+    }
+
+    #[test]
     fn the_slider_spans_the_strengths_each_step_the_same_factor() {
         let s = Strength { lightest: 0.25, strongest: 1.0 };
         assert_eq!((share(&s, 0.0), share(&s, 1.0)), (0.25, 1.0));

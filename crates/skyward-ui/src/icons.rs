@@ -76,6 +76,8 @@ pub enum Icon {
     /// Three bars of a graph standing on their line, as a tasks page shows
     /// them.
     Tasks,
+    /// A sun behind a cloud: what a weather page shows.
+    Weather,
     /// A triangle: the stopwatch's key that sets the count going.
     Play,
     /// Two bars: the stopwatch's key that stops the count where it is.
@@ -426,6 +428,25 @@ const TASKS: &[Part] = &[
     add(Shape::Fill("M6,21.0H22V22.2H6Z")),
 ];
 
+/// A sun behind a cloud: what a weather page shows. Drawn the stock way
+/// rather than copied, since the stock Settings has no weather of its own:
+/// the sun's disc and the four rays it throws, then the cloud in front of
+/// it built from rounds and a flat foot.
+const WEATHER: &[Part] = &[
+    // The sun's disc, and the four rays clear of the cloud.
+    add(Shape::Fill("M11.2,8.5A3.3,3.3 0 1 1 11.2,15.1A3.3,3.3 0 1 1 11.2,8.5Z")),
+    add(Shape::Line("M11.2,5.0V6.8", 1.5)),
+    add(Shape::Line("M11.2,16.8V18.6", 1.5)),
+    add(Shape::Line("M5.3,11.8H7.1", 1.5)),
+    add(Shape::Line("M15.3,11.8H17.1", 1.5)),
+    // The cloud's three rounds and the foot they stand on, filled one over
+    // the other: the union is the cloud.
+    add(Shape::Fill("M11.6,17.5A2.9,2.9 0 1 1 11.6,23.3A2.9,2.9 0 1 1 11.6,17.5Z")),
+    add(Shape::Fill("M16.6,15.3A3.7,3.7 0 1 1 16.6,22.7A3.7,3.7 0 1 1 16.6,15.3Z")),
+    add(Shape::Fill("M21.0,18.6A2.5,2.5 0 1 1 21.0,23.6A2.5,2.5 0 1 1 21.0,18.6Z")),
+    add(Shape::Fill("M11.5,20.6H21.0V23.8H11.5Z")),
+];
+
 /// The stopwatch's four keys, as the watch face's own drawing tool drew
 /// them — the same 1024-unit box, scaled into this file's 28.
 ///
@@ -510,6 +531,7 @@ fn outline(icon: Icon) -> (&'static [Part], f32) {
         Icon::Music => (MUSIC, 1.0),
         Icon::Browser => (BROWSER, 1.0),
         Icon::Tasks => (TASKS, 1.0),
+        Icon::Weather => (WEATHER, 1.0),
         Icon::Play => (PLAY, PLAY_SCALE),
         Icon::Pause => (PAUSE, PAUSE_SCALE),
         Icon::Flag => (FLAG, FLAG_SCALE),
@@ -671,7 +693,7 @@ fn path(d: &str) -> tiny_skia::Path {
 mod tests {
     use super::*;
 
-    const ALL: [Icon; 26] = [
+    const ALL: [Icon; 27] = [
         Icon::Install,
         Icon::Backup,
         Icon::Restore,
@@ -698,6 +720,7 @@ mod tests {
         Icon::Music,
         Icon::Browser,
         Icon::Tasks,
+        Icon::Weather,
     ];
 
     /// Pixels a unit of the box takes in these tests.

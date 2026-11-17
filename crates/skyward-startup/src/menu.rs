@@ -103,6 +103,8 @@ pub enum Reason {
     Browser,
     /// The tasks page.
     Tasks,
+    /// The weather page.
+    Weather,
 }
 
 impl Reason {
@@ -117,6 +119,7 @@ impl Reason {
             Reason::Music => ["The player is not built yet.", "音乐还没做好"],
             Reason::Browser => ["The browser is not built yet.", "浏览器还没做好"],
             Reason::Tasks => ["The tasks page is not built yet.", "任务管理器还没做好"],
+            Reason::Weather => ["The weather page is not built yet.", "天气还没做好"],
         })
     }
 
@@ -127,6 +130,7 @@ impl Reason {
             Reason::Music => "music",
             Reason::Browser => "browser",
             Reason::Tasks => "tasks",
+            Reason::Weather => "weather",
         }
     }
 
@@ -141,7 +145,7 @@ impl Reason {
 
 /// Every reason there is, so the words the panel prints and the words Aether
 /// writes stay in one list.
-const ALL: [Reason; 3] = [Reason::Music, Reason::Browser, Reason::Tasks];
+const ALL: [Reason; 4] = [Reason::Music, Reason::Browser, Reason::Tasks, Reason::Weather];
 
 /// What is on the screen right now.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -357,6 +361,7 @@ mod tests {
             (Reason::Music, ["The player is not built yet.", "音乐还没做好"]),
             (Reason::Browser, ["The browser is not built yet.", "浏览器还没做好"]),
             (Reason::Tasks, ["The tasks page is not built yet.", "任务管理器还没做好"]),
+            (Reason::Weather, ["The weather page is not built yet.", "天气还没做好"]),
         ];
         for (reason, [en, zh]) in said {
             assert_eq!(reason.label(Lang::En), en);
