@@ -82,12 +82,17 @@ impl App {
                         Some(_) => {
                             clock.left = clock.timer(now);
                             clock.left_since = None;
+                            // A count held here stays held if the ruler is
+                            // moved while it is paused.
+                            clock.timer_paused = true;
                         }
+                        None if clock.span == 0 => {}
                         None => {
                             if clock.left == 0 {
                                 clock.left = clock.span;
                             }
                             clock.left_since = Some(now);
+                            clock.timer_paused = false;
                         }
                     },
                 }
@@ -108,11 +113,27 @@ impl App {
                         clock.paper = 0;
                     }
                     ClockFace::Timer => {
-                        clock.left = clock.span;
+                        clock.ruler = 0;
+                        clock.span = 0;
+                        clock.left = 0;
                         clock.left_since = None;
+                        clock.timer_paused = false;
                     }
                 }
                 self.refresh();
+            }
+            // The timer's notice is put away by its own key: the long motor
+            // note stops, and the timer goes back to nothing on its ruler.
+            Action::TimerDoneOk => {
+                self.hide_timer_done();
+                let clock = &mut self.state.clock;
+                clock.ruler = 0;
+                clock.span = 0;
+                clock.left = 0;
+                clock.left_since = None;
+                clock.timer_paused = false;
+                self.refresh();
+                return vec![Effect::TimerAlarm { on: false }];
             }
             // A running stopwatch takes an entry: the run since the entry
             // before, and the whole of what it has counted.
@@ -131,14 +152,16 @@ impl App {
                     self.refresh();
                 }
             }
-            // The timer is set by the minute, within the hour it is given,
+            // The timer is set by the minute, up to the ruler's three hours,
             // while it is stopped; what it has left follows the length set.
             Action::ClockSpan(minutes) => {
                 let minutes = minutes.clamp(CLOCK_LEAST, CLOCK_MOST);
                 let clock = &mut self.state.clock;
+                clock.ruler = minutes as u32 * RULER_UNITS;
                 clock.span = minutes * 60_000;
                 if clock.left_since.is_none() {
                     clock.left = clock.span;
+                    clock.timer_paused = false;
                 }
                 self.refresh();
             }

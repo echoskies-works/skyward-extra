@@ -5,8 +5,8 @@ use crate::app::{
     FileOp, FileTask, Fold, Folder, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, MusicFace, Pick, Place, Rows,
     Screen,
     SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, Switch, SystemsWork, Target, UsbDrive, UsbLink, Wipe, ADDABLE,
-    BACKUP_PARTS, DATA_ERASED, DATA_PARTITION, DOWNLOADS, FASTBOOT_CHOICES, SCREEN_OFF, TARGETS, TIME_ZONES, USB_DRIVE_UNREADABLE,
-    USB_DRIVE_WANTED, WIPES, installs, starting,
+    BACKUP_PARTS, CLOCK_MOST, DATA_ERASED, DATA_PARTITION, DOWNLOADS, FASTBOOT_CHOICES, RULER_MINUTE_DP, SCREEN_OFF, TARGETS, TIME_ZONES,
+    USB_DRIVE_UNREADABLE, USB_DRIVE_WANTED, WIPES, installs, starting,
 };
 use crate::canvas::Canvas;
 use crate::color::{mix, Rgba};
@@ -809,26 +809,165 @@ fn stopwatch_text(ms: u64) -> String {
 }
 
 /// What a timer has left, rounded up to the second it is shown by, so a
-/// timer with a moment left reads `00:01` rather than nothing.
+/// timer with a moment left reads `00:01` rather than nothing. Past an hour
+/// it takes the hour place, as the stopwatch's reading does.
 fn timer_text(ms: u64) -> String {
     let s = ms.div_ceil(1_000);
-    format!("{:02}:{:02}", s / 60, s % 60)
+    let (h, m, s) = (s / 3_600, s / 60 % 60, s % 60);
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m:02}:{s:02}")
+    }
 }
 
-/// The timer's ruler: a rounded bar above the keys, where Smartisan puts
-/// the slide the count is set with. For now it is only a standing rectangle;
-/// the marks, the digits and the selection line wait for a closer look at
-/// the reference shot. Width and height are in dp, the corner a fraction of
-/// the height as the reference shows.
+/// The timer's ruler: a rounded bar above the keys, with the scale running
+/// from zero to three hours under a fixed mark in its middle. Everything is
+/// drawn here — the white patch that ends at zero, the dots that lead to it,
+/// the fine marks, the minute figures and the mark — so no picture is read
+/// for any of them. The mark is dark green rather than the reference's red.
 const RULER_W: f32 = 252.0;
-const RULER_H: f32 = 30.0;
-const RULER_R: f32 = 3.0;
+const RULER_H: f32 = 50.0;
+const RULER_R: f32 = 5.0;
 /// Air between the ruler's foot and the tops of the keys, in dp.
 const RULER_GAP: f32 = 12.0;
-/// The bar's pale green in the light theme, sampled from the reference; the
-/// dark theme gets a deeper green so the bar still sits off the page.
-const RULER_LIGHT: Rgba = Rgba::rgb(230, 235, 232);
-const RULER_DARK: Rgba = Rgba::rgb(64, 78, 72);
+/// The bar's two greens and its edge, sampled from the reference. The ruler
+/// keeps these in both themes.
+const RULER_GREEN_TOP: Rgba = Rgba::rgb(235, 243, 232);
+const RULER_GREEN_FOOT: Rgba = Rgba::rgb(244, 246, 243);
+const RULER_WHITE: Rgba = Rgba::rgb(250, 250, 250);
+const RULER_EDGE: Rgba = Rgba::rgb(200, 205, 199);
+/// The marks and figures, and the fixed line that chooses between them. The
+/// line is a shade deeper than the marks, as a pointer has to be.
+const RULER_INK: Rgba = Rgba::rgb(120, 149, 120);
+const RULER_MARK: Rgba = Rgba::rgb(76, 112, 76);
+/// Smartisan's own tick artwork: 70 px hold two minutes, the long strokes
+/// on each minute and five short ones between. It is recoloured for dark,
+/// but its spacing and stroke shape are the reference's, not a guess.
+const RULER_DECO_PIC: &[u8] = include_bytes!("../../../resources/clock/rulerdeco.png");
+const RULER_DECO_MINUTE_PX: f32 = 35.0;
+const RULER_TICK_TOP: f32 = 1.0;
+const RULER_NUM_PX: f32 = 11.5;
+const RULER_NUM_CY: f32 = 0.42;
+/// In the dark the same pale bar takes a blue hue instead of green, the way
+/// Windows 11 turns its green progress blue on a dark panel. The lightness
+/// stays close to the light ruler; only the hue changes. White stays white.
+const RULER_BLUE_TOP: Rgba = Rgba::rgb(226, 237, 249);
+const RULER_BLUE_FOOT: Rgba = Rgba::rgb(240, 246, 252);
+const RULER_BLUE_EDGE: Rgba = Rgba::rgb(194, 205, 218);
+const RULER_BLUE_INK: Rgba = Rgba::rgb(91, 126, 172);
+const RULER_BLUE_MARK: Rgba = Rgba::rgb(63, 101, 169);
+
+/// The tick artwork, once per theme, with every opaque pixel recoloured to
+/// that theme's ruler ink. The alpha is left alone so the thin strokes keep
+/// their softened edges.
+fn ruler_ticks(dark: bool) -> &'static Canvas {
+    static LIGHT: std::sync::OnceLock<Canvas> = std::sync::OnceLock::new();
+    static DARK: std::sync::OnceLock<Canvas> = std::sync::OnceLock::new();
+    let slot = if dark { &DARK } else { &LIGHT };
+    slot.get_or_init(|| {
+        let ink = if dark { RULER_BLUE_INK } else { RULER_INK };
+        let mut ticks = Canvas::from_png(RULER_DECO_PIC).expect("the ruler tick picture must decode");
+        for px in ticks.data.as_chunks_mut::<4>().0 {
+            if px[3] != 0 {
+                px[0] = ink.r;
+                px[1] = ink.g;
+                px[2] = ink.b;
+            }
+        }
+        ticks
+    })
+}
+
+/// Draw the ruler centred on (`cx`, `cy`). `value` is where the fixed mark
+/// falls, in minutes; the zero of the scale moves with it, and the white
+/// patch always reaches from the left edge to that zero. The ticks come
+/// from Smartisan's own artwork; the figures stay in the page's type. The
+/// returned rect is the part of the page a finger may drag.
+#[allow(clippy::too_many_arguments)]
+fn timer_ruler(
+    c: &mut Canvas, m: &crate::theme::Metrics, f: &Fonts, cx: f32, cy: f32, rw: f32, rh: f32, value: f32, dark: bool,
+) -> Rect {
+    let (green_top, green_foot, edge, ink, mark) = if dark {
+        (RULER_BLUE_TOP, RULER_BLUE_FOOT, RULER_BLUE_EDGE, RULER_BLUE_INK, RULER_BLUE_MARK)
+    } else {
+        (RULER_GREEN_TOP, RULER_GREEN_FOOT, RULER_EDGE, RULER_INK, RULER_MARK)
+    };
+    let (x, y) = (cx - rw / 2.0, cy - rh / 2.0);
+    let r = m.dp(RULER_R);
+    c.fill_round_rect(x, y, rw, rh, r, edge);
+    let (ix, iy) = (x + 1.0, y + 1.0);
+    let (iw, ih) = (rw - 2.0, rh - 2.0);
+    c.fill_round_rect_graded(ix, iy, iw, ih, (r - 1.0).max(0.0), &|t| mix(green_top, green_foot, t));
+
+    // The left patch is tied to the zero mark: at the start it fills the
+    // half before the fixed line, and as the scale rolls on it narrows until
+    // zero passes out of sight. Its right edge stays a straight cut.
+    let minute = m.dp(RULER_MINUTE_DP);
+    let white_end = (cx - value * minute).clamp(ix, ix + iw);
+    let white_w = white_end - ix;
+    if white_w > 0.0 {
+        let wr = (r - 1.0).min(white_w / 2.0).min(ih / 2.0);
+        c.fill_round_rect(ix, iy, white_w, ih, wr, RULER_WHITE);
+        if white_w > wr {
+            c.fill_rect(ix + wr, iy, white_w - wr, ih, RULER_WHITE);
+        }
+        // A short row of dots near the outer end of the white patch, clear
+        // of the zero beside it, as on the reference ruler.
+        let gap = m.dp(9.0);
+        let count = ((white_w - m.dp(45.0)) / gap).floor().clamp(0.0, 3.0) as usize;
+        if count > 0 {
+            let dot_cy = iy + ih / 2.0;
+            let head = ix + m.dp(34.0);
+            for k in 0..count {
+                c.fill_circle(head - k as f32 * gap, dot_cy, m.dp(1.2), ink);
+            }
+            if count >= 3 {
+                let tail = head - count as f32 * gap;
+                c.line(tail + m.dp(6.0), dot_cy, tail, dot_cy - m.dp(3.5), 1.0, ink);
+                c.line(tail + m.dp(6.0), dot_cy, tail, dot_cy + m.dp(3.5), 1.0, ink);
+            }
+        }
+    }
+
+    // The tick artwork belongs to the scale, so it rolls with it. Draw it
+    // into a strip that starts at the zero edge: that keeps every stroke
+    // off the white patch without needing a clip, and lets the picture's
+    // own spacing decide how fine the marks are.
+    let deco = ruler_ticks(dark);
+    let tick_h = deco.h as f32 * minute / RULER_DECO_MINUTE_PX;
+    let top = iy + m.dp(RULER_TICK_TOP);
+    let green_x = white_end.max(ix);
+    let green_w = (ix + iw - green_x).max(0.0);
+    if green_w > 0.0 && tick_h > 0.0 {
+        let mut strip = Canvas::new(green_w.ceil() as u32, tick_h.ceil() as u32);
+        let first_pair = ((value + (green_x - cx) / minute) / 2.0).floor() as i32 - 2;
+        let last_pair = ((value + (green_x + green_w - cx) / minute) / 2.0).ceil() as i32 + 2;
+        for pair in first_pair..=last_pair {
+            let even = pair * 2;
+            if even < 0 || even > CLOCK_MOST as i32 {
+                continue;
+            }
+            let at = cx + (even as f32 - value) * minute;
+            strip.draw_image(deco, at - green_x, 0.0, 2.0 * minute, tick_h);
+        }
+        c.lay(&strip, green_x.round() as i32, top.round() as i32, 1.0);
+    }
+
+    // The figures stay in the page's type, just below the ticks where
+    // Smartisan puts them, rather than pressed against the bar's foot.
+    for n in 0..=CLOCK_MOST as u32 {
+        let px = cx + (n as f32 - value) * minute;
+        if px < white_end || px > ix + iw {
+            continue;
+        }
+        c.text_center(&f.label, &n.to_string(), px, iy + ih * RULER_NUM_CY, m.dp(RULER_NUM_PX), ink);
+    }
+
+    // The mark itself is the one thing on the ruler that never moves.
+    c.line(cx, iy, cx, iy + ih, 1.5, mark);
+    Rect::new(x, y, rw, rh)
+}
 
 /// The words under the dial before the watch has ever run.
 const CLOCK_HINT: Text = ["点击启动秒表", "點擊啟動碼錶", "Tap to start the stopwatch"];
@@ -1045,6 +1184,7 @@ pub fn clock(cx: &Ctx) -> Frame {
     // The timer has no dial, so its count takes the middle of the room the
     // words and the keys leave.
     let mut scroll = None;
+    let mut ruler = None;
     let live = match clock.face {
         ClockFace::Stopwatch => {
             // The hand turns once a minute with the count and fades between
@@ -1115,19 +1255,22 @@ pub fn clock(cx: &Ctx) -> Frame {
             Some((dial_top as u32, (read_cy + px).min(m.h as f32) as u32))
         }
         ClockFace::Timer => {
-            let read_cy = (tab_base + keys_top) / 2.0;
+            // The timer's count takes the same place and size as the
+            // stopwatch's: only what it says is different.
             let reading = timer_text(clock.timer(cx.now));
-            let px = m.dp(if reading.chars().count() > 8 { 40.0 } else { 76.0 });
-            c.text_center(&f.heading, &reading, mid, read_cy, px, t.pal.text);
+            let px = m.dp(if reading.chars().count() > 8 { READ_LONG_PX } else { READ_PX });
+            let read_cy = m.dp(READ_CY);
+            c.text_center(&f.regular, &reading, mid, read_cy, px, t.pal.text);
 
-            // The ruler: a standing rectangle just above the keys, in the
-            // place Smartisan gives its slide. Unlike that slide it is set
-            // apart from the keys, not held between them.
+            // The ruler: the scale sits just above the keys, with its
+            // middle line fixed and its white patch ending at zero. It is
+            // offered to a finger only while the timer is not running.
             let rw = m.dp(RULER_W);
             let rh = m.dp(RULER_H);
             let ruler_cy = keys_top - m.dp(RULER_GAP) - rh / 2.0;
-            let ink = if t.dark { RULER_DARK } else { RULER_LIGHT };
-            c.fill_round_rect(mid - rw / 2.0, ruler_cy - rh / 2.0, rw, rh, m.dp(RULER_R), ink);
+            ruler = clock
+                .timer_can_slide()
+                .then_some(timer_ruler(&mut c, m, f, mid, ruler_cy, rw, rh, clock.ruler_value(), t.dark));
 
             Some(((read_cy - px).max(0.0) as u32, (read_cy + px).min(m.h as f32) as u32))
         }
@@ -1159,18 +1302,21 @@ pub fn clock(cx: &Ctx) -> Frame {
         }
     }
 
-    // The timer's keys: the same pair the stopwatch shows at rest — put it
-    // back to its length, and set it going. The ruler that used to sit
-    // between a longer row now stands above this one. The timer cannot be
-    // set from this page yet, so the two keys are all it offers for now.
+    // The timer's keys: both stay where they are and both wait until a
+    // minute has been chosen on the ruler. The right one then follows the
+    // count — pause while it runs, start while it is held at pause.
     if clock.face == ClockFace::Timer {
+        let ready = clock.timer_set();
+        let going = clock.left_since.is_some();
         let keys: [(Glyph, Action); 2] = [
             (Glyph::Reset, Action::ClockReset),
-            (Glyph::Start, Action::ClockGo),
+            (if going { Glyph::Pause } else { Glyph::Start }, Action::ClockGo),
         ];
         for (k, (glyph, action)) in keys.into_iter().enumerate() {
-            let rect = clock_key(&mut c, t, sat(k, 2), cy, glyph, true);
-            out.push(Hit { rect, action });
+            let rect = clock_key(&mut c, t, sat(k, 2), cy, glyph, ready);
+            if ready {
+                out.push(Hit { rect, action });
+            }
         }
     }
 
@@ -1182,6 +1328,7 @@ pub fn clock(cx: &Ctx) -> Frame {
         header: false,
         live,
         scrollback: scroll,
+        clock_ruler: ruler,
         ..Frame::new(t, c, out, "", m.content_top)
     }
 }

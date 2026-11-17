@@ -1,4 +1,4 @@
-use crate::waveform::{made, share, ticks, RATE, TICKS_RATE};
+use crate::waveform::{alarm, made, share, ticks, RATE, TICKS_RATE};
 use anyhow::{anyhow, ensure, Context, Result};
 use evdev::raw_stream::RawDevice;
 use skyward_config::Strength;
@@ -33,6 +33,10 @@ pub struct Haptics {
     dev: File,
     click: Click,
     ticks: Click,
+    /// The repeating note a timer plays while its notice stands.
+    alarm: Click,
+    /// Its slot in the driver, while the note is wanted.
+    alarm_slot: Option<i16>,
     strength: Strength,
     /// The click playing, by its slot and its count, until it is taken
     /// away; a click taken away early by the next is not taken away again.
@@ -41,6 +45,7 @@ pub struct Haptics {
 }
 
 /// What a click is.
+#[derive(Clone)]
 enum Click {
     /// A waveform the driver keeps, by its number. The driver says how long
     /// it plays as it loads it.
@@ -68,7 +73,17 @@ impl Haptics {
             }
         };
         let ticks = Click::Samples { data: ticks(hz), rate: TICKS_RATE };
-        Ok(Haptics { dev, click, ticks, strength: cfg.strength, playing: Arc::new(Mutex::new(None)), clicks: 0 })
+        let alarm = Click::Samples { data: alarm(hz), rate: RATE };
+        Ok(Haptics {
+            dev,
+            click,
+            ticks,
+            alarm,
+            alarm_slot: None,
+            strength: cfg.strength,
+            playing: Arc::new(Mutex::new(None)),
+            clicks: 0,
+        })
     }
 
     /// One short click at the strength the slider's `position` gives, after
@@ -83,6 +98,28 @@ impl Haptics {
         self.start(true, TICKS_STRENGTH)
     }
 
+    /// Start the timer's long note at the strength the slider gives. It
+    /// goes on repeating until [`Haptics::stop_alarm`] takes it away, and
+    /// a touch click does not disturb it: the notice owns the motor while
+    /// it stands.
+    pub fn alarm(&mut self, position: f32) -> Result<()> {
+        if self.alarm_slot.is_some() {
+            return Ok(());
+        }
+        let loaded = upload(&self.dev, &self.alarm, share(&self.strength, position), u16::MAX)?;
+        play(&mut self.dev, loaded.slot)?;
+        self.alarm_slot = Some(loaded.slot);
+        Ok(())
+    }
+
+    /// Take the timer's note away: the notice is gone or its key pressed.
+    pub fn stop_alarm(&mut self) -> Result<()> {
+        if let Some(slot) = self.alarm_slot.take() {
+            erase(&self.dev, slot).context("take away the timer's note")?;
+        }
+        Ok(())
+    }
+
     /// Play the ticks, or else the click, at `share` of its full strength,
     /// after taking away what still plays.
     fn start(&mut self, ticks: bool, share: f32) -> Result<Duration> {
@@ -91,7 +128,7 @@ impl Haptics {
             erase(&self.dev, slot).context("take away the click still playing")?;
         }
         let effect = if ticks { &self.ticks } else { &self.click };
-        let loaded = upload(&self.dev, effect, share).context("load the click")?;
+        let loaded = upload(&self.dev, effect, share, 0).context("load the click")?;
         play(&mut self.dev, loaded.slot).context("play the click")?;
         self.clicks += 1;
         let this = (loaded.slot, self.clicks);
@@ -158,6 +195,17 @@ fn resonance(file: &str) -> Result<f32> {
     Ok(tenths as f32 / 10.0)
 }
 
+impl Drop for Haptics {
+    fn drop(&mut self) {
+        // A timer note left playing at exit must not outlive the process.
+        if let Some(slot) = self.alarm_slot.take()
+            && let Err(e) = erase(&self.dev, slot)
+        {
+            eprintln!("take away the timer's note at exit: {e}");
+        }
+    }
+}
+
 /// A click as the driver loaded it: the slot the kernel keeps it in, and
 /// how long it plays.
 struct Loaded {
@@ -179,7 +227,7 @@ struct Samples {
 /// Load `click` at `share` of its full strength as a custom periodic
 /// effect in a slot of its own. The driver drives the motor at the click's
 /// highest voltage times the magnitude.
-fn upload(dev: &File, click: &Click, share: f32) -> Result<Loaded> {
+fn upload(dev: &File, click: &Click, share: f32, repeat_ms: u16) -> Result<Loaded> {
     // The driver tells the two kinds apart by the length in bytes of what
     // the effect points to, and loads nothing for any other length, though
     // the upload still succeeds. For a waveform it keeps it reads the
@@ -214,7 +262,7 @@ fn upload(dev: &File, click: &Click, share: f32) -> Result<Loaded> {
         id: -1,
         direction: 0,
         trigger: libc::ff_trigger { button: 0, interval: 0 },
-        replay: libc::ff_replay { length: 0, delay: 0 },
+        replay: libc::ff_replay { length: repeat_ms, delay: 0 },
         u: [0; 4],
     };
     // The union holds the periodic effect; it is exactly as large.

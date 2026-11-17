@@ -1746,6 +1746,7 @@ impl<'a> Pages<'a> {
         for fx in self.app.tick(now) {
             match fx {
                 Effect::Haptic => self.click()?,
+                Effect::TimerAlarm { on } => self.timer_alarm(on)?,
                 // The power key held past its wait for volume down turns
                 // the screen off.
                 Effect::Ticks => self.ticks()?,
@@ -1778,6 +1779,20 @@ impl<'a> Pages<'a> {
     fn ticks(&mut self) -> Result<()> {
         if let Some(h) = &mut self.haptics {
             h.ticks()?;
+        }
+        Ok(())
+    }
+
+    /// The timer's long note, started with its notice and stopped by its
+    /// key. It is a notice rather than a touch, so the touch-vibration
+    /// switch does not quiet it; the strength slider still does.
+    fn timer_alarm(&mut self, on: bool) -> Result<()> {
+        if let Some(h) = &mut self.haptics {
+            if on {
+                h.alarm(self.app.state.vibration)?;
+            } else {
+                h.stop_alarm()?;
+            }
         }
         Ok(())
     }
@@ -2678,6 +2693,7 @@ impl Pages<'_> {
             }
             Effect::ShellTo(folder) => self.shell_to(&folder, now)?,
             Effect::Haptic => self.click()?,
+            Effect::TimerAlarm { on } => self.timer_alarm(on)?,
             Effect::Ticks => self.ticks()?,
             // The panel shows the last frame drawn, which is what is
             // saved; one that cannot be is the page's to report.

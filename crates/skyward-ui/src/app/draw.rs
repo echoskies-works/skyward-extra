@@ -187,6 +187,9 @@ impl App {
         // The power menu comes over that too: the power key answers while the
         // lock stands, so its menu must be the thing seen when it does.
         self.compose_power_menu(out, f, now);
+        // A timer that has run out speaks over all of them until its one
+        // key is pressed; its ground is the screen as it stood at the end.
+        self.compose_timer_done(out, f);
         // What the panel shows is kept for the lock to stretch behind
         // itself, while no lock is over it.
         if self.display_on && self.lock.is_none() {

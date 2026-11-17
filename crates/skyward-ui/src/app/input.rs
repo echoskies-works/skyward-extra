@@ -44,6 +44,11 @@ impl App {
         if !self.display_on {
             return Vec::new();
         }
+        // The timer's notice takes the finger while it stands: its key puts
+        // it away, stops the long motor note and clears the timer.
+        if self.timer_done.is_some() {
+            return self.timer_done_touch(ev, now);
+        }
         // The power menu takes the finger while it shows, over everything
         // else on the panel.
         if self.power_menu.is_some() {
@@ -156,6 +161,18 @@ impl App {
                     fr.and_then(|fr| fr.hit(x, y + scroll).filter(|h| fr.shown(h.rect, scroll).is_some_and(|r| r.contains(x, y))))
                         .map(|h| (h.action, h.rect))
                 };
+                // The timer's ruler takes the finger before the clock's
+                // sideways face swipe does: pulling it sets a length, not
+                // a face. It is only offered when a count is not running.
+                let ruler = self
+                    .frame
+                    .as_ref()
+                    .and_then(|fr| fr.clock_ruler)
+                    .filter(|r| r.contains(x, y + scroll));
+                if ruler.is_some() {
+                    self.drag = Drag::Ruler { last_x: x, direction: 0 };
+                    return fx;
+                }
                 let action = hit.map(|h| h.0);
                 // A row of the page darkens behind its words a moment after
                 // the finger lands on it, if the finger stays.
@@ -285,6 +302,25 @@ impl App {
                     self.dirty = true;
                     self.drag = Drag::Page { start };
                 }
+                Drag::Ruler { last_x, direction } => {
+                    // Pulling left rolls the scale towards more time, so a
+                    // minute passes each time the finger travels one
+                    // minute's width. Each mark passed taps the motor.
+                    let delta = (-(x - last_x) / m.dp(RULER_MINUTE_DP) * RULER_UNITS as f32).round() as i32;
+                    let crossed = self.state.clock.drag_ruler(delta);
+                    if crossed > 0 && self.state.vibrate {
+                        for _ in 0..crossed {
+                            fx.push(Effect::Haptic);
+                        }
+                    }
+                    let direction = match delta.cmp(&0) {
+                        std::cmp::Ordering::Greater => 1,
+                        std::cmp::Ordering::Less => -1,
+                        std::cmp::Ordering::Equal => direction,
+                    };
+                    self.drag = Drag::Ruler { last_x: x, direction };
+                    self.refresh();
+                }
                 Drag::Edge { start, from_left, armed, cy, .. } => {
                     let travel = if from_left { x - start } else { start - x };
                     let ready = travel > m.dp(BACK_SWIPE_DP);
@@ -385,6 +421,12 @@ impl App {
                 // The desktop turns: dragged a quarter of a screen or more
                 // it goes to the page beside the one it was on, short of
                 // that the icons come back where they were.
+                Drag::Ruler { direction, .. } => {
+                    // The minute the scale lands on is the one set. An unset
+                    // or finished timer starts there; a paused one waits.
+                    self.state.clock.settle_ruler(direction, now);
+                    self.refresh();
+                }
                 Drag::Page { .. } => {
                     let pull = self.state.desk_drag;
                     let w = m.w as f32;
@@ -507,6 +549,11 @@ impl App {
         // Any button stops a gliding page, and brings a sliding one to rest.
         self.fling = None;
         self.end_turn();
+        // The timer's notice takes back and power while it stands, and
+        // stops the motor with it.
+        if self.timer_done.is_some() {
+            return self.timer_done_key(key, now);
+        }
         // The power menu takes every key while it shows: the volume keys
         // move the light, the power key takes what is lit, back puts it away.
         if self.power_menu.is_some() {

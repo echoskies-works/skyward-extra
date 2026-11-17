@@ -2,6 +2,13 @@
 //! watch keeps, and how often the page has to be told to draw again while
 //! either count runs. The page that shows it is in `pages`.
 
+use super::{Action, App, Effect, Key, Touch};
+use crate::canvas::Canvas;
+use crate::font::Fonts;
+use crate::geom::Rect;
+use crate::lang::Text;
+use crate::tr;
+
 /// The two faces of the clock: the time counted up from nothing, and the
 /// time counted down to nothing. The bar at the foot of the page shows one
 /// at a time.
@@ -23,13 +30,20 @@ pub struct Lap {
 /// lets the rest go as the newest come in.
 pub(super) const CLOCK_LAPS: usize = 50;
 
-/// How long the timer is set for before anyone sets it: five minutes.
-const CLOCK_SPAN: u64 = 5 * 60_000;
+/// The timer starts unset: no length has been chosen on the ruler yet.
+const CLOCK_SPAN: u64 = 0;
 
-/// The longest the timer is set for, and the least: the hour Smartisan's
-/// clock gives it, and the one minute it can be set by.
-pub(super) const CLOCK_MOST: u64 = 60;
-pub(super) const CLOCK_LEAST: u64 = 1;
+/// The longest the ruler reaches: the three hours Smartisan's timer gives.
+/// The least is zero, where the page waits for a finger to choose a minute.
+pub(crate) const CLOCK_MOST: u64 = 180;
+pub(super) const CLOCK_LEAST: u64 = 0;
+
+/// The ruler keeps its place in thousandths of a minute, so a finger can
+/// drag it smoothly and the page still settles on a whole minute.
+pub(super) const RULER_UNITS: u32 = 1_000;
+/// How wide one minute is on the ruler, in dp. The page draws by this and
+/// a finger's horizontal travel is turned into minutes by it.
+pub(crate) const RULER_MINUTE_DP: f32 = 24.0;
 
 /// How long the hand takes to sweep back to zero when the watch is reset,
 /// and how long it takes to fade between charcoal and blue when the watch
@@ -169,6 +183,12 @@ pub struct Clock {
     pub span: u64,
     pub left: u64,
     pub left_since: Option<u64>,
+    /// Where the ruler stands, in thousandths of a minute. It moves under
+    /// the finger and settles on a whole minute.
+    pub ruler: u32,
+    /// A timer held at pause stays held when the ruler is moved; a timer
+    /// merely unset or run out starts when a minute is chosen.
+    pub timer_paused: bool,
 }
 
 impl Default for Clock {
@@ -183,6 +203,8 @@ impl Default for Clock {
             span: CLOCK_SPAN,
             left: CLOCK_SPAN,
             left_since: None,
+            ruler: 0,
+            timer_paused: false,
         }
     }
 }
@@ -196,6 +218,79 @@ impl Clock {
     /// What the timer has left at `now`.
     pub fn timer(&self, now: u64) -> u64 {
         self.left_since.map_or(self.left, |since| self.left.saturating_sub(now.saturating_sub(since)))
+    }
+
+    /// Whether a length has been chosen on the ruler. Nothing can be reset
+    /// or started before that, so both keys are quiet on a new timer.
+    pub fn timer_set(&self) -> bool {
+        self.span > 0
+    }
+
+    /// Whether the timer's ruler may be moved: a count running locks it,
+    /// while one unset, paused or run out can be set again.
+    pub fn timer_can_slide(&self) -> bool {
+        self.left_since.is_none()
+    }
+
+    /// Where the ruler stands, in minutes, for drawing its marks.
+    pub fn ruler_value(&self) -> f32 {
+        self.ruler as f32 / RULER_UNITS as f32
+    }
+
+    /// Drag the ruler by a whole number of thousandths of a minute. The
+    /// count returned is how many whole-minute marks the finger passed, so
+    /// the page can tap the motor once for each, even in one long move.
+    pub(super) fn drag_ruler(&mut self, delta: i32) -> u32 {
+        let before = self.ruler as i64;
+        let after = (before + delta as i64).clamp(0, CLOCK_MOST as i64 * RULER_UNITS as i64);
+        let units = RULER_UNITS as i64;
+        // Both ends are nonnegative, so the ceiling of a division is one
+        // more than its floor when anything is left over.
+        let ceiling = |v: i64| (v + units - 1) / units;
+        let crossed = if after > before {
+            after / units - before / units
+        } else if after < before {
+            ceiling(before) - ceiling(after)
+        } else {
+            0
+        };
+        self.ruler = after as u32;
+        crossed as u32
+    }
+
+    /// Let the ruler go. A hand pulled towards more time settles on the
+    /// minute ahead; one pulled towards less settles on the minute behind.
+    /// A finger that never moved leaves a whole minute where it was. An
+    /// unset or finished timer then starts; a paused one stays paused.
+    pub(super) fn settle_ruler(&mut self, direction: i32, now: u64) -> u64 {
+        let whole = self.ruler / RULER_UNITS;
+        let part = self.ruler % RULER_UNITS;
+        let pick = if part == 0 {
+            whole
+        } else if direction > 0 {
+            whole + 1
+        } else if direction < 0 {
+            whole
+        } else if part * 2 >= RULER_UNITS {
+            whole + 1
+        } else {
+            whole
+        };
+        let minute = pick.min(CLOCK_MOST as u32) as u64;
+        self.ruler = minute as u32 * RULER_UNITS;
+        if minute == 0 {
+            self.span = 0;
+            self.left = 0;
+            self.left_since = None;
+            self.timer_paused = false;
+            return 0;
+        }
+        self.span = minute * 60_000;
+        self.left = self.span;
+        if !self.timer_paused {
+            self.left_since = Some(now);
+        }
+        minute
     }
 
     /// Whether either count is going.
@@ -240,9 +335,102 @@ impl Clock {
         if self.left_since.is_some() && self.timer(now) == 0 {
             self.left = 0;
             self.left_since = None;
+            self.timer_paused = false;
             return true;
         }
         false
+    }
+}
+
+/// The timer-end notice: the whole minutes the timer had been set for.
+pub(super) struct TimerDone {
+    pub(super) minutes: u64,
+}
+
+const TIMER_DONE_TITLE: Text = ["计时结束", "計時結束", "Timer done"];
+const TIMER_DONE_OK: Text = ["确定", "確定", "OK"];
+/// How much of the page shows through the soft ground behind the notice,
+/// the same share the restart menu leaves.
+const TIMER_DONE_DIM: f32 = 0.45;
+
+/// The notice card and its one key, centred on the screen.
+fn timer_done_layout(t: &crate::theme::Theme) -> (Rect, Rect) {
+    let m = &t.m;
+    let (w, h) = (m.dp(300.0), m.dp(210.0));
+    let (x, y) = ((m.w as f32 - w) / 2.0, (m.h as f32 - h) / 2.0);
+    let bw = m.dp(128.0);
+    let button = Rect::new(x + (w - bw) / 2.0, y + m.dp(142.0), bw, m.dp(48.0));
+    (Rect::new(x, y, w, h), button)
+}
+
+impl App {
+    /// The timer ran out: put its notice over the page and keep the panel
+    /// awake so the notice can be read. The caller starts the long motor
+    /// note; it is stopped only by 确定.
+    pub(super) fn show_timer_done(&mut self, minutes: u64, now: u64) {
+        self.timer_done = Some(TimerDone { minutes });
+        self.timer_blur = None;
+        self.dirty = true;
+        self.stir(now);
+    }
+
+    /// Put the notice away without touching the timer: the confirming key
+    /// does that in [`App::act`].
+    pub(super) fn hide_timer_done(&mut self) {
+        self.timer_done = None;
+        self.timer_blur = None;
+        self.dirty = true;
+    }
+
+    /// The finger reaches the notice before any page under it. Only its
+    /// key answers; a touch beside the card leaves the motor noting.
+    pub(super) fn timer_done_touch(&mut self, ev: Touch, now: u64) -> Vec<Effect> {
+        let Touch::Down(x, y) = ev else { return Vec::new() };
+        let t = self.theme();
+        let (_, button) = timer_done_layout(&t);
+        if button.contains(x, y) {
+            return self.act(Action::TimerDoneOk, now);
+        }
+        Vec::new()
+    }
+
+    /// Back and power are the two keys that put the notice away, as they
+    /// put the restart menu away. The motor stops with it.
+    pub(super) fn timer_done_key(&mut self, key: Key, now: u64) -> Vec<Effect> {
+        match key {
+            Key::Back | Key::Power => self.act(Action::TimerDoneOk, now),
+            _ => Vec::new(),
+        }
+    }
+
+    /// The notice over the page: the page stands blurred and dimmed under
+    /// one card, with the minutes that finished said plainly and one key
+    /// to put it away. The blur is made once, as the restart menu's is.
+    pub(super) fn compose_timer_done(&mut self, out: &mut Canvas, f: &Fonts) {
+        let Some(done) = self.timer_done.as_ref() else { return };
+        let t = self.theme();
+        let m = &t.m;
+        let lang = self.state.lang;
+        if self.timer_blur.is_none() {
+            self.timer_blur = Some(super::lock::soft_ground(out, m.w, m.h));
+        }
+        *out = self.timer_blur.as_ref().expect("made just above").clone();
+        out.dim(1.0 - TIMER_DONE_DIM);
+        let (card, button) = timer_done_layout(&t);
+        let radius = m.dp(26.0);
+        out.shadow_round_rect(card.x, card.y, card.w, card.h, radius, m.dp(16.0), t.pal.shadow);
+        out.fill_round_rect(card.x, card.y, card.w, card.h, radius, t.pal.card);
+        out.text_center(&f.heading, lang.pick(TIMER_DONE_TITLE), card.x + card.w / 2.0, card.y + m.dp(52.0), m.dp(24.0), t.pal.text);
+        let minutes = done.minutes;
+        let said = tr!(
+            lang,
+            "时长为{minutes}分钟的计时已结束",
+            "時長為{minutes}分鐘的計時已結束",
+            "The {minutes}-minute timer has ended"
+        );
+        out.text_center(&f.label, &said, card.x + card.w / 2.0, card.y + m.dp(98.0), m.dp(15.0), t.pal.value);
+        out.fill_round_rect(button.x, button.y, button.w, button.h, m.dp(20.0), t.pal.track);
+        out.text_center(&f.label, lang.pick(TIMER_DONE_OK), button.x + button.w / 2.0, button.y + button.h / 2.0, m.row_title_px, t.pal.text);
     }
 }
 
@@ -365,8 +553,101 @@ mod tests {
         // The timer is rounded up to the second it shows, so it changes as
         // the count comes down onto a whole second, not as a second passes.
         clock.face = ClockFace::Timer;
+        clock.left = 2_000;
         clock.left_since = Some(0);
         assert_eq!(step(&clock, 1_250), 750, "a moment short of the second it shows next");
         assert_eq!(step(&clock, 2_000), 1_000, "lands on a whole second, the next one after it");
+    }
+
+    #[test]
+    fn the_ruler_settles_on_the_minute_the_finger_was_travelling_towards() {
+        let mut clock = Clock {
+            ruler: 2_500,
+            ..Clock::default()
+        };
+        assert_eq!(clock.settle_ruler(1, 0), 3, "pulled towards more time, it goes on");
+        assert_eq!(clock.timer(0), 180_000, "and starts from three whole minutes");
+        assert!(clock.left_since.is_some());
+
+        let mut clock = Clock {
+            ruler: 2_500,
+            ..Clock::default()
+        };
+        assert_eq!(clock.settle_ruler(-1, 0), 2, "pulled towards less, it goes back");
+        assert_eq!(clock.timer(0), 120_000);
+
+        let mut clock = Clock {
+            ruler: 2_500,
+            ..Clock::default()
+        };
+        assert_eq!(clock.settle_ruler(0, 0), 3, "a finger that only stopped rounds up");
+    }
+
+    #[test]
+    fn one_vibration_goes_with_each_whole_minute_the_ruler_passes() {
+        let mut clock = Clock::default();
+        assert_eq!(clock.drag_ruler(999), 0, "short of the first mark");
+        assert_eq!(clock.drag_ruler(2), 1, "the first mark passed");
+        assert_eq!(clock.drag_ruler(1_500), 1, "the second mark passed");
+        assert_eq!(clock.drag_ruler(-1_000), 1, "one mark back down");
+        assert_eq!(clock.drag_ruler(-400), 0, "short of another");
+    }
+
+    #[test]
+    fn choosing_a_minute_starts_the_timer_and_a_paused_one_stays_paused() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Clock, W, H, PPD);
+        app.state.clock.face = ClockFace::Timer;
+        let frame = app.frame(&f, &i);
+        assert!(frame.clock_ruler.is_some(), "an unset timer offers its ruler");
+        assert!(!frame.hits.iter().any(|h| matches!(h.action, Action::ClockGo | Action::ClockReset)), "both keys wait");
+
+        let ruler = frame.clock_ruler.expect("the ruler");
+        let (x, y) = ruler.centre();
+        let step = app.theme().m.dp(RULER_MINUTE_DP);
+        app.touch(Touch::Down(x, y), &f, 0);
+        let fx = app.touch(Touch::Move(x - step, y), &f, 8);
+        assert_eq!(fx, vec![Effect::Haptic]);
+        app.touch(Touch::Up, &f, 16);
+        let clock = &app.state.clock;
+        assert_eq!(clock.ruler, 1_000);
+        assert!(clock.left_since.is_some(), "landing on a minute starts it");
+
+        app.act(Action::ClockGo, 100);
+        assert!(app.state.clock.timer_paused);
+        let frame = app.frame(&f, &i);
+        assert!(frame.clock_ruler.is_some(), "a paused ruler can still be moved");
+        let ruler = frame.clock_ruler.expect("the ruler");
+        let (x, y) = ruler.centre();
+        app.touch(Touch::Down(x, y), &f, 200);
+        app.touch(Touch::Move(x - step, y), &f, 208);
+        app.touch(Touch::Up, &f, 216);
+        assert_eq!(app.state.clock.ruler, 2_000);
+        assert!(app.state.clock.left_since.is_none(), "it stays paused after the ruler settles");
+        app.act(Action::ClockGo, 300);
+        assert!(app.state.clock.left_since.is_some(), "only the start key runs it again");
+    }
+
+    #[test]
+    fn a_timer_that_ends_shows_its_notice_and_its_key_clears_everything() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Clock, W, H, PPD);
+        app.state.clock.face = ClockFace::Timer;
+        app.state.clock.ruler = 1_000;
+        app.state.clock.span = 60_000;
+        app.state.clock.left = 0;
+        app.state.clock.left_since = Some(0);
+        app.frame(&f, &i);
+        let fx = app.tick(1);
+        assert!(fx.contains(&Effect::TimerAlarm { on: true }), "the long note starts with the notice");
+        let notice = app.timer_done.as_ref().expect("the notice shows");
+        assert_eq!(notice.minutes, 1);
+
+        let fx = app.act(Action::TimerDoneOk, 2);
+        assert_eq!(fx, vec![Effect::TimerAlarm { on: false }], "the note stops at 确定");
+        assert!(app.timer_done.is_none());
+        let clock = &app.state.clock;
+        assert_eq!((clock.ruler, clock.span, clock.left), (0, 0, 0));
+        assert!(clock.left_since.is_none());
     }
 }

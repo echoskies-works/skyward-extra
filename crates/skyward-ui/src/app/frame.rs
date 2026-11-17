@@ -53,6 +53,9 @@ pub struct Frame {
     /// count runs: drawn again a frame at a time, and nothing else of the
     /// page with them.
     pub live: Option<(u32, u32)>,
+    /// The clock's timer ruler, when a finger may set it. It takes the
+    /// finger before the page's sideways face swipe does.
+    pub clock_ruler: Option<Rect>,
 }
 
 /// A strip held at the bottom of the screen over the page, such as the
@@ -215,6 +218,7 @@ impl Frame {
             caret: None,
             button: None,
             live: None,
+            clock_ruler: None,
         }
     }
 

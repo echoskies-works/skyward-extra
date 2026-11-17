@@ -337,7 +337,10 @@ pub enum Action {
     ClockReset,
     /// Take an entry on the stopwatch's paper.
     ClockLap,
-    /// Set the timer for this many minutes, from one to sixty.
+    /// Put the timer-end notice away and take the timer back to nothing.
+    TimerDoneOk,
+    /// Set the timer for this many minutes, from zero to the ruler's three
+    /// hours.
     ClockSpan(u64),
     /// A key of the row above the keyboard, the terminal's or the editor's.
     TermKey(TermKey),
@@ -480,6 +483,9 @@ pub enum Effect {
     Stop { code: i32, reason: Option<&'static str> },
     /// A short tap of the vibration motor.
     Haptic,
+    /// The timer's notice: start the long vibration while the notice stands,
+    /// and stop it when the notice is put away.
+    TimerAlarm { on: bool },
     /// The motor's two quick ticks as the power key turns the screen off,
     /// as strong as the phone's own system plays them whatever the
     /// vibration settings say.
@@ -678,6 +684,10 @@ enum Drag {
     /// A finger dragged level across the clock: it turns to the face beside
     /// the one shown, once, and nothing more of the drag counts.
     Face,
+    /// A finger pulling the timer's ruler. `last_x` is where it was on the
+    /// last move; `direction` remembers the way the scale last travelled so
+    /// letting go can settle between two minutes on that side.
+    Ruler { last_x: f32, direction: i32 },
     Slider(Slider, Rect),
     Confirm { which: Confirm, track: Rect, grab: f32 },
     /// Scrolling a terminal's screen back through what the shell wrote, or
@@ -1243,6 +1253,10 @@ pub struct App {
     /// The page the power menu came over, softened: its ground, kept for as
     /// long as the menu stands, so blurring the page once is enough.
     power_blur: Option<Canvas>,
+    /// The timer-end notice over the page, with the length that finished.
+    timer_done: Option<clock::TimerDone>,
+    /// The page the timer notice came over, softened once for its ground.
+    timer_blur: Option<Canvas>,
     /// The lock screen, over whatever the panel shows from the moment it
     /// goes dark: the page it came over kept soft behind it, and the swipe
     /// up that puts it away.
@@ -1321,6 +1335,8 @@ impl App {
             chord: None,
             power_menu: None,
             power_blur: None,
+            timer_done: None,
+            timer_blur: None,
             lock: None,
             behind: None,
             seek: None,
@@ -1616,8 +1632,10 @@ impl App {
                 }
             }
             if self.state.clock.arrive(now) {
+                let minutes = self.state.clock.span / 60_000;
+                self.show_timer_done(minutes, now);
                 self.refresh();
-                fx.push(Effect::Haptic);
+                fx.push(Effect::TimerAlarm { on: true });
             }
         }
         // A pull at the foot of the screen, let go, carries on to where it

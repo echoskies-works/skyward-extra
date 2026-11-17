@@ -270,16 +270,31 @@ fn main() -> Result<()> {
         Paused,
         /// More entries taken than the page shows, so the paper is scrolled.
         Many,
-        Timer,
+        /// The timer's whole state path: unset keys, a short run, a mid
+        /// ruler position, a held count that can still be moved, and the
+        /// three-hour end where the scale has no white patch left.
+        TimerIdle,
+        TimerFour,
+        TimerFortyOne,
+        TimerPaused,
+        TimerEnd,
+        TimerEndDark,
+        TimerDone,
     }
-    let clock: [(&str, bool, ClockShot); 7] = [
+    let clock: [(&str, bool, ClockShot); 13] = [
         ("00-03-clock-stopwatch-idle-light", false, ClockShot::Idle),
         ("00-03-clock-stopwatch-going-light", false, ClockShot::Going),
         ("00-03-clock-stopwatch-lapped-light", false, ClockShot::Lapped),
         ("00-03-clock-stopwatch-lapped-dark", true, ClockShot::Lapped),
         ("00-03-clock-stopwatch-paused-light", false, ClockShot::Paused),
         ("00-03-clock-stopwatch-many-light", false, ClockShot::Many),
-        ("00-03-clock-timer-light", false, ClockShot::Timer),
+        ("00-03-clock-timer-idle-light", false, ClockShot::TimerIdle),
+        ("00-03-clock-timer-04min-light", false, ClockShot::TimerFour),
+        ("00-03-clock-timer-41min-light", false, ClockShot::TimerFortyOne),
+        ("00-03-clock-timer-paused-light", false, ClockShot::TimerPaused),
+        ("00-03-clock-timer-180min-light", false, ClockShot::TimerEnd),
+        ("00-03-clock-timer-180min-dark", true, ClockShot::TimerEndDark),
+        ("00-03-clock-timer-done-light", false, ClockShot::TimerDone),
     ];
     for (name, dark, shot) in clock {
         let mut app = opened(Screen::Clock, w, h, ppd);
@@ -287,7 +302,13 @@ fn main() -> Result<()> {
         {
             let c = &mut app.state.clock;
             c.face = match shot {
-                ClockShot::Timer => ClockFace::Timer,
+                ClockShot::TimerIdle
+                | ClockShot::TimerFour
+                | ClockShot::TimerFortyOne
+                | ClockShot::TimerPaused
+                | ClockShot::TimerEnd
+                | ClockShot::TimerEndDark
+                | ClockShot::TimerDone => ClockFace::Timer,
                 _ => ClockFace::Stopwatch,
             };
             let paper = || {
@@ -321,10 +342,37 @@ fn main() -> Result<()> {
                     // The paper opened at its foot, where the newest entry is.
                     c.paper = c.laps.len();
                 }
-                ClockShot::Timer => {
-                    let length = 25 * 60_000;
+                ClockShot::TimerIdle => {}
+                ClockShot::TimerFour => {
+                    let length = 4 * 60_000;
+                    c.ruler = 4 * 1_000;
                     c.span = length;
                     c.left = length;
+                    c.left_since = Some(0);
+                }
+                ClockShot::TimerFortyOne | ClockShot::TimerPaused => {
+                    let length = 41 * 60_000;
+                    c.ruler = 41 * 1_000;
+                    c.span = length;
+                    c.left = length;
+                    if matches!(shot, ClockShot::TimerFortyOne) {
+                        c.left_since = Some(0);
+                    } else {
+                        c.left = length - 3_000;
+                        c.timer_paused = true;
+                    }
+                }
+                ClockShot::TimerEnd | ClockShot::TimerEndDark => {
+                    let length = 180 * 60_000;
+                    c.ruler = 180 * 1_000;
+                    c.span = length;
+                    c.left = length;
+                    c.left_since = Some(0);
+                }
+                ClockShot::TimerDone => {
+                    c.ruler = 1_000;
+                    c.span = 60_000;
+                    c.left = 0;
                     c.left_since = Some(0);
                 }
             }
@@ -333,11 +381,22 @@ fn main() -> Result<()> {
             ClockShot::Going => app.tick(3_240),
             ClockShot::Lapped => app.tick(83_450),
             ClockShot::Many => app.tick(app.state.clock.laps.last().map_or(0, |lap| lap.total) + 1_000),
-            ClockShot::Timer => app.tick(38_000),
-            ClockShot::Idle | ClockShot::Paused => Vec::new(),
+            ClockShot::TimerFour => app.tick(4_000),
+            ClockShot::TimerFortyOne => app.tick(3_000),
+            ClockShot::TimerEnd | ClockShot::TimerEndDark => app.tick(4_000),
+            ClockShot::TimerDone => app.tick(1),
+            ClockShot::Idle | ClockShot::Paused | ClockShot::TimerIdle | ClockShot::TimerPaused => Vec::new(),
         };
         let path = out.join(format!("{name}.png"));
-        write_png(&path, &whole_page(&mut app, &fonts, &info))?;
+        let mut page = whole_page(&mut app, &fonts, &info);
+        if matches!(shot, ClockShot::TimerDone) {
+            // A long screenshot lays its page out a band at a time; the
+            // timer's notice is an overlay that only `compose` puts on top.
+            // This one shot has to go through the panel's own path.
+            let now = app.now();
+            app.compose(&mut page, &fonts, &info, CLOCK, "11月16日 周一", now);
+        }
+        write_png(&path, &page)?;
         println!("wrote {}", path.display());
     }
 

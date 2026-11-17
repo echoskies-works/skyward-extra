@@ -34,6 +34,29 @@ const TICK: [(f32, f32, f32, f32, f32, f32); 6] = [
 ];
 const TICKS: [(f32, f32); 2] = [(0.0, 1.0), (55.125, 0.79)];
 pub(crate) const TICKS_RATE: u32 = 24000;
+/// The timer's notice drives the motor in a longer, even note until its
+/// key is pressed: nearly a fifth of a second of swing, then a short turn
+/// over so the motor comes to between repeats.
+const ALARM_DRIVE_MS: f32 = 180.0;
+const ALARM_BRAKE_MS: f32 = 40.0;
+
+/// The long note a timer plays while its notice stands, at [`RATE`]. The
+/// driver repeats it until the notice takes it away.
+pub(crate) fn alarm(hz: f32) -> Vec<i8> {
+    let drive = (ALARM_DRIVE_MS * RATE as f32 / 1000.0).round() as usize;
+    let all = ((ALARM_DRIVE_MS + ALARM_BRAKE_MS) * RATE as f32 / 1000.0).round() as usize;
+    (0..all)
+        .map(|i| {
+            let wave = (TAU * hz * i as f32 / RATE as f32).sin() * f32::from(i8::MAX);
+            if i < drive {
+                wave.round() as i8
+            } else {
+                let left = 1.0 - (i - drive) as f32 / (all - drive) as f32;
+                (-wave * left).round() as i8
+            }
+        })
+        .collect()
+}
 
 /// The share of the click's full strength at the slider's `position`.
 pub(crate) fn share(strength: &Strength, position: f32) -> f32 {
