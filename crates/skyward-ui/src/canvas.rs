@@ -940,6 +940,47 @@ impl Canvas {
         }
     }
 
+    /// The shadow a disc standing on the page casts under a light from
+    /// above: brightest where it leaves the piece's own foot and fading out
+    /// over `sigma` — a Gaussian's half, so it is half of `ink` at the edge
+    /// itself — and taken by how much of it the piece leaves in the light.
+    /// Under the piece nearly all of it shows; at the sides a quarter, and
+    /// above nothing, where the piece still covers it. `ink` is how dark it
+    /// would be where the piece stands, if the piece were not over it.
+    pub fn shadow_circle(&mut self, cx: f32, cy: f32, r: f32, sigma: f32, ink: f32) {
+        let reach = SHADOW_REACH * sigma;
+        let (x0, x1) = self.columns((cx - r - reach).floor() as i32, (cx + r + reach).ceil() as i32);
+        let (y0, y1) = self.rows((cy - r - reach).floor() as i32, (cy + r + reach).ceil() as i32);
+        if x0 >= x1 {
+            return;
+        }
+        // How strong it is a whole number of pixels out, read between.
+        let spread = sigma * std::f32::consts::SQRT_2;
+        let level: Vec<f32> = (0..reach.ceil() as usize + 2).map(|d| 0.5 * erfc(d as f32 / spread)).collect();
+        for py in y0..y1 {
+            let dy = py as f32 + 0.5 - cy;
+            for px in x0..x1 {
+                let dx = px as f32 + 0.5 - cx;
+                let d = dx.hypot(dy);
+                let out = d - r;
+                if out < 0.0 || out >= reach {
+                    continue;
+                }
+                let (i, k) = (out as usize, out.fract());
+                let lit = level[i] + (level[i + 1] - level[i]) * k;
+                // The piece stands between the light and its own shadow: all
+                // of the shadow shows under it, almost none at the sides, and
+                // none of it above, where the piece has not moved off the page
+                // at all.
+                let seen = (0.5 + 0.5 * dy / d).powi(3);
+                let a = ink * lit * seen;
+                if a > 0.0 {
+                    self.blend(px, py, Rgba::rgb(0, 0, 0), a);
+                }
+            }
+        }
+    }
+
     /// The soft shadow a rounded rectangle lifted off the page casts: its
     /// shape blurred by a Gaussian of deviation `sigma`, in `color` where
     /// the shape is whole. Only what lies outside the rectangle is laid,
@@ -1163,6 +1204,64 @@ impl Canvas {
                 let gy = 2.0 * y / (ry * ry);
                 let d = f.abs() / (gx * gx + gy * gy).sqrt().max(1e-6);
                 let cov = (0.5 - (d - t / 2.0)).clamp(0.0, 1.0);
+                if cov > 0.0 {
+                    self.blend(px, py, color, cov);
+                }
+            }
+        }
+    }
+
+    /// A line `t` across whose edge falls away over `feather` either side of
+    /// it rather than stopping: the mark a fine rod leaves on the page it
+    /// stands over, once the light has blurred it. Where `line` goes from
+    /// covered to clear within a pixel, this one walks a smoothstep over a
+    /// band several dp wide, so it has no outline and — when the feather is
+    /// wider than the core — no solid middle either.
+    pub fn soft_line(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, t: f32, feather: f32, color: Rgba) {
+        let vx = x1 - x0;
+        let vy = y1 - y0;
+        let len2 = (vx * vx + vy * vy).max(1e-6);
+        let core = t / 2.0;
+        if feather <= 0.0 {
+            self.line(x0, y0, x1, y1, t, color);
+            return;
+        }
+        let reach = core + feather;
+        let (top, bottom) = self.rows((y0.min(y1) - reach).floor() as i32, (y0.max(y1) + reach).ceil() as i32);
+        for py in top..bottom {
+            let fy = py as f32 + 0.5;
+            let Some((lo, hi)) = near_segment(x0, y0, x1, y1, fy, reach + 0.5) else { continue };
+            let (lo, hi) = self.columns((lo - 0.5).floor() as i32, ((hi - 0.5).ceil() as i32) + 1);
+            for px in lo..hi {
+                let wx = px as f32 + 0.5 - x0;
+                let wy = fy - y0;
+                let s = ((wx * vx + wy * vy) / len2).clamp(0.0, 1.0);
+                let d = (wx - vx * s).hypot(wy - vy * s);
+                let cov = fall(d, core, feather);
+                if cov > 0.0 {
+                    self.blend(px, py, color, cov);
+                }
+            }
+        }
+    }
+
+    /// A round mark whose edge falls away the way [`soft_line`]'s does: a
+    /// disc of `r` fading out over `feather` beyond it.
+    ///
+    /// [`soft_line`]: Canvas::soft_line
+    pub fn soft_disc(&mut self, cx: f32, cy: f32, r: f32, feather: f32, color: Rgba) {
+        if feather <= 0.0 {
+            self.fill_circle(cx, cy, r, color);
+            return;
+        }
+        let reach = r + feather;
+        let (top, bottom) = self.rows((cy - reach).floor() as i32, (cy + reach).ceil() as i32);
+        let (left, right) = self.columns((cx - reach).floor() as i32, (cx + reach).ceil() as i32);
+        for py in top..bottom {
+            let dy = py as f32 + 0.5 - cy;
+            for px in left..right {
+                let dx = px as f32 + 0.5 - cx;
+                let cov = fall(dx.hypot(dy), r, feather);
                 if cov > 0.0 {
                     self.blend(px, py, color, cov);
                 }
@@ -1479,6 +1578,18 @@ fn centred(cx: f32, reach: f32, lo: i32, hi: i32) -> (i32, i32) {
     (a, (((cx + reach - 0.5).floor() as i32) + 1).clamp(a, hi))
 }
 
+/// What a mark lays down at `d` from its middle, having `core` either side
+/// of it and thinning out `feather` beyond: all of it well inside, none of
+/// it past the feather, a smoothstep from one to the other. That band is
+/// what a hard edge becomes once the light has blurred it, and when the
+/// feather is wider than the core the middle no longer reaches the full
+/// value either — which is how an edge reads as soft rather than merely
+/// outlined.
+fn fall(d: f32, core: f32, feather: f32) -> f32 {
+    let k = ((core + feather - d) / (2.0 * feather)).clamp(0.0, 1.0);
+    k * k * (3.0 - 2.0 * k)
+}
+
 /// Where along the row at height `y` points lie within `reach` of the
 /// segment from (`x0`, `y0`) to (`x1`, `y1`): the round end about either
 /// point, or beside the segment between them. The three meet, so together
@@ -1585,6 +1696,38 @@ mod tests {
         c.data[12..16].copy_from_slice(&[70, 80, 90, 255]);
         let half = c.shrink(2);
         assert_eq!(&half.data[..4], &[40, 50, 60, 255], "each channel the mean of the four");
+    }
+
+    #[test]
+    fn a_soft_line_lays_half_at_its_middle_and_none_past_its_feather() {
+        let mut c = Canvas::filled(2, 24, Rgba::rgb(255, 255, 255));
+        // A hair's width laid across the middle, blown out four pixels either
+        // side of it: no pixel of it is ever whole.
+        c.soft_line(0.0, 12.0, 2.0, 12.0, 1.0, 4.0, Rgba::rgb(0, 0, 0));
+        let g = greys(&c);
+        assert!((127..=128).contains(&g[11]), "half covered at the middle: {}", g[11]);
+        assert!((127..=128).contains(&g[12]), "half covered at the middle: {}", g[12]);
+        assert!(
+            g[13] > g[12] && g[14] > g[13] && g[15] > g[14],
+            "fades outward: {:?}",
+            &g[11..16]
+        );
+        assert_eq!(g[16], 255, "nothing past the feather");
+        assert_eq!(g[0], 255, "and nothing on the far side either");
+    }
+
+    #[test]
+    fn a_disc_shadow_lies_under_the_piece_and_not_above_it() {
+        let mut c = Canvas::filled(200, 200, Rgba::rgb(250, 250, 250));
+        c.shadow_circle(100.0, 100.0, 60.0, 10.0, 0.32);
+        let under = c.px(100, 162).expect("on the canvas")[0];
+        let side = c.px(162, 100).expect("on the canvas")[0];
+        let over = c.px(100, 38).expect("on the canvas")[0];
+        assert!(under < 230, "the shadow shows under the piece: {under}");
+        assert!(side > under + 12, "and much less of it at the sides: {side}");
+        assert_eq!(over, 250, "above it the piece is between the light and the page");
+        assert_eq!(c.px(100, 100).expect("on the canvas")[0], 250, "the piece's own ground is left to it");
+        assert_eq!(c.px(100, 199).expect("on the canvas")[0], 250, "and it fades out long before the edge");
     }
 
     #[test]

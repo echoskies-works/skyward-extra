@@ -1052,11 +1052,14 @@ const TIMER_HINT: Text = ["滑动尺子以计时", "滑動尺子以計時", "Sli
 /// once its shadow is counted; with the shadow this page lays under it, 212 dp
 /// brings our disc to the same span and the same place on the panel.
 const DIAL_D: f32 = 212.0;
-/// How far the dial's shadow reaches beyond its edge, in dp. It is the
-/// chip's own fade — the one around every round key — widened to the disc
-/// four times the size, so the lift off the page reads at the same strength
-/// instead of as a hard cut.
-const DIAL_SHADOW: f32 = 12.0;
+/// The dial's shadow: the disc stands on the page under a light from above,
+/// so the shadow leaves its foot at its darkest and spreads `DIAL_SIGMA`
+/// wide as it fades, thin at the sides and gone above the dial, where the
+/// disc itself is between the light and the page. Measured against
+/// Smartisan's panel, the page is 250 and the shadow takes the darkest of it
+/// under the rim's foot to about 210, with nothing of it left 30 dp out.
+const DIAL_SIGMA: f32 = 11.0;
+const DIAL_INK: f32 = 0.28;
 
 /// The minute ring, drawn once by the user at 570 px and kept as a picture
 /// in the tree. Its marks run at radii 265..285 of a 285 half-width, so laid
@@ -1198,7 +1201,15 @@ fn clock_face(m: &crate::theme::Metrics, t: &crate::theme::Theme, f: &Fonts) -> 
     // sits on: the chip's own fill, its bright hairline rim and its fade of
     // shadow, all four times the size. Read on its own the face is a plain
     // circle; made of that material it belongs to the keys under it.
-    widgets::disc(&mut face, t, cc, cc, d / 2.0, m.dp(DIAL_SHADOW) * FACE_SS);
+    widgets::disc_lit(
+        &mut face,
+        t,
+        cc,
+        cc,
+        d / 2.0,
+        m.dp(DIAL_SIGMA) * FACE_SS,
+        DIAL_INK,
+    );
     let span = d * DECK_OF_DIAL / DECK_MARK;
     face.draw_image(clock_deck(t.dark), cc - span / 2.0, cc - span / 2.0, span, span);
     let r = d / 2.0 * DIAL_NUM_R;
@@ -1219,7 +1230,7 @@ const HAND_STILL: Rgba = Rgba::rgb(88, 92, 98);
 /// Room left around the disc for its shadow to fade out: the fade's own
 /// reach, plus a pixel of air. This is the margin the cached face is drawn
 /// into.
-const DIAL_FACE_PAD: f32 = DIAL_SHADOW + 2.0;
+const DIAL_FACE_PAD: f32 = DIAL_SIGMA * 3.0 + 2.0;
 /// How many times over the face is drawn before it is halved down to the
 /// panel. Every shape here -- the disc, its rim, the minute ring, the two
 /// numerals -- smooths an edge across one pixel and no finer, which is as
@@ -1248,8 +1259,17 @@ const HAND_PIN: f32 = 3.0;
 /// the shadow shows; at six it stands clear of the hand's end, which is what
 /// makes it grow as the hand turns back toward twelve and go as the hand
 /// comes round.
+///
+/// It is laid soft rather than solid — the copy is blown out by `BLUR`
+/// either side, so the mark it leaves has no edge of its own — and set far
+/// enough down that its middle clears the hand's own edge: a copy laid right
+/// under the rod just darkens the rod's outline, and it is the band standing
+/// free of it that reads as a shadow the light cast. A rod a few dp across
+/// casts a shadow with no edge; one with an edge reads as a second hand
+/// lying beside the first.
 const HAND_SHADOW: Rgba = Rgba::rgb(0, 0, 0).with_alpha(26);
-const HAND_SHADOW_DROP: f32 = 2.5;
+const HAND_SHADOW_DROP: f32 = 3.4;
+const HAND_SHADOW_BLUR: f32 = 4.2;
 
 /// Where the stopwatch's parts sit in dp: the dial's centre from the top of
 /// the page, the count's centre and size under it, the short rule the paper
@@ -1322,34 +1342,62 @@ fn clock_dial(
     // all — and furthest out from it when the hand lies down at six, which
     // is the shadow growing as the hand turns, without anything having to
     // follow the turn.
-    clock_hand(c, m, cx, cy, deg, HAND_SHADOW, m.dp(HAND_SHADOW_DROP));
-    clock_hand(c, m, cx, cy, deg, mix(HAND_STILL, HAND_BLUE, tint), 0.0);
+    clock_hand_shadow(c, m, cx, cy, deg);
+    clock_hand(c, m, cx, cy, deg, mix(HAND_STILL, HAND_BLUE, tint));
     c.fill_circle(cx, cy, m.dp(HAND_PIN) / 2.0, Rgba::rgb(255, 255, 255));
 }
 
-/// The hand at `deg` in `ink`, standing `drop` below where it is normally
-/// turned about — nothing for the hand itself, and the offset it is cast by
-/// for its shadow. The fine stroke runs through the hub to the far end of
-/// the tail; the thicker counterweight is laid over its outer part only, so
-/// a length of thin line stays between the hub and the weight as Xiaomi
-/// draws it.
-fn clock_hand(
-    c: &mut Canvas, m: &crate::theme::Metrics, cx: f32, cy: f32, deg: f32, ink: Rgba, drop: f32,
-) {
-    let cy = cy + drop;
+/// One stroke of the hand: from (`x0`, `y0`) to (`x1`, `y1`), `w` across.
+type Stroke = (f32, f32, f32, f32, f32);
+/// The hub the hand turns about: its centre and its radius.
+type Hub = (f32, f32, f32);
+
+/// The hand's three strokes — the fine one through the hub, the tail run on
+/// past it, and the counterweight laid over its outer part — and the hub
+/// itself, turning about (`cx`, `cy`).
+fn hand_geom(m: &crate::theme::Metrics, cx: f32, cy: f32, deg: f32) -> ([Stroke; 3], Hub) {
     let a = deg * std::f32::consts::PI / 180.0;
     let (ux, uy) = (a.sin(), -a.cos());
     let tip = m.dp(HAND_TIP);
     let gap = m.dp(HAND_TAIL_GAP);
     let tail_end = gap + m.dp(HAND_TAIL);
-    c.line(cx, cy, cx + ux * tip, cy + uy * tip, m.dp(HAND_TIP_W), ink);
-    c.line(cx, cy, cx - ux * tail_end, cy - uy * tail_end, m.dp(HAND_TIP_W), ink);
-    c.line(
-        cx - ux * gap, cy - uy * gap,
-        cx - ux * tail_end, cy - uy * tail_end,
-        m.dp(HAND_TAIL_W), ink,
-    );
-    c.fill_circle(cx, cy, m.dp(HAND_HUB) / 2.0, ink);
+    (
+        [
+            (cx, cy, cx + ux * tip, cy + uy * tip, m.dp(HAND_TIP_W)),
+            (cx, cy, cx - ux * tail_end, cy - uy * tail_end, m.dp(HAND_TIP_W)),
+            (
+                cx - ux * gap,
+                cy - uy * gap,
+                cx - ux * tail_end,
+                cy - uy * tail_end,
+                m.dp(HAND_TAIL_W),
+            ),
+        ],
+        (cx, cy, m.dp(HAND_HUB) / 2.0),
+    )
+}
+
+/// The hand itself, in `ink`.
+fn clock_hand(
+    c: &mut Canvas, m: &crate::theme::Metrics, cx: f32, cy: f32, deg: f32, ink: Rgba,
+) {
+    let (strokes, (hx, hy, hr)) = hand_geom(m, cx, cy, deg);
+    for (x0, y0, x1, y1, w) in strokes {
+        c.line(x0, y0, x1, y1, w, ink);
+    }
+    c.fill_circle(hx, hy, hr, ink);
+}
+
+/// The shadow of the hand, set down the way the light casts it and blown
+/// out on either side, so what lands on the face is a soft smudge under the
+/// hand rather than a second hand laid beside it.
+fn clock_hand_shadow(c: &mut Canvas, m: &crate::theme::Metrics, cx: f32, cy: f32, deg: f32) {
+    let blur = m.dp(HAND_SHADOW_BLUR);
+    let (strokes, (hx, hy, hr)) = hand_geom(m, cx, cy + m.dp(HAND_SHADOW_DROP), deg);
+    for (x0, y0, x1, y1, w) in strokes {
+        c.soft_line(x0, y0, x1, y1, w, blur, HAND_SHADOW);
+    }
+    c.soft_disc(hx, hy, hr, blur, HAND_SHADOW);
 }
 
 /// The clock: the two words across the top that switch between the time

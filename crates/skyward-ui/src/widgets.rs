@@ -954,6 +954,19 @@ pub fn disc(c: &mut Canvas, t: &Theme, cx: f32, cy: f32, r: f32, spread: f32) {
     c.stroke_circle(cx, cy, r - rim_w / 2.0, rim_w, rim);
 }
 
+/// The same disc, only standing clear of the page rather than lying on it:
+/// its shadow is the one a light from above throws — set `drop` down, laid
+/// heaviest straight under the piece and gone above it, where the piece
+/// still covers it. [`disc`]'s even fade is right for a key a thumb's width
+/// across; the dial is the one piece large enough for the difference to
+/// show, and it is laid by this.
+pub fn disc_lit(c: &mut Canvas, t: &Theme, cx: f32, cy: f32, r: f32, sigma: f32, ink: f32) {
+    c.shadow_circle(cx, cy, r, sigma, ink);
+    c.fill_circle(cx, cy, r, disc_fill(t));
+    let rim_w = t.m.dp(0.8);
+    c.stroke_circle(cx, cy, r - rim_w / 2.0, rim_w, disc_rim(t));
+}
+
 /// The fill a round control is made of in this theme: a shade off the page,
 /// so it reads as a piece laid on the page rather than a hole in it.
 pub fn disc_fill(t: &Theme) -> Rgba {
