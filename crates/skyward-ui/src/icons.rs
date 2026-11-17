@@ -76,6 +76,15 @@ pub enum Icon {
     /// Three bars of a graph standing on their line, as a tasks page shows
     /// them.
     Tasks,
+    /// A triangle: the stopwatch's key that sets the count going.
+    Play,
+    /// Two bars: the stopwatch's key that stops the count where it is.
+    Pause,
+    /// A flag: the stopwatch's key that takes an entry on the paper.
+    Flag,
+    /// A ring with its head turning back on itself: the stopwatch's key that
+    /// puts the watch back to nothing.
+    Replay,
 }
 
 /// The stock icons' box: every outline here is laid out in it.
@@ -413,6 +422,49 @@ const TASKS: &[Part] = &[
     add(Shape::Fill("M6,21.0H22V22.2H6Z")),
 ];
 
+/// The stopwatch's four keys, as the watch face's own drawing tool drew
+/// them — the same 1024-unit box, scaled into this file's 28.
+///
+/// The four were drawn as two sets and sit at different heights in their
+/// box — the flag fills it, the triangle a little over half — so each has a
+/// scale of its own that lifts it until all four reach the same top and
+/// bottom. That shared height is what makes four pictures by two hands read
+/// as one set of keys.
+///
+/// `replay` is the drawing as it came, arrow to the left: its head reaches up
+/// past the ring, so its ink sits high in the box, and the outline is nudged
+/// down by the 1.176 that puts its middle back on the box's. Without that,
+/// lifting it to the box's height would push the head off the top.
+const PLAY: &[Part] = &[add(Shape::Fill("M9.352,5.852L22.149,14L9.352,22.148L9.352,5.851Z"))];
+
+const PAUSE: &[Part] = &[add(Shape::Fill(
+    "M16.352,5.852L21,5.852L21,22.149L16.352,22.149L16.352,5.852ZM7,22.148L7,5.851L11.648,5.851\
+     L11.648,22.148L7,22.148Z",
+))];
+
+const FLAG: &[Part] = &[add(Shape::Fill(
+    "M3.5,2.333L13.316,2.333L15.65,4.667L24.999,4.667L22.241,12.25L24.999,19.833L14.684,19.833\
+     L12.35,17.5L5.833,17.5L5.833,26.25L3.5,26.25L3.5,2.333ZM5.833,15.167L13.316,15.167\
+     L15.65,17.5L21.667,17.5L19.759,12.25L21.667,7L14.684,7L12.35,4.667L5.833,4.667L5.833,15.167Z",
+))];
+
+const REPLAY: &[Part] = &[add(Shape::Fill(
+    "M14,7.028C16.588,7.028,18.794,7.94,20.617,9.763C22.44,11.586,23.352,13.773,23.352,16.325\
+     C23.352,18.914,22.432,21.119,20.591,22.942C18.75,24.766,16.553,25.677,14.001,25.677\
+     C11.449,25.677,9.253,24.766,7.412,22.942C5.571,21.119,4.65,18.914,4.65,16.325L7.002,16.325\
+     C7.002,18.257,7.686,19.907,9.053,21.274C10.421,22.642,12.07,23.325,14.002,23.325\
+     C15.934,23.325,17.584,22.642,18.951,21.274C20.319,19.907,21.002,18.257,21.002,16.325\
+     C21.002,14.393,20.319,12.744,18.951,11.376C17.584,10.009,15.934,9.325,14.002,9.325\
+     L14.002,14.028L8.15,8.176L14.002,2.324L14.002,7.027Z",
+))];
+
+/// The height each of those pictures has in the drawings' 1024 box — the
+/// scale that lifts it to the whole box.
+const PLAY_SCALE: f32 = 1024.0 / 596.0;
+const PAUSE_SCALE: f32 = 1024.0 / 596.0;
+const FLAG_SCALE: f32 = 1024.0 / 874.666_7;
+const REPLAY_SCALE: f32 = 1024.0 / 854.0;
+
 /// What `icon`'s glyph is drawn from, and at what share of its size.
 fn outline(icon: Icon) -> (&'static [Part], f32) {
     match icon {
@@ -442,6 +494,10 @@ fn outline(icon: Icon) -> (&'static [Part], f32) {
         Icon::Music => (MUSIC, 1.0),
         Icon::Browser => (BROWSER, 1.0),
         Icon::Tasks => (TASKS, 1.0),
+        Icon::Play => (PLAY, PLAY_SCALE),
+        Icon::Pause => (PAUSE, PAUSE_SCALE),
+        Icon::Flag => (FLAG, FLAG_SCALE),
+        Icon::Replay => (REPLAY, REPLAY_SCALE),
     }
 }
 
@@ -667,6 +723,27 @@ mod tests {
             assert!(l >= 2.5 && t >= 2.5 && r <= 25.5 && b <= 25.5, "{icon:?} reaches {l}, {t} to {r}, {b}");
             let (x, y) = ((l + r) / 2.0, (t + b) / 2.0);
             assert!((x - 14.0).abs() <= 0.75 && (y - 14.0).abs() <= 0.75, "{icon:?} stands at {x}, {y}");
+        }
+    }
+
+    #[test]
+    fn the_stopwatch_keys_are_laid_out_one_height_so_four_pictures_read_as_one_set() {
+        // These four are not on tiles, so the rule above — the stock glyphs'
+        // middle 23 units — is not theirs to keep: a key's picture is meant to
+        // fill the box it is given. What they must share is where they end up.
+        // The four were drawn as two sets and sit at different heights in their
+        // 1024 box, so each has a scale of its own; a picture left taller than
+        // the one beside it would read as a heavier key rather than a bigger
+        // one.
+        let keys = [Icon::Play, Icon::Pause, Icon::Flag, Icon::Replay];
+        let heights = keys.map(|icon| {
+            let (l, t, r, b) = ink(&drawn(icon));
+            assert!(r > l && b > t, "{icon:?} covers nothing");
+            assert!(l >= 0.0 && t >= 0.0 && r <= BOX && b <= BOX, "{icon:?} runs past its box: {l}, {t} to {r}, {b}");
+            b - t
+        });
+        for (icon, h) in keys.into_iter().zip(&heights) {
+            assert!((h - heights[0]).abs() <= 0.5, "{icon:?} stands {h} tall, the play key {}", heights[0]);
         }
     }
 

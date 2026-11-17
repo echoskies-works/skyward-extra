@@ -617,11 +617,12 @@ const CLOCK_PAUSE: Text = ["暂停", "暫停", "Pause"];
 /// The pictures on the stopwatch's keys. The watch names none of them: what
 /// the key does is told by the picture, and the pair changes with the state.
 enum Glyph {
-    /// A square P: take an entry on the paper.
+    /// A flag: take an entry on the paper.
     Lap,
     /// Two bars: stop the count where it is.
     Pause,
-    /// A turning arrow: put the watch back to nothing and throw the paper.
+    /// A ring turning backwards: put the watch back to nothing and throw the
+    /// paper.
     Reset,
     /// A triangle: set the count going.
     Start,
@@ -629,18 +630,31 @@ enum Glyph {
 
 /// Draw one of those pictures, `h` tall and centred on (`cx`, `cy`), in `ink`.
 fn clock_glyph(c: &mut Canvas, glyph: Glyph, cx: f32, cy: f32, h: f32, ink: Rgba) {
-    // The pictures are the drawings themselves, flattened to polygons by
-    // `svg2glyph.py` — stems, bars, the flag's cut-out and the ring's hole all
-    // come out of the even-odd fill exactly as the drawing tool drew them.
-    // Their height is what `h` is: every key's ink reaches the same top and
-    // bottom, which is what makes three different pictures sit as one set.
-    let paths = match glyph {
-        Glyph::Lap => crate::glyphs::GLYPH_LAP,
-        Glyph::Pause => crate::glyphs::GLYPH_PAUSE,
-        Glyph::Start => crate::glyphs::GLYPH_START,
-        Glyph::Reset => crate::glyphs::GLYPH_RESET,
+    // The pictures are `icons::Icon`s, drawn by the outline-and-raster code
+    // every other glyph on the device goes through — so a key's ink has the
+    // same weight and the same edges as the chevrons and tiles round it,
+    // instead of edges of a second kind sitting beside them. `h` is the box
+    // all four are scaled to fill; see the scales in `icons`.
+    let icon = match glyph {
+        Glyph::Lap => Icon::Flag,
+        Glyph::Pause => Icon::Pause,
+        Glyph::Reset => Icon::Replay,
+        Glyph::Start => Icon::Play,
     };
-    c.fill_path(paths, (cx, cy), h, ink);
+    icons::glyph(c, icon, cx, cy, h, ink);
+}
+
+/// The ink the pictures on the stopwatch's keys are drawn in: the grey the
+/// watch's own keys carry, a shade lighter than the page's black. On a pale
+/// chip a black triangle reads heavier than the key it sits on; the face it
+/// is drawn after inks them grey for the same reason. In the dark the same
+/// grey would sink into the chip, so it is lifted until it stands out of it.
+fn clock_ink(t: &Theme) -> Rgba {
+    if t.dark {
+        Rgba::rgb(200, 200, 200)
+    } else {
+        Rgba::rgb(68, 68, 68)
+    }
 }
 
 /// The radius of the disc the stopwatch's keys sit on, in dp: the very disc
@@ -657,7 +671,7 @@ fn clock_key(c: &mut Canvas, t: &Theme, cx: f32, cy: f32, glyph: Glyph) -> Rect 
     let r = t.m.dp(KEY_R);
     let (art, ox, oy) = widgets::chip_at(t, cx, cy, r);
     c.lay(&art, ox, oy, 1.0);
-    clock_glyph(c, glyph, cx, cy, r * 0.84, t.pal.text);
+    clock_glyph(c, glyph, cx, cy, r * 0.84, clock_ink(t));
     Rect::new(cx - r, cy - r, r * 2.0, r * 2.0)
 }
 
