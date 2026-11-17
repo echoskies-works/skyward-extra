@@ -33,6 +33,18 @@ pub mod ramdisk {
     /// speak: the「个性化选项」page reads them to show which wallpaper is
     /// in use.
     pub const WALLPAPERS_NAMES: &str = "skyward/wallpapers/wallpaper.toml";
+    /// The ring the phone rings with, of those the ramdisk carries. A
+    /// ramdisk that carries none rings silently. Which one is a page of its
+    /// own's choice, once there is such a page.
+    pub const RINGTONE: &str = "skyward/sfx/ring/love_trial.wav";
+    /// The sound a notification makes, of those the ramdisk carries: its
+    /// own, rather than the ring's. A ramdisk that carries none lets a
+    /// notification fall back to the ring.
+    pub const NOTIFICATION: &str = "skyward/sfx/notf/basic.wav";
+    /// The names the sounds are known by, in the languages the pages
+    /// speak: the「个性化选项」page reads them to show which ring and which
+    /// notification are in use, as it reads the wallpapers' names.
+    pub const SFX_NAMES: &str = "skyward/sfx/sfx.toml";
     /// The recovery service binary init starts.
     pub const RECOVERY: &str = "system/bin/recovery";
     /// The first program of a system installed beside the installed one,
@@ -547,6 +559,40 @@ impl WallpaperNames {
     }
 }
 
+/// A sound's name in the two languages the pages speak it: the「个性化选项」
+/// page shows the names of the ring and of the notification in use.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+pub struct SoundName {
+    #[serde(default)]
+    pub zh: String,
+    #[serde(default)]
+    pub en: String,
+}
+
+/// The names of the sounds the ramdisk carries, read from the file that
+/// travels with them. A ramdisk without it leaves every name empty, which
+/// the page falls back from to the file name — the same way it does with
+/// [`WallpaperNames`].
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+pub struct SoundNames {
+    #[serde(default)]
+    pub ring: HashMap<String, SoundName>,
+    #[serde(default)]
+    pub notf: HashMap<String, SoundName>,
+}
+
+impl SoundNames {
+    /// Read the names from `path`, which the ramdisk holds as
+    /// [`ramdisk::SFX_NAMES`]. A file missing or unreadable is fine: the
+    /// names are a nicety, not something to keep the recovery from starting
+    /// for.
+    pub fn load(path: impl AsRef<Path>) -> Self {
+        let p = path.as_ref();
+        let Ok(text) = std::fs::read_to_string(p) else { return Self::default() };
+        toml::from_str(&text).unwrap_or_default()
+    }
+}
+
 impl DeviceConfig {
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let p = path.as_ref();
@@ -1015,5 +1061,17 @@ mod tests {
         assert!(!report.uses(Path::new("/vendor")));
         let nezha = DeviceConfig::parse(include_str!("../../../devices/nezha.toml")).unwrap();
         assert!(nezha.services[0].uses(Path::new("/vendor")), "its shell and its libraries are the vendor partition's");
+    }
+
+    #[test]
+    fn the_sounds_names_are_read_by_the_same_rules_as_the_wallpapers() {
+        let names: SoundNames =
+            toml::from_str("[ring]\nlove_trial = { zh = \"恋爱裁判\", en = \"Love Trial\" }\n[notf]\nbasic = { zh = \"基础\" }\n").unwrap();
+        assert_eq!(names.ring["love_trial"], SoundName { zh: "恋爱裁判".into(), en: "Love Trial".into() });
+        assert_eq!(names.ring["love_trial"].en, "Love Trial", "the page tells the name in the language it speaks");
+        assert_eq!(names.notf["basic"].zh, "基础");
+        assert_eq!(names.notf["basic"].en, "", "a name a language is not given reads empty, not as the other one");
+        let none = SoundNames::default();
+        assert!(none.ring.is_empty() && none.notf.is_empty(), "a file without names leaves the page with the file names");
     }
 }

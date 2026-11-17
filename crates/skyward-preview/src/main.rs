@@ -193,6 +193,8 @@ fn main() -> Result<()> {
     });
     // The wallpapers' names, as the「个性化选项」page shows them.
     let wallpaper_names = skyward_config::WallpaperNames::load(root.join("resources/wallpapers/wallpaper.toml"));
+    // The names of the ring and of the notification, shown the same way.
+    let sound_names = skyward_config::SoundNames::load(root.join("resources/sfx/sfx.toml"));
     let on_wallpaper = |screen: Screen, mut app: App| {
         let _ = screen;
         if let Some(picture) = &wallpaper {
@@ -202,6 +204,7 @@ fn main() -> Result<()> {
             app.set_lock_wallpaper(picture.clone());
         }
         app.state.wallpaper_names = wallpaper_names.clone();
+        app.state.sound_names = sound_names.clone();
         app
     };
 

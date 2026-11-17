@@ -1,0 +1,9 @@
+# 每个铃声、通知声的名字，双语：zh 中文、en 英文。
+# 声音文件在 resources/sfx/ 下按 ring 铃声 / notf 通知声 分目录，
+# 文件名与这里的键对应；「个性化选项」页读这里显示名字。
+
+[ring]
+love_trial = { zh = "恋爱裁判", en = "Love Trial" }
+
+[notf]
+basic = { zh = "基础", en = "Basic" }

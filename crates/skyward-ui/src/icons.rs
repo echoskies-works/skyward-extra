@@ -85,6 +85,10 @@ pub enum Icon {
     /// A ring with its head turning back on itself: the stopwatch's key that
     /// puts the watch back to nothing.
     Replay,
+    /// A bar: the timer's key that takes a minute off the length.
+    Minus,
+    /// Two bars crossed: the timer's key that puts a minute on it.
+    Plus,
 }
 
 /// The stock icons' box: every outline here is laid out in it.
@@ -465,6 +469,18 @@ const PAUSE_SCALE: f32 = 1024.0 / 596.0;
 const FLAG_SCALE: f32 = 1024.0 / 874.666_7;
 const REPLAY_SCALE: f32 = 1024.0 / 854.0;
 
+/// The timer's two keys, which take a minute off the length and put one on:
+/// a bar, and two bars crossed. They are set in the same box as the
+/// stopwatch's pictures but kept at their own size — a bar stretched to fill
+/// the box the way a triangle does would read as a slab rather than a minus
+/// — and they are line strokes rather than outlines, so their ends are round
+/// at whatever size they are drawn. Their weight is the stopwatch's pause
+/// bar's, which is what keeps a cross from reading thinner than the picture
+/// beside it.
+const MINUS: &[Part] = &[add(Shape::Line("M5,14H23", 6.0))];
+
+const PLUS: &[Part] = &[add(Shape::Line("M5,14H23M14,5V23", 6.0))];
+
 /// What `icon`'s glyph is drawn from, and at what share of its size.
 fn outline(icon: Icon) -> (&'static [Part], f32) {
     match icon {
@@ -498,6 +514,8 @@ fn outline(icon: Icon) -> (&'static [Part], f32) {
         Icon::Pause => (PAUSE, PAUSE_SCALE),
         Icon::Flag => (FLAG, FLAG_SCALE),
         Icon::Replay => (REPLAY, REPLAY_SCALE),
+        Icon::Minus => (MINUS, 1.0),
+        Icon::Plus => (PLUS, 1.0),
     }
 }
 

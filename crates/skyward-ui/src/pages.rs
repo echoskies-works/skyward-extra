@@ -608,14 +608,9 @@ pub fn calculator(cx: &Ctx) -> Frame {
 const CLOCK_FACES: [(ClockFace, Text); 2] =
     [(ClockFace::Stopwatch, ["秒表", "碼錶", "Stopwatch"]), (ClockFace::Timer, ["计时", "計時", "Timer"])];
 
-/// The words the timer's keys carry: the one that starts and stops the count.
-/// The stopwatch's keys carry pictures instead, as the Smartisan clock on the
-/// Nut Pro 3 draws them — see `Glyph`.
-const CLOCK_START: Text = ["开始", "開始", "Start"];
-const CLOCK_PAUSE: Text = ["暂停", "暫停", "Pause"];
-
-/// The pictures on the stopwatch's keys. The watch names none of them: what
-/// the key does is told by the picture, and the pair changes with the state.
+/// The pictures on the clock's keys, on both its faces. Neither face names
+/// them: what a key does is told by the picture, and which pictures are shown
+/// changes with what the watch is doing.
 enum Glyph {
     /// A flag: take an entry on the paper.
     Lap,
@@ -626,6 +621,10 @@ enum Glyph {
     Reset,
     /// A triangle: set the count going.
     Start,
+    /// A bar: take a minute off the timer's length.
+    Minus,
+    /// Two bars crossed: put a minute on the timer's length.
+    Plus,
 }
 
 /// Draw one of those pictures, `h` tall and centred on (`cx`, `cy`), in `ink`.
@@ -640,6 +639,8 @@ fn clock_glyph(c: &mut Canvas, glyph: Glyph, cx: f32, cy: f32, h: f32, ink: Rgba
         Glyph::Pause => Icon::Pause,
         Glyph::Reset => Icon::Replay,
         Glyph::Start => Icon::Play,
+        Glyph::Minus => Icon::Minus,
+        Glyph::Plus => Icon::Plus,
     };
     icons::glyph(c, icon, cx, cy, h, ink);
 }
@@ -657,21 +658,25 @@ fn clock_ink(t: &Theme) -> Rgba {
     }
 }
 
-/// The radius of the disc the stopwatch's keys sit on, in dp: the very disc
-/// every other page draws its `<` on (`widgets::back_disc` is the same
-/// 21.7), so a key here reads as one of the system's round controls instead
-/// of a plain circle of its own.
+/// The radius of the disc the clock's keys sit on, in dp: the very disc every
+/// other page draws its `<` on (`widgets::back_disc` is the same 21.7), so a
+/// key here reads as one of the system's round controls instead of a plain
+/// circle of its own. Both faces put their keys on it.
 const KEY_R: f32 = 21.7;
 
-/// One of the stopwatch's keys: that chip, with a picture on it. The chip is
-/// laid whole every time — the bar's own fades in with the bar as the page
-/// scrolls under it, but a key at the foot of the page has no scrolling to
-/// wait for, so it is never half shown.
-fn clock_key(c: &mut Canvas, t: &Theme, cx: f32, cy: f32, glyph: Glyph) -> Rect {
+/// One of the clock's keys: that chip, with a picture on it. A key that
+/// cannot be used where the watch stands — a minute's end of the timer's
+/// length, or either of the two while it runs — is drawn all the same, its
+/// picture only quieted, so the row does not move under a finger that has
+/// just reached it. The chip is laid whole every time: the bar's own fades in
+/// with the bar as the page scrolls under it, but a key at the foot of the
+/// page has no scrolling to wait for, so it is never half shown.
+fn clock_key(c: &mut Canvas, t: &Theme, cx: f32, cy: f32, glyph: Glyph, on: bool) -> Rect {
     let r = t.m.dp(KEY_R);
     let (art, ox, oy) = widgets::chip_at(t, cx, cy, r);
     c.lay(&art, ox, oy, 1.0);
-    clock_glyph(c, glyph, cx, cy, r * 0.84, clock_ink(t));
+    let ink = if on { clock_ink(t) } else { t.pal.chevron };
+    clock_glyph(c, glyph, cx, cy, r * 0.84, ink);
     Rect::new(cx - r, cy - r, r * 2.0, r * 2.0)
 }
 
@@ -785,14 +790,18 @@ pub fn clock(cx: &Ctx) -> Frame {
         tab_x += words[k] + tab_gap;
     }
 
-    // The keys, a row of three with the one that starts and stops the count
-    // in the middle of it: the stopwatch's either side of it, the timer's
-    // under it.
-    let d = m.dp(74.0);
-    let key_gap = m.dp(30.0);
-    let cy = m.h as f32 - m.margin - m.dp(26.0) - d / 2.0;
-    let top = cy - d / 2.0;
-    let at = |k: usize| mid + (k as f32 - 1.0) * (d + key_gap) - d / 2.0;
+    // The keys: a row of the same chips on both faces, one or two of them
+    // under the stopwatch and three under the timer, centred on the page.
+    // They stand on the same line as the three big keys the timer used to
+    // have, so switching the face moves neither the buttons nor the paper
+    // that hangs above them.
+    let sd = m.dp(KEY_R * 2.0);
+    let sgap = m.dp(32.0);
+    let cy = m.h as f32 - m.margin - m.dp(26.0) - m.dp(74.0) / 2.0;
+    // How high the chips reach, which is what the room above them ends at.
+    let keys_top = cy - sd / 2.0;
+    // Where the `k`th of `n` chips has its middle: the row's is the page's.
+    let sat = |k: usize, n: usize| mid + (k as f32 - (n as f32 - 1.0) / 2.0) * (sd + sgap);
 
     // The stopwatch is read off a dial: a bare disc, the count small under
     // it, and the paper of entries hanging from a short rule under the count.
@@ -862,7 +871,7 @@ pub fn clock(cx: &Ctx) -> Frame {
             Some(((read_cy - px).max(0.0) as u32, (read_cy + px).min(m.h as f32) as u32))
         }
         ClockFace::Timer => {
-            let read_cy = (tab_base + top) / 2.0;
+            let read_cy = (tab_base + keys_top) / 2.0;
             let reading = timer_text(clock.timer(cx.now));
             let px = m.dp(if reading.chars().count() > 8 { 40.0 } else { 76.0 });
             c.text_center(&f.heading, &reading, mid, read_cy, px, t.pal.text);
@@ -870,15 +879,9 @@ pub fn clock(cx: &Ctx) -> Frame {
         }
     };
 
-    // The stopwatch's keys: the system's own round chip with a picture on
-    // it, one before the watch has ever run and two after. The pair changes
-    // with the state — take an entry and stop it while it goes, put it back
-    // to nothing and set it off again while it rests. They are smaller than
-    // the timer's three and sit on the same line, so the foot of the page
-    // stays where it is as the faces are switched.
-    let sd = m.dp(KEY_R * 2.0);
-    let sgap = m.dp(32.0);
-    let sat = |k: usize| mid + (k as f32 - 0.5) * (sd + sgap) - sd / 2.0;
+    // The stopwatch's keys: one before the watch has ever run and two after.
+    // The pair changes with the state — take an entry and stop it while it
+    // goes, put it back to nothing and set it off again while it rests.
     if clock.face == ClockFace::Stopwatch {
         let going = clock.stop_since.is_some();
         // Nothing to reset and nothing to take an entry of before the first
@@ -891,47 +894,34 @@ pub fn clock(cx: &Ctx) -> Frame {
                 [(Glyph::Reset, Action::ClockReset), (Glyph::Start, Action::ClockGo)]
             };
             for (k, (glyph, action)) in pair.into_iter().enumerate() {
-                let rect = clock_key(&mut c, t, sat(k) + sd / 2.0, cy, glyph);
+                let rect = clock_key(&mut c, t, sat(k, 2), cy, glyph, true);
                 out.push(Hit { rect, action });
             }
         } else {
             // The one key is the same disc of the same size: it is the count
             // that has not started, not the key that is drawn differently.
-            let rect = clock_key(&mut c, t, mid, cy, Glyph::Start);
+            let rect = clock_key(&mut c, t, mid, cy, Glyph::Start, true);
             out.push(Hit { rect, action: Action::ClockGo });
         }
     }
 
-    let mut key = |k: usize, name: &str, action: Option<Action>, main: bool| {
-        let x = at(k);
-        let (fill, ink) = match (main, action.is_some()) {
-            (true, _) => (t.pal.accent, Rgba::rgb(255, 255, 255)),
-            (false, true) => (t.pal.card, t.pal.text),
-            (false, false) => (t.pal.track, t.pal.text),
-        };
-        c.fill_round_rect(x, top, d, d, d / 2.0, fill);
-        c.text_center(&f.heading, name, x + d / 2.0, cy, m.dp(20.0), ink);
-        if let Some(a) = action {
-            out.push(Hit { rect: Rect::new(x, top, d, d), action: a });
-        }
-    };
-
-    match clock.face {
-        // The stopwatch's keys are drawn above, with the pictures on them.
-        ClockFace::Stopwatch => {}
-        ClockFace::Timer => {
-            let going = clock.left_since.is_some();
-            // The length is set while the timer is stopped, by the minute,
-            // within the hour it is given.
-            let minutes = clock.span / 60_000;
-            key(0, "-", (minutes > 1 && !going).then_some(Action::ClockSpan(minutes - 1)), false);
-            key(1, "+", (minutes < 60 && !going).then_some(Action::ClockSpan(minutes + 1)), false);
-            let (name, action) = if going {
-                (l.pick(CLOCK_PAUSE), Action::ClockGo)
-            } else {
-                (l.pick(CLOCK_START), Action::ClockGo)
-            };
-            key(2, name, Some(action), true);
+    // The timer's keys: the length down by a minute, the count started or
+    // stopped, the length up by one. The two for the length answer nothing
+    // while the timer runs, and nothing at either end of the hour it is
+    // given; they stay drawn, quiet, so the row never moves.
+    if clock.face == ClockFace::Timer {
+        let going = clock.left_since.is_some();
+        let minutes = clock.span / 60_000;
+        let keys: [(Glyph, Option<Action>); 3] = [
+            (Glyph::Minus, (minutes > 1 && !going).then_some(Action::ClockSpan(minutes - 1))),
+            (Glyph::Plus, (minutes < 60 && !going).then_some(Action::ClockSpan(minutes + 1))),
+            (if going { Glyph::Pause } else { Glyph::Start }, Some(Action::ClockGo)),
+        ];
+        for (k, (glyph, action)) in keys.into_iter().enumerate() {
+            let rect = clock_key(&mut c, t, sat(k, 3), cy, glyph, action.is_some());
+            if let Some(action) = action {
+                out.push(Hit { rect, action });
+            }
         }
     }
 
@@ -4246,20 +4236,45 @@ enum WallpaperKind {
     Lock,
 }
 
+/// The name of the sound `path` points to, as the names file says it in the
+/// language the pages speak; where it says nothing, the file's own name.
+fn sound_name(l: Lang, names: &skyward_config::SoundNames, kind: SoundKind, path: &str) -> String {
+    let file = Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or(path);
+    let named = match kind {
+        SoundKind::Ring => names.ring.get(file),
+        SoundKind::Notf => names.notf.get(file),
+    };
+    match named {
+        Some(n) if l == Lang::En => n.en.clone(),
+        Some(n) => n.zh.clone(),
+        None => file.to_string(),
+    }
+}
+
+/// Which of the two sounds a name is for: the ring the phone rings with or
+/// the sound a notification makes.
+#[derive(Clone, Copy)]
+enum SoundKind {
+    Ring,
+    Notf,
+}
+
 /// Sound, ring and wallpaper picked the way the user likes them: a place
 /// the three gather while each of them is not built yet. The ring and the
-/// sound effects wait on the audio, and the wallpaper shows its name but
-/// does not yet change.
+/// notification show their names but nothing plays, and the wallpaper shows
+/// its name but does not yet change.
 pub fn personalization(cx: &Ctx) -> Frame {
     let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
     let mut c = long_page(cx);
     let top = t.m.content_top;
-    // The ring and the sound effects are placeholders: nothing plays yet,
-    // so their entries stand as rows that say they are not ready.
+    // The ring and the notification name the sound each is set to; nothing
+    // plays yet, so neither row opens anything.
     let y = widgets::section_first(&mut c, t, f, top, l.pick(["声音", "聲音", "Sound"]));
+    let ring = sound_name(l, &s.sound_names, SoundKind::Ring, skyward_config::ramdisk::RINGTONE);
+    let notf = sound_name(l, &s.sound_names, SoundKind::Notf, skyward_config::ramdisk::NOTIFICATION);
     let sound = widgets::list(&mut c, t, f, y, &[
-        Row::new(l.pick(RINGTONE)).icon(BLUE, Icon::Music).trail(Trail::Value(l.pick(["未就绪", "未就緒", "Not ready"]))),
-        Row::new(l.pick(SOUND_EFFECTS)).icon(GREEN, Icon::Music).trail(Trail::Value(l.pick(["未就绪", "未就緒", "Not ready"]))),
+        Row::new(l.pick(RINGTONE)).icon(BLUE, Icon::Music).trail(Trail::Value(ring.as_str())),
+        Row::new(l.pick(SOUND_EFFECTS)).icon(GREEN, Icon::Music).trail(Trail::Value(notf.as_str())),
     ]);
     // The rows tell where things stand but do not open anything yet.
     let y = widgets::section(&mut c, t, f, sound.bottom, l.pick(WALLPAPER_TITLE));
@@ -4270,9 +4285,9 @@ pub fn personalization(cx: &Ctx) -> Frame {
         Row::new(l.pick(["锁屏壁纸", "鎖定畫面桌布", "Lock screen wallpaper"])).icon(ORANGE, Icon::Lock).trail(Trail::Value(lock.as_str())),
     ]);
     let note = l.pick([
-        "声音和换壁纸尚未完成，这里只显示当前使用的壁纸名称。",
-        "聲音和換桌布尚未完成，這裡只顯示目前使用的桌布名稱。",
-        "Sound and changing the wallpaper are not done yet; this only shows the name of the wallpaper in use.",
+        "声音还不能播放，壁纸也还不能更换，这里只显示当前使用的名称。",
+        "聲音還不能播放，桌布也還不能更換，這裡只顯示目前使用的名稱。",
+        "Sound cannot play yet and the wallpaper cannot be changed; this only shows the names in use.",
     ]);
     let bottom = widgets::footnote(&mut c, t, f, wallpapers.bottom, note);
     Frame::new(t, fit(c, t, bottom), Vec::new(), l.pick(PERSONALIZATION), top)

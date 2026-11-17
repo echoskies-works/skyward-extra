@@ -205,6 +205,10 @@ pub struct State {
     /// from the ramdisk: the「个性化选项」page shows the one in use by
     /// them.
     pub wallpaper_names: skyward_config::WallpaperNames,
+    /// The names of the ring and of the notification in the two languages
+    /// the pages speak, read from the ramdisk beside the wallpapers' own:
+    /// the「个性化选项」page shows the ones in use by them.
+    pub sound_names: skyward_config::SoundNames,
 }
 
 impl Default for State {
@@ -298,6 +302,7 @@ impl Default for State {
             calc: Calc::default(),
             clock: Clock::default(),
             wallpaper_names: skyward_config::WallpaperNames::default(),
+            sound_names: skyward_config::SoundNames::default(),
         }
     }
 }
