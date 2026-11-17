@@ -833,34 +833,38 @@ const RULER_R: f32 = 5.0;
 const RULER_GAP: f32 = 12.0;
 /// The bar's two greens and its edge, sampled from the reference. The ruler
 /// keeps these in both themes.
-const RULER_GREEN_TOP: Rgba = Rgba::rgb(235, 243, 232);
-const RULER_GREEN_FOOT: Rgba = Rgba::rgb(244, 246, 243);
+const RULER_GREEN_TOP: Rgba = Rgba::rgb(230, 235, 231);
+const RULER_GREEN_FOOT: Rgba = Rgba::rgb(240, 242, 239);
 const RULER_WHITE: Rgba = Rgba::rgb(250, 250, 250);
 const RULER_EDGE: Rgba = Rgba::rgb(200, 205, 199);
 /// The marks and figures, and the fixed line that chooses between them. The
 /// line is a shade deeper than the marks, as a pointer has to be.
 const RULER_INK: Rgba = Rgba::rgb(120, 149, 120);
 const RULER_MARK: Rgba = Rgba::rgb(76, 112, 76);
-/// Smartisan's own tick artwork: 70 px hold two minutes, the long strokes
-/// on each minute and five short ones between. It is recoloured for dark,
-/// but its spacing and stroke shape are the reference's, not a guess.
+/// Smartisan's own tick artwork. Once its transparent top rows and right
+/// padding are cropped, 64 px hold two minutes, the long strokes on each
+/// minute and five short ones between. It is recoloured for dark, but its
+/// spacing and stroke shape are the reference's, not a guess.
 const RULER_DECO_PIC: &[u8] = include_bytes!("../../../resources/clock/rulerdeco.png");
-const RULER_DECO_MINUTE_PX: f32 = 35.0;
-const RULER_TICK_TOP: f32 = 1.0;
+const RULER_DECO_MINUTE_PX: f32 = 32.0;
+const RULER_TICK_TOP: f32 = 0.0;
 const RULER_NUM_PX: f32 = 11.5;
 const RULER_NUM_CY: f32 = 0.42;
 /// In the dark the same pale bar takes a blue hue instead of green, the way
 /// Windows 11 turns its green progress blue on a dark panel. The lightness
 /// stays close to the light ruler; only the hue changes. White stays white.
-const RULER_BLUE_TOP: Rgba = Rgba::rgb(226, 237, 249);
-const RULER_BLUE_FOOT: Rgba = Rgba::rgb(240, 246, 252);
-const RULER_BLUE_EDGE: Rgba = Rgba::rgb(194, 205, 218);
+const RULER_BLUE_TOP: Rgba = Rgba::rgb(220, 231, 244);
+const RULER_BLUE_FOOT: Rgba = Rgba::rgb(236, 242, 250);
+const RULER_BLUE_EDGE: Rgba = Rgba::rgb(190, 201, 214);
 const RULER_BLUE_INK: Rgba = Rgba::rgb(91, 126, 172);
 const RULER_BLUE_MARK: Rgba = Rgba::rgb(63, 101, 169);
 
-/// The tick artwork, once per theme, with every opaque pixel recoloured to
-/// that theme's ruler ink. The alpha is left alone so the thin strokes keep
-/// their softened edges.
+/// The tick artwork, once per theme. Every pixel is recoloured to that
+/// theme's ruler ink, transparent ones included: bilinear scaling samples
+/// their RGB at a stroke's edge, and leaving them black gives the ticks a
+/// black fringe. The alpha stays as it was. The source's three empty top
+/// rows and six empty right columns are cropped off so the marks touch the
+/// ruler's top and the last pair ends exactly at 180.
 fn ruler_ticks(dark: bool) -> &'static Canvas {
     static LIGHT: std::sync::OnceLock<Canvas> = std::sync::OnceLock::new();
     static DARK: std::sync::OnceLock<Canvas> = std::sync::OnceLock::new();
@@ -869,13 +873,11 @@ fn ruler_ticks(dark: bool) -> &'static Canvas {
         let ink = if dark { RULER_BLUE_INK } else { RULER_INK };
         let mut ticks = Canvas::from_png(RULER_DECO_PIC).expect("the ruler tick picture must decode");
         for px in ticks.data.as_chunks_mut::<4>().0 {
-            if px[3] != 0 {
-                px[0] = ink.r;
-                px[1] = ink.g;
-                px[2] = ink.b;
-            }
+            px[0] = ink.r;
+            px[1] = ink.g;
+            px[2] = ink.b;
         }
-        ticks
+        ticks.crop(0, 3, 64, 18)
     })
 }
 
@@ -912,20 +914,21 @@ fn timer_ruler(
         if white_w > wr {
             c.fill_rect(ix + wr, iy, white_w - wr, ih, RULER_WHITE);
         }
-        // A short row of dots near the outer end of the white patch, clear
-        // of the zero beside it, as on the reference ruler.
-        let gap = m.dp(9.0);
-        let count = ((white_w - m.dp(45.0)) / gap).floor().clamp(0.0, 3.0) as usize;
-        if count > 0 {
+        // Three left-pointing arrow-and-dot groups, as on the reference:
+        // `◀··· ◀··· ◀···`, clear of the zero at the patch's right edge.
+        if white_w > m.dp(85.0) {
             let dot_cy = iy + ih / 2.0;
-            let head = ix + m.dp(34.0);
-            for k in 0..count {
-                c.fill_circle(head - k as f32 * gap, dot_cy, m.dp(1.2), ink);
-            }
-            if count >= 3 {
-                let tail = head - count as f32 * gap;
-                c.line(tail + m.dp(6.0), dot_cy, tail, dot_cy - m.dp(3.5), 1.0, ink);
-                c.line(tail + m.dp(6.0), dot_cy, tail, dot_cy + m.dp(3.5), 1.0, ink);
+            let gap = m.dp(5.0);
+            let arrow = m.dp(5.0);
+            let start = ix + white_w * 0.22;
+            let between = m.dp(20.0);
+            for g in 0..3 {
+                let tip = start + g as f32 * between;
+                c.line(tip + arrow, dot_cy - m.dp(3.0), tip, dot_cy, 1.0, ink);
+                c.line(tip + arrow, dot_cy + m.dp(3.0), tip, dot_cy, 1.0, ink);
+                for k in 1..=3 {
+                    c.fill_circle(tip + arrow + k as f32 * gap, dot_cy, m.dp(1.2), ink);
+                }
             }
         }
     }
@@ -941,11 +944,18 @@ fn timer_ruler(
     let green_w = (ix + iw - green_x).max(0.0);
     if green_w > 0.0 && tick_h > 0.0 {
         let mut strip = Canvas::new(green_w.ceil() as u32, tick_h.ceil() as u32);
+        // Keep the strip opaque and behind the same gradient it covers. A
+        // transparent strip would have the picture's soft edge multiplied
+        // once by `draw_image` and again by `lay`, which paints it black.
+        for row in 0..strip.h {
+            let t = ((row as f32 + 0.5) / ih).clamp(0.0, 1.0);
+            strip.fill_rect(0.0, row as f32, strip.w as f32, 1.0, mix(green_top, green_foot, t));
+        }
         let first_pair = ((value + (green_x - cx) / minute) / 2.0).floor() as i32 - 2;
         let last_pair = ((value + (green_x + green_w - cx) / minute) / 2.0).ceil() as i32 + 2;
         for pair in first_pair..=last_pair {
             let even = pair * 2;
-            if even < 0 || even > CLOCK_MOST as i32 {
+            if even < 0 || even >= CLOCK_MOST as i32 {
                 continue;
             }
             let at = cx + (even as f32 - value) * minute;
