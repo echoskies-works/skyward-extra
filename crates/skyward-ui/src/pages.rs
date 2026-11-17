@@ -871,7 +871,7 @@ const RULER_NUM_CY: f32 = 0.42;
 /// the page's black rather than a white glaring out of it.
 const RULER_BLUE_TOP: Rgba = Rgba::rgb(12, 40, 49);
 const RULER_BLUE_FOOT: Rgba = Rgba::rgb(15, 49, 59);
-const RULER_BLUE_EDGE: Rgba = Rgba::rgb(37, 85, 101);
+const RULER_BLUE_EDGE: Rgba = Rgba::rgb(3, 29, 35);
 const RULER_BLUE_INK: Rgba = Rgba::rgb(57, 184, 227);
 const RULER_BLUE_MARK: Rgba = Rgba::rgb(120, 214, 240);
 const RULER_DARK_PATCH: Rgba = Rgba::rgb(38, 38, 38);
@@ -1019,6 +1019,13 @@ fn timer_ruler(
     // The frame is the mask: a figure whose glyph runs over an end, strokes
     // rolling out of a corner, anything the scale wrote past the rounded
     // outline is gone before the bar is laid down.
+    //
+    // The foot line goes back first. The panel and the patch both reach the
+    // frame's last row, which paints over the line the edge put there: the
+    // patch is the one that shows, and a strip of white along the foot reads
+    // as the bar sitting on its own edge. One row of the edge's colour is
+    // laid again, and the mask rounds its ends with the rest of the frame.
+    bar.fill_rect(0.0, rh - 1.0, rw, 1.0, edge);
     bar.mask_round(0.0, 0.0, rw, rh, r);
     c.lay(&bar, x.round() as i32, y.round() as i32, 1.0);
     Rect::new(x, y, rw, rh)
@@ -1026,6 +1033,9 @@ fn timer_ruler(
 
 /// The words under the dial before the watch has ever run.
 const CLOCK_HINT: Text = ["点击启动秒表", "點擊啟動碼錶", "Tap to start the stopwatch"];
+
+/// The words under the count before a length has been chosen on the ruler.
+const TIMER_HINT: Text = ["滑动尺子以计时", "滑動尺子以計時", "Slide the ruler to set a time"];
 
 /// The dial: a disc the colour of a card, its own shadow under it, drawn by
 /// the page rather than laid on from a picture. On that disc sit the minute
@@ -1128,14 +1138,22 @@ const HAND_PIN: f32 = 3.0;
 /// dial sits where Smartisan's sits on a 1080 panel; the count, rule and
 /// paper follow it down by the space it gained, so the paper still clears
 /// the keys and keeps its closing rule when it overflows.
-const DIAL_CY: f32 = 329.0;
+pub(crate) const DIAL_CY: f32 = 329.0;
 const READ_CY: f32 = 507.0;
 const READ_PX: f32 = 30.5;
 /// The count run past an hour, when `H:MM:SS.cc` needs the room.
 const READ_LONG_PX: f32 = 24.0;
-const RULE_CY: f32 = 550.0;
-const RULE_W: f32 = 226.0;
-const HINT_CY: f32 = 573.0;
+pub(crate) const RULE_CY: f32 = 550.0;
+/// The rule before the watch has ever run: the short slip Smartisan draws,
+/// 80 dp across and a hair thick, paler than the words under it.
+const RULE_SHORT_W: f32 = 80.0;
+/// The rule the paper hangs from, and the width of a row of it: as wide as
+/// the entries themselves, which is where Smartisan stops it too.
+const RULE_W: f32 = 160.0;
+/// The rule's thickness. Smartisan draws it two pixels on its panel; at ours
+/// that is three quarters of a dp.
+const RULE_T: f32 = 0.75;
+const HINT_CY: f32 = 566.0;
 const HINT_PX: f32 = 11.5;
 const PAPER_TOP: f32 = 560.0;
 const PAPER_ROW: f32 = 30.0;
@@ -1156,6 +1174,15 @@ pub fn clock_paper_room(m: &crate::theme::Metrics) -> usize {
     ((clock_paper_foot(m) - m.dp(PAPER_TOP)) / m.dp(PAPER_ROW)).floor().max(0.0) as usize
 }
 
+/// The dial's still face laid on centred at (`cx`, `cy`): the cache in one
+/// blit, and nothing of the hand. The timer wears this and only this while
+/// it has no hand of its own to turn.
+fn clock_face_at(c: &mut Canvas, m: &crate::theme::Metrics, t: &crate::theme::Theme, f: &Fonts, cx: f32, cy: f32) {
+    let face = clock_face(m, t, f);
+    let side = face.w as f32;
+    c.draw_image(face, cx - side / 2.0, cy - side / 2.0, side, side);
+}
+
 /// The dial laid on centred at (`cx`, `cy`): the still face comes from the
 /// cache in one blit, then the hand is drawn over it. `deg` is the hand's
 /// angle clockwise from twelve and `tint` is how blue it reads, 0 charcoal
@@ -1165,9 +1192,7 @@ fn clock_dial(
     c: &mut Canvas, m: &crate::theme::Metrics, t: &crate::theme::Theme, f: &Fonts,
     cx: f32, cy: f32, deg: f32, tint: f32,
 ) {
-    let face = clock_face(m, t, f);
-    let side = face.w as f32;
-    c.draw_image(face, cx - side / 2.0, cy - side / 2.0, side, side);
+    clock_face_at(c, m, t, f, cx, cy);
 
     let ink = mix(HAND_STILL, HAND_BLUE, tint);
     let a = deg * std::f32::consts::PI / 180.0;
@@ -1263,7 +1288,10 @@ pub fn clock(cx: &Ctx) -> Frame {
             // neither, and its page is the dial and the count alone.
             let rule_w = m.dp(RULE_W);
             let (rl, rr) = (mid - rule_w / 2.0, mid + rule_w / 2.0);
-            let rule_y = m.dp(RULE_CY);
+            // The rule is set on whole pixels: Smartisan's is two of them, and
+            // one begun between two rows spreads over three and reads heavier.
+            let rule_y = m.dp(RULE_CY).round();
+            let rule_h = m.dp(RULE_T).round().max(1.0);
 
             let started = clock.stop_since.is_some() || clock.stop > 0 || !clock.laps.is_empty();
             let paper = m.dp(PAPER_TOP);
@@ -1274,13 +1302,16 @@ pub fn clock(cx: &Ctx) -> Frame {
             let count = clock.laps.len();
             let room = clock_paper_room(m);
             if !started {
-                c.fill_rect(rl, rule_y, rule_w, 1.0, t.pal.chevron);
+                // The short slip, centred where the paper's rule will stand:
+                // it is the same rule, only as long as the words under it
+                // and no longer, as Smartisan draws it.
+                let short = m.dp(RULE_SHORT_W);
+                c.fill_rect(mid - short / 2.0, rule_y, short, rule_h, t.pal.hairline);
                 c.text_center(&f.label, l.pick(CLOCK_HINT), mid, m.dp(HINT_CY), m.dp(HINT_PX), t.pal.value);
             } else if count > 0 && room > 0 {
-                c.fill_rect(rl, rule_y, rule_w, 1.0, t.pal.chevron);
+                c.fill_rect(rl, rule_y, rule_w, rule_h, t.pal.hairline);
                 let shown = count.min(room);
                 if count > room {
-                    c.fill_rect(rl, foot, rule_w, 1.0, t.pal.chevron);
                     // What does not fit is scrolled through under the finger
                     // rather than cut off: the room taken, and the height of
                     // a row within it.
@@ -1288,18 +1319,24 @@ pub fn clock(cx: &Ctx) -> Frame {
                 }
                 // The entries run down from the rule, the oldest first, the
                 // count kept at the left of the row and the split taken at
-                // its right.
+                // its right. Each row closes on a rule of its own — the last
+                // one too, so the paper reads as ruled rather than open.
+                // The figures are Smartisan's sizes: the total a step above
+                // the count and the split, all of them within the rule the
+                // row is drawn on.
                 let first = clock.paper.min(count - shown);
                 for k in 0..shown {
                     let lap = &clock.laps[first + k];
                     let y = paper + row_h * (k as f32 + 0.5);
                     let n = (first + k + 1).to_string();
-                    c.text_vc(&f.label, &n, rl + m.dp(4.0), y, m.dp(13.0), t.pal.value, None);
+                    c.text_vc(&f.label, &n, rl + m.dp(4.0), y, m.dp(11.0), t.pal.value, None);
                     let total = stopwatch_text(lap.total);
-                    c.text_vc(&f.heading, &total, rl + m.dp(30.0), y, m.dp(17.0), t.pal.text, None);
+                    c.text_vc(&f.regular, &total, rl + m.dp(25.0), y, m.dp(13.5), t.pal.text, None);
                     let split = format!("+ {}", stopwatch_text(lap.split));
-                    let w = c.text_width(&f.label, &split, m.dp(13.0));
-                    c.text_vc(&f.label, &split, rr - m.dp(6.0) - w, y, m.dp(13.0), t.pal.value, None);
+                    let w = c.text_width(&f.label, &split, m.dp(11.0));
+                    c.text_vc(&f.label, &split, rr - m.dp(4.0) - w, y, m.dp(11.0), t.pal.value, None);
+                    let close = (paper + row_h * (k as f32 + 1.0)).round();
+                    c.fill_rect(rl, close, rule_w, rule_h, t.pal.hairline);
                 }
             }
             // The hand and the count are the two things here that go on
@@ -1310,12 +1347,30 @@ pub fn clock(cx: &Ctx) -> Frame {
             Some((dial_top as u32, (read_cy + px).min(m.h as f32) as u32))
         }
         ClockFace::Timer => {
+            // The dial the stopwatch wears, laid where it sits there. Its hand
+            // is the stopwatch's — it turns with the tenths that watch keeps,
+            // and the timer counts whole minutes off its ruler — so the dial
+            // goes down bare, and the face is what the two pages share until
+            // the timer has a reading of its own to turn it with.
+            clock_face_at(&mut c, m, t, f, mid, m.dp(DIAL_CY));
             // The timer's count takes the same place and size as the
             // stopwatch's: only what it says is different.
             let reading = timer_text(clock.timer(cx.now));
             let px = m.dp(if reading.chars().count() > 8 { READ_LONG_PX } else { READ_PX });
             let read_cy = m.dp(READ_CY);
             c.text_center(&f.regular, &reading, mid, read_cy, px, t.pal.text);
+
+            // Before a length is chosen the page says how one is chosen, the
+            // way the stopwatch says how it is started: the same short rule
+            // under the count, with the words under that. Once the ruler has
+            // set a length the pair goes, and neither the count running nor
+            // one held at pause brings them back.
+            if !clock.timer_set() {
+                let short = m.dp(RULE_SHORT_W);
+                let (at, thick) = (m.dp(RULE_CY).round(), m.dp(RULE_T).round().max(1.0));
+                c.fill_rect(mid - short / 2.0, at, short, thick, t.pal.hairline);
+                c.text_center(&f.label, l.pick(TIMER_HINT), mid, m.dp(HINT_CY), m.dp(HINT_PX), t.pal.value);
+            }
 
             // The ruler: the scale sits just above the keys, with its
             // middle line fixed and its white patch ending at zero. It is
@@ -1325,9 +1380,17 @@ pub fn clock(cx: &Ctx) -> Frame {
             let ruler_cy = keys_top - m.dp(RULER_GAP) - rh / 2.0;
             ruler = clock
                 .timer_can_slide()
-                .then_some(timer_ruler(&mut c, m, f, mid, ruler_cy, rw, rh, clock.ruler_value(), t.dark));
+                .then_some(timer_ruler(&mut c, m, f, mid, ruler_cy, rw, rh, clock.ruler_value(cx.now), t.dark));
 
-            Some(((read_cy - px).max(0.0) as u32, (read_cy + px).min(m.h as f32) as u32))
+            // A reset carries the ruler home, so while it is on its way the
+            // band drawn again a frame at a time takes in the bar as well as
+            // the count; once it lands the count alone moves.
+            let (mut top, mut bottom) = ((read_cy - px).max(0.0), (read_cy + px).min(m.h as f32));
+            if clock.ruler_sweeping(cx.now) {
+                top = top.min(ruler_cy - rh / 2.0 - m.dp(2.0));
+                bottom = bottom.max(ruler_cy + rh / 2.0 + m.dp(2.0));
+            }
+            Some((top as u32, bottom as u32))
         }
     };
 

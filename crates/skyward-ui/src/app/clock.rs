@@ -49,6 +49,9 @@ pub(crate) const RULER_MINUTE_DP: f32 = 24.0;
 /// and how long it takes to fade between charcoal and blue when the watch
 /// starts, stops or settles after that sweep. Both in milliseconds.
 pub const HAND_REWIND_MS: u64 = 320;
+/// How long a reset takes to carry the timer's ruler home: the same sweep
+/// the hand makes, so the two faces settle at one pace.
+pub const RULER_REWIND_MS: u64 = HAND_REWIND_MS;
 pub const HAND_TINT_MS: u64 = 220;
 
 /// The second hand's own motion, separate from the count it shows. Its
@@ -151,6 +154,9 @@ pub(super) fn step(clock: &Clock, now: u64) -> u64 {
         ClockFace::Stopwatch if clock.stop_since.is_some() || clock.hand.moving(now) => CLOCK_STEP_MS,
         // The reading is rounded up to the second it is shown by, so it
         // changes as the count comes down onto a whole second.
+        // On its way home from a reset the scale is drawn again a frame at
+        // a time, as the hand is.
+        ClockFace::Timer if clock.ruler_sweeping(now) => CLOCK_STEP_MS,
         ClockFace::Timer if clock.left_since.is_some() => match clock.timer(now) % 1_000 {
             0 => 1_000,
             left => left,
@@ -186,6 +192,10 @@ pub struct Clock {
     /// Where the ruler stands, in thousandths of a minute. It moves under
     /// the finger and settles on a whole minute.
     pub ruler: u32,
+    /// Where a reset's sweep of the ruler began, in thousandths of a minute,
+    /// and when: `None` while the ruler stands where it was left.
+    pub ruler_from: Option<u32>,
+    pub ruler_since: u64,
     /// A timer held at pause stays held when the ruler is moved; a timer
     /// merely unset or run out starts when a minute is chosen.
     pub timer_paused: bool,
@@ -204,6 +214,8 @@ impl Default for Clock {
             left: CLOCK_SPAN,
             left_since: None,
             ruler: 0,
+            ruler_from: None,
+            ruler_since: 0,
             timer_paused: false,
         }
     }
@@ -232,9 +244,44 @@ impl Clock {
         self.left_since.is_none()
     }
 
-    /// Where the ruler stands, in minutes, for drawing its marks.
-    pub fn ruler_value(&self) -> f32 {
-        self.ruler as f32 / RULER_UNITS as f32
+    /// Where the ruler stands, in minutes, for drawing its marks. A reset
+    /// carries it home the way the hand is carried: the scale runs back to
+    /// zero rather than being there the next frame.
+    pub fn ruler_value(&self, now: u64) -> f32 {
+        self.ruler_rewind(now).unwrap_or(self.ruler as f32) / RULER_UNITS as f32
+    }
+
+    /// Where the ruler is on its way home, in thousandths of a minute;
+    /// `None` while it stands where it was left. Eased out, so the sweep
+    /// leaves fast and settles onto zero as the hand's does.
+    fn ruler_rewind(&self, now: u64) -> Option<f32> {
+        let from = self.ruler_from?;
+        let t = now.saturating_sub(self.ruler_since).min(RULER_REWIND_MS) as f32 / RULER_REWIND_MS as f32;
+        let eased = 1.0 - (1.0 - t).powi(3);
+        Some(from as f32 * (1.0 - eased))
+    }
+
+    /// Whether the ruler is still on its way home, which asks for a frame at
+    /// a time until it lands.
+    pub fn ruler_sweeping(&self, now: u64) -> bool {
+        self.ruler_from.is_some() && now < self.ruler_since.saturating_add(RULER_REWIND_MS)
+    }
+
+    /// Begin a reset's sweep of the ruler from where it stands: the ruler
+    /// itself goes back to nothing at once, and the sweep is what the scale
+    /// is drawn by until it lands.
+    pub fn sweep_ruler(&mut self, now: u64) {
+        self.ruler_from = Some(self.ruler);
+        self.ruler = 0;
+        self.ruler_since = now;
+    }
+
+    /// The sweep has landed: the scale is drawn by the ruler again, which is
+    /// where the sweep left it.
+    pub fn land_ruler(&mut self, now: u64) {
+        if self.ruler_from.is_some() && !self.ruler_sweeping(now) {
+            self.ruler_from = None;
+        }
     }
 
     /// Drag the ruler by a whole number of thousandths of a minute. The
@@ -255,6 +302,8 @@ impl Clock {
             0
         };
         self.ruler = after as u32;
+        // A finger on the ruler takes it off its way home.
+        self.ruler_from = None;
         crossed as u32
     }
 
@@ -441,6 +490,7 @@ mod tests {
     use crate::app::{App, Ctx, Frame, Screen};
     use crate::canvas::Canvas;
     use crate::font::Fonts;
+    use crate::theme::Theme;
     use skyward_info::DeviceInfo;
 
     const W: u32 = 400;
@@ -477,8 +527,7 @@ mod tests {
     }
 
     #[test]
-    fn a_reset_sweeps_the_hand_home_then_fades_it_grey() {
-        // A watch paused a quarter of the way round, then reset.
+    fn a_reset_sweeps_the_hand_home_then_fades_it_grey() {        // A watch paused a quarter of the way round, then reset.
         let mut clock = Clock { stop: 15_000, stop_since: None, ..Clock::default() };
         assert!((clock.hand_deg(1_000) - 90.0).abs() < 0.01, "the paused hand stands at a quarter turn");
         let deg = clock.hand_deg(1_000);
@@ -628,6 +677,40 @@ mod tests {
         assert!(app.state.clock.left_since.is_some(), "only the start key runs it again");
     }
 
+    /// A reset carries the timer's ruler home the way it carries the hand:
+    /// the scale runs back from where it stood and lands at zero, and asks
+    /// for frames until it does.
+    #[test]
+    fn a_reset_carries_the_rulers_scale_home() {
+        let mut clock = Clock { face: ClockFace::Timer, ruler: 3_000, span: 180_000, ..Clock::default() };
+        clock.sweep_ruler(1_000);
+        assert_eq!(clock.ruler, 0, "the ruler itself is nothing at once");
+        assert!((clock.ruler_value(1_000) - 3.0).abs() < 0.01, "the scale starts where it stood");
+        let half = 1_000 + RULER_REWIND_MS / 2;
+        let mid = clock.ruler_value(half);
+        assert!(mid > 0.0 && mid < 3.0, "and is on its way back, got {mid}");
+        assert!(clock.ruler_sweeping(half), "which asks for a frame at a time");
+        assert!(!clock.ruler_sweeping(1_000 + RULER_REWIND_MS), "the sweep is over at its end");
+        assert_eq!(clock.ruler_value(1_000 + RULER_REWIND_MS), 0.0, "and the scale is at zero");
+        clock.land_ruler(1_000 + RULER_REWIND_MS);
+        assert!(clock.ruler_from.is_none(), "with nothing left asking for frames");
+        assert_eq!(clock.ruler_value(9_000), 0.0, "the scale stays where it landed");
+    }
+
+    /// A finger on the ruler takes it off its way home and counts from where
+    /// the ruler now stands, not from the sweep.
+    #[test]
+    fn a_finger_on_the_ruler_takes_it_off_its_way_home() {
+        let mut clock = Clock { face: ClockFace::Timer, ruler: 3_000, ..Clock::default() };
+        clock.sweep_ruler(0);
+        assert!(clock.ruler_sweeping(1), "the reset has it on its way");
+        clock.drag_ruler(500);
+        assert!(clock.ruler_from.is_none(), "the finger takes it back");
+        assert_eq!(clock.ruler, 500);
+        clock.drag_ruler(500);
+        assert_eq!(clock.ruler, 1_000);
+    }
+
     #[test]
     fn a_timer_that_ends_shows_its_notice_and_its_key_clears_everything() {
         let (f, i) = (fonts(), info());
@@ -649,5 +732,35 @@ mod tests {
         let clock = &app.state.clock;
         assert_eq!((clock.ruler, clock.span, clock.left), (0, 0, 0));
         assert!(clock.left_since.is_none());
+    }
+
+    /// The timer wears the stopwatch's dial from the first frame, bare of its
+    /// hand, and says how a length is set until one is: the short rule under
+    /// the count and the words under it. Once the ruler has set a length the
+    /// pair goes, and a reset brings both back.
+    #[test]
+    fn the_timer_wears_the_dial_and_says_how_it_is_set_until_it_has_been() {
+        let (f, i) = (fonts(), info());
+        let (w, h, ppd) = (1080, 2400, 2.625);
+        let mut app = App::new(Screen::Clock, w, h, ppd);
+        app.state.clock.face = ClockFace::Timer;
+        let (t, m) = (app.theme(), Theme::light(w, h, ppd).m);
+        // The middle of a row `cy` dp down the page.
+        let at = |app: &App, cy: f32| {
+            let fr = anew(app, &f, &i, 0);
+            let k = (m.dp(cy).round() as usize * w as usize + w as usize / 2) * 4;
+            [fr.canvas.data[k], fr.canvas.data[k + 1], fr.canvas.data[k + 2]]
+        };
+        let disc = [t.pal.card.r, t.pal.card.g, t.pal.card.b];
+        let rule = [t.pal.hairline.r, t.pal.hairline.g, t.pal.hairline.b];
+        let page = [t.pal.bg.r, t.pal.bg.g, t.pal.bg.b];
+        assert_eq!(at(&app, crate::pages::DIAL_CY), disc, "the dial is the stopwatch's own face, and no hand on it");
+        assert_eq!(at(&app, crate::pages::RULE_CY), rule, "a new timer says how a length is set");
+        app.state.clock.span = 60_000;
+        app.state.clock.left = 60_000;
+        assert_eq!(at(&app, crate::pages::RULE_CY), page, "with a length on the ruler the rule goes");
+        app.state.clock.span = 0;
+        app.state.clock.left = 0;
+        assert_eq!(at(&app, crate::pages::RULE_CY), rule, "and a reset brings it back");
     }
 }

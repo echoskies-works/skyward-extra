@@ -113,7 +113,9 @@ impl App {
                         clock.paper = 0;
                     }
                     ClockFace::Timer => {
-                        clock.ruler = 0;
+                        // The ruler is carried home rather than put there:
+                        // the marks run back to zero as the hand does.
+                        clock.sweep_ruler(now);
                         clock.span = 0;
                         clock.left = 0;
                         clock.left_since = None;
@@ -127,7 +129,7 @@ impl App {
             Action::TimerDoneOk => {
                 self.hide_timer_done();
                 let clock = &mut self.state.clock;
-                clock.ruler = 0;
+                clock.sweep_ruler(now);
                 clock.span = 0;
                 clock.left = 0;
                 clock.left_since = None;

@@ -1506,7 +1506,10 @@ impl App {
         // reads to the hundredth: the page is told to draw again a frame at
         // a time while the count on it runs, rather than waiting for the
         // fallback below, which is a whole second.
-        let ticking = (self.display_on && self.state.clock.running()).then(|| now + clock::step(&self.state.clock, now));
+        // The ruler's way home from a reset asks for frames of its own: it
+        // is not a count, so `running` does not see it.
+        let busy = self.state.clock.running() || self.state.clock.ruler_sweeping(now);
+        let ticking = (self.display_on && busy).then(|| now + clock::step(&self.state.clock, now));
         [self.toast.as_ref().map(|t| t.1), self.volume_bar, easing, self.idle_due(), held, repeat, blink, darkens, chord, menu, ticking]
             .into_iter()
             .flatten()
@@ -1610,6 +1613,7 @@ impl App {
         // A reset sweep ends on its own: once the hand lands, give its
         // angle back to the count and start fading it to charcoal.
         self.state.clock.settle_hand(now);
+        self.state.clock.land_ruler(now);
         // The clock's counts go on of their own accord: while either goes,
         // the rows the reading is drawn in are drawn again each frame so the
         // reading follows. The hand's own sweep and fade need the same

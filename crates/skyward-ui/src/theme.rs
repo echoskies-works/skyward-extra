@@ -48,6 +48,9 @@ pub struct Palette {
     /// the shadow is whole.
     pub popup: Rgba,
     pub shadow: Rgba,
+    /// The short rules the clock draws to set its count off from what hangs
+    /// under it: a hairline, a step from the page it crosses and no more.
+    pub hairline: Rgba,
 }
 
 /// The status bar battery's inks, partly see-through as the stock status
@@ -280,6 +283,9 @@ const LIGHT: Palette = Palette {
     updown: Rgba::rgb(214, 214, 214),
     popup: Rgba::rgb(255, 255, 255),
     shadow: Rgba::rgb(0, 0, 0).with_alpha(27),
+    // The clock's rules: Smartisan draws them at 230 on a 250 page, so they
+    // hold the same step from this page's 243.
+    hairline: Rgba::rgb(223, 223, 223),
 };
 
 const DARK: Palette = Palette {
@@ -331,6 +337,10 @@ const DARK: Palette = Palette {
     updown: Rgba::rgb(54, 54, 54),
     popup: Rgba::rgb(41, 41, 41),
     shadow: Rgba::rgb(0, 0, 0).with_alpha(77),
+    // The grey the light theme's rule would be on black, written flat: the
+    // clock lays these rules down with `fill_rect`, which overwrites a pixel
+    // rather than mixing it, so a see-through white would come out solid.
+    hairline: Rgba::rgb(30, 30, 30),
 };
 
 // Sampled from the stock「我的设备」page: in light mode the cards are
