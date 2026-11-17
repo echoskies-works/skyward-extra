@@ -6,8 +6,19 @@
 
 use super::*;
 
-/// Where the clock stands down the screen, as a share of its height.
-const LOCK_CLOCK_AT: f32 = 0.21;
+/// Where the clock stands down the screen, as a share of its height. High
+/// enough to leave the middle of the screen to the wallpaper, as the lock's
+/// own system sets it.
+const LOCK_CLOCK_AT: f32 = 0.181;
+/// The clock's size in dp: the figures are the page, so they are set the way
+/// a clock face's are rather than a title's that happens to be large.
+const LOCK_CLOCK_PX: f32 = 104.0;
+/// How far under the clock's middle the day stands, in dp.
+const LOCK_DAY_AT: f32 = 66.0;
+/// Where the words over the swipe stand, as a share of the screen's height:
+/// on the line the lock's own system puts its torch and its camera on, near
+/// enough the foot to sit under a thumb and clear of it.
+const LOCK_WORDS_AT: f32 = 0.872;
 /// How far up a finger drags the lock, as a share of the screen's height,
 /// to put it away: let go short of it, the lock goes back where it was.
 const LOCK_SWIPE: f32 = 0.34;
@@ -93,9 +104,9 @@ impl App {
     /// it clears — shown blurred while the lock stands, it comes back sharp
     /// as the lock is pulled away, rather than snapping from blur to focus
     /// at the last.
-    pub(super) fn compose_lock(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, clock: &str) {
+    pub(super) fn compose_lock(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, clock: &str, today: &str) {
         if self.lock.as_ref().is_some_and(|l| l.sheet.is_none()) {
-            let sheet = self.lock_sheet(f, info, clock);
+            let sheet = self.lock_sheet(f, info, clock, today);
             // The page under the lock, kept soft while the lock stands over
             // it: blurred once here, from what the panel shows, and shown
             // until the lock is gone.
@@ -118,14 +129,15 @@ impl App {
         out.put(sheet, -away);
     }
 
-    /// The lock drawn whole: its own wallpaper, the status bar, the clock
-    /// and the words. The lock's wallpaper read at startup is the ground it
-    /// stands on whatever page it came over; where the ramdisk carries none,
-    /// the desktop's wallpaper stands in, and where neither does, the page
-    /// last shown. The wallpaper is shown as it is, with no veil laid over
-    /// it, and the ink of the status bar, the clock and the words follows
-    /// the wallpaper: light on a dark one, dark on a light one.
-    fn lock_sheet(&self, f: &Fonts, info: &DeviceInfo, clock: &str) -> Canvas {
+    /// The lock drawn whole: its own wallpaper, the status bar, the clock,
+    /// the day under it and the words. The lock's wallpaper read at startup
+    /// is the ground it stands on whatever page it came over; where the
+    /// ramdisk carries none, the desktop's wallpaper stands in, and where
+    /// neither does, the page last shown. The wallpaper is shown as it is,
+    /// with no veil laid over it, and the ink of the status bar, the clock,
+    /// the day and the words follows the wallpaper: light on a dark one, dark
+    /// on a light one.
+    fn lock_sheet(&self, f: &Fonts, info: &DeviceInfo, clock: &str, today: &str) -> Canvas {
         let t = self.theme();
         let m = &t.m;
         let (w, h) = (m.w as f32, m.h as f32);
@@ -150,13 +162,13 @@ impl App {
         // The status bar the lock carries of its own, in the lock's ink over
         // the wallpaper rather than the theme's over a page.
         widgets::status_bar(&mut sheet, &t, f, &self.bar(clock, info), ink, dark);
-        sheet.text_center(&f.title, clock, w / 2.0, h * LOCK_CLOCK_AT, m.dp(78.0), ink);
-        if let Some(battery) = info.battery.as_ref() {
-            let said = format!("{}%", battery.level);
-            sheet.text_center(&f.body, &said, w / 2.0, h * LOCK_CLOCK_AT + m.dp(66.0), m.sub_px, soft);
-        }
+        sheet.text_center(&f.title, clock, w / 2.0, h * LOCK_CLOCK_AT, m.dp(LOCK_CLOCK_PX), ink);
+        // The day under the clock, on the line the battery's level used to
+        // take. The level is in the status bar already, and the day is what
+        // the lock's own system puts under the time.
+        sheet.text_center(&f.body, today, w / 2.0, h * LOCK_CLOCK_AT + m.dp(LOCK_DAY_AT), m.sub_px, soft);
         let said = self.state.lang.pick(["上滑解锁", "上滑解鎖", "Swipe up to open"]);
-        sheet.text_center(&f.label, said, w / 2.0, h - m.dp(88.0), m.sub_px, soft);
+        sheet.text_center(&f.label, said, w / 2.0, h * LOCK_WORDS_AT, m.sub_px, soft);
         sheet
     }
 

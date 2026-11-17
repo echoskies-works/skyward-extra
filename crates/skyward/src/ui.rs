@@ -922,11 +922,6 @@ fn answer(request: Request, fastboot: bool) -> Vec<Effect> {
     }
 }
 
-/// The time of day for the status bar, in the zone the settings chose.
-fn clock(zone: usize) -> Result<String> {
-    Ok(skyward_ui::fmt::clock(unix_now()?, zone))
-}
-
 /// Tell the kernel log how the data partition was mounted, where opening
 /// it mounted it: the check made first, in full where it found something,
 /// and the device it is read through.
@@ -1223,6 +1218,9 @@ struct Pages<'a> {
     backlight: Backlight,
     keeper: Keeper,
     shown_clock: String,
+    /// The day the lock screen names under its clock, in the settings'
+    /// language and zone, kept so a redraw compares against something.
+    shown_date: String,
     /// The page shown first, until it has been told it shows.
     arriving: Option<Incoming>,
     /// The readings are taken again on a thread of their own; those taken
@@ -1501,6 +1499,7 @@ impl<'a> Pages<'a> {
             backlight,
             keeper,
             shown_clock: String::new(),
+            shown_date: String::new(),
             arriving: Some(Incoming::Arrived),
             readings,
             read_at,
@@ -1753,9 +1752,15 @@ impl<'a> Pages<'a> {
                 other => unreachable!("time passing asks for nothing but the motor, not {other:?}"),
             }
         }
-        let time = clock(self.app.state.time_zone)?;
-        if time != self.shown_clock {
+        // The clock and the day the lock screen carries, taken together so
+        // the two lines of it never come from two different moments.
+        let unix = unix_now()?;
+        let zone = self.app.state.time_zone;
+        let time = skyward_ui::fmt::clock(unix, zone);
+        let date = skyward_ui::fmt::lock_date(self.app.state.lang, unix, zone);
+        if time != self.shown_clock || date != self.shown_date {
             self.shown_clock = time;
+            self.shown_date = date;
             self.app.redraw();
         }
         Ok(())
@@ -1823,7 +1828,7 @@ impl<'a> Pages<'a> {
             // A display turned off comes on again with a frame drawn for it.
             if self.app.take_dirty() || !self.surface.is_on() {
                 let t0 = Instant::now();
-                self.app.compose(&mut self.screen, &self.fonts, &self.info, &self.shown_clock, now);
+                self.app.compose(&mut self.screen, &self.fonts, &self.info, &self.shown_clock, &self.shown_date, now);
                 // A display can refuse a frame: one just back from a sleep,
                 // before its driver has resumed, most of all. One refused
                 // frame is not the end of the pages — the panel is left as

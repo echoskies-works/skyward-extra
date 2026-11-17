@@ -17,6 +17,26 @@ impl App {
         self.refresh();
     }
 
+    /// Turn the calculator to the face beside the one shown, the same way
+    /// round: a pull to the left shows the page to the right of the sum.
+    pub(super) fn turn_calc_face(&mut self, onward: bool) {
+        self.state.calc_face = match (self.state.calc_face, onward) {
+            (CalcFace::Sum, true) => CalcFace::Convert,
+            _ => CalcFace::Sum,
+        };
+        self.refresh();
+    }
+
+    /// Turn the player to the face beside the one shown: the songs first,
+    /// the one being played to their right, as the words across its top say.
+    pub(super) fn turn_music_face(&mut self, onward: bool) {
+        self.state.music_face = match (self.state.music_face, onward) {
+            (MusicFace::List, true) => MusicFace::Play,
+            _ => MusicFace::List,
+        };
+        self.refresh();
+    }
+
     pub fn touch(&mut self, ev: Touch, f: &Fonts, now: u64) -> Vec<Effect> {
         self.now = now;
         // A finger on the dark panel lights nothing, as on the phone's own
@@ -201,6 +221,20 @@ impl App {
                             // across its top turn it, and the same way round:
                             // a pull to the left shows the one to the right.
                             self.turn_face(dx < 0.0);
+                            Drag::Face
+                        }
+                        _ if self.screen() == Screen::Calculator && dx.abs() > slop && dx.abs() > dy.abs() => {
+                            // The calculator's two faces answer the same
+                            // way, and keep the same side: the sum first, the
+                            // units page to its right.
+                            self.turn_calc_face(dx < 0.0);
+                            Drag::Face
+                        }
+                        _ if self.screen() == Screen::Music && dx.abs() > slop && dx.abs() > dy.abs() => {
+                            // The player's two faces answer the same way too:
+                            // the songs first, the one being played to their
+                            // right.
+                            self.turn_music_face(dx < 0.0);
                             Drag::Face
                         }
                         _ if dy < -slop && dy.abs() > dx.abs() && y0 > m.h as f32 - m.dp(FOOT_DP) && !self.working() => {
@@ -693,21 +727,21 @@ mod tests {
         let row = app.frame(&f, &i).hits.iter().find(|h| h.action == Action::Open(Screen::Backup)).expect("on the home page").rect;
         // The card between the row's words and its arrow.
         let (x, y) = (W as f32 * 0.6, row.y + row.h / 2.0);
-        app.compose(&mut c, &f, &i, "12:00", 0);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 0);
         let ink = darkest(&c, row);
         assert_eq!(grey_at(&c, x, y), t.pal.card.r);
 
         app.touch(Touch::Down(x, y), &f, 1000);
         let rise = 1000 + ROW_PRESS_DELAY_MS;
         assert_eq!(app.deadline(1000), Some(rise), "nothing moves until the row starts darkening");
-        app.compose(&mut c, &f, &i, "12:00", 1000);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 1000);
         assert!(app.row_art.is_none(), "a finger that may yet scroll does not wait for the row drawn held down");
-        app.compose(&mut c, &f, &i, "12:00", rise);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", rise);
         assert_eq!(grey_at(&c, x, y), t.pal.card.r, "it has not started yet");
-        app.compose(&mut c, &f, &i, "12:00", rise + 30);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", rise + 30);
         let partway = grey_at(&c, x, y);
         assert!(partway < 255 && partway > 225, "darkening after 30 ms: {partway}");
-        app.compose(&mut c, &f, &i, "12:00", 2000);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 2000);
         assert_eq!(grey_at(&c, x, y), 225, "as dark as the stock settings' row held down");
         assert_eq!(darkest(&c, row), ink, "its words keep their ink");
         assert_ne!(app.deadline(2000), Some(0), "held still, nothing moves");
@@ -743,12 +777,12 @@ mod tests {
         let (x, y) = (W as f32 * 0.6, row.y + row.h / 2.0);
         tap_at(&mut app, &f, &i, Action::Toggle(Switch::Vibrate), 1000);
         assert!(!app.state.vibrate, "the tap worked the switch");
-        app.compose(&mut c, &f, &i, "12:00", 1040);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 1040);
         let held = grey_at(&c, x, y);
         assert!(held < t.pal.card.r, "held from the lift: {held}");
         app.tick(1040 + QUICK_TAP_MS + 1000);
         assert!(app.row_press.is_none(), "and let go once faded");
-        app.compose(&mut c, &f, &i, "12:00", 2200);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 2200);
         assert_eq!(grey_at(&c, x, y), t.pal.card.r);
     }
 
@@ -763,18 +797,18 @@ mod tests {
         let (cx, cy, r) = widgets::back_disc(&t);
         let (bx, by) = widgets::back_rect(&t).centre();
         let around = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
-        app.compose(&mut c, &f, &i, "12:00", 5000);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 5000);
         assert_eq!(grey_at(&c, cx + r * 0.6, cy), t.pal.bg.r);
         assert_eq!(darkest(&c, around), 0);
         app.touch(Touch::Down(bx, by), &f, 6000);
-        app.compose(&mut c, &f, &i, "12:00", 6000);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 6000);
         let disc = over(t.pal.button_press, t.pal.bg).r;
         assert_eq!(grey_at(&c, cx + r * 0.6, cy), disc, "darker at once");
         let arrow = darkest(&c, around);
         assert!(arrow.abs_diff(85) <= 2, "the stock `<` held down is 85, not {arrow}");
         // A finger moving off lets it go.
         app.touch(Touch::Move(bx, by + t.m.dp(40.0)), &f, 6050);
-        app.compose(&mut c, &f, &i, "12:00", 6050);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 6050);
         assert_eq!(grey_at(&c, cx + r * 0.6, cy), t.pal.bg.r);
         app.touch(Touch::Up, &f, 6100);
         assert_eq!(app.screen(), Screen::Mount);
@@ -785,7 +819,7 @@ mod tests {
         let (_, button) = widgets::search_layout(&t);
         let (x, y) = button.centre();
         app.touch(Touch::Down(x, y), &f, 1000);
-        app.compose(&mut c, &f, &i, "12:00", 1000);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 1000);
         assert_eq!(grey_at(&c, x, y + button.h * 0.35), over(t.pal.button_press, t.pal.search).r);
         let cross = darkest(&c, button);
         assert!(cross.abs_diff(70) <= 2, "the stock cross held down is 70, not {cross}");
@@ -795,7 +829,7 @@ mod tests {
         let bar = app.frame(&f, &i).hits.iter().find(|h| h.action == Action::Open(Screen::Search)).expect("on the home page").rect;
         let (x, y) = (bar.x + bar.w * 0.8, bar.y + bar.h / 2.0);
         app.touch(Touch::Down(x, y), &f, 1000);
-        app.compose(&mut c, &f, &i, "12:00", 1000);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 1000);
         assert_eq!(grey_at(&c, x, y), over(t.pal.button_press, t.pal.search).r);
     }
 

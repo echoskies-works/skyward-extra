@@ -164,7 +164,7 @@ impl App {
     /// Draw what the panel shows now: the page, the charging screen over it
     /// while a cable has just gone in, both as dark as the content stands
     /// as the panel goes off or comes up.
-    pub fn compose(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, clock: &str, now: u64) {
+    pub fn compose(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, clock: &str, today: &str, now: u64) {
         self.now = now;
         let charge = self.charging.as_ref().map_or(0.0, |c| c.shown.level(now));
         if charge < 1.0 {
@@ -177,7 +177,7 @@ impl App {
         // The lock comes over the page, the charging screen and the tasks:
         // nothing any of them puts over another comes over the lock, and the
         // page under it is left as it was.
-        self.compose_lock(out, f, info, clock);
+        self.compose_lock(out, f, info, clock, today);
         // The charging screen comes over the lock: a cable in lights the
         // panel to show the level, and the lock is there under it for once
         // that is put away, as the phone's own system does.
@@ -824,7 +824,7 @@ mod tests {
     fn a_page_at_rest_draws_the_rows_below_the_screen_a_band_at_a_time() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Settings, W, H, PPD);
-        app.compose(&mut Canvas::new(W, H), &f, &i, "12:00", 0);
+        app.compose(&mut Canvas::new(W, H), &f, &i, "12:00", "11月16日 周一", 0);
         assert_eq!(app.frame.as_ref().unwrap().canvas.held(), 0..H, "the page shown has the rows on screen drawn");
         let mut bands = 1;
         while app.draw_ahead(&f, &i) {
@@ -842,7 +842,7 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Search, W, H, PPD);
         let mut out = Canvas::new(W, H);
-        app.compose(&mut out, &f, &i, "12:00", 0);
+        app.compose(&mut out, &f, &i, "12:00", "11月16日 周一", 0);
         let anew = |app: &App| {
             let t = app.theme();
             pages::render(Screen::Search, &Ctx { t: &t, f: &f, info: &i, state: &app.state, term: None, band: None, now: 0, wallpaper: app.wallpaper.as_ref() })
@@ -851,10 +851,10 @@ mod tests {
             let (x, y) = spot(&mut app, &f, &i, Action::Type(cap));
             app.touch(Touch::Down(x, y), &f, 0);
             assert!(app.frame.is_some() && !app.stale.is_empty() || cap == Cap::Shift, "{cap:?}: the key held is drawn again on its own");
-            app.compose(&mut out, &f, &i, "12:00", 0);
+            app.compose(&mut out, &f, &i, "12:00", "11月16日 周一", 0);
             assert!(app.frame.as_ref().unwrap().canvas.data == anew(&app).canvas.data, "{cap:?} held down");
             app.touch(Touch::Up, &f, 0);
-            app.compose(&mut out, &f, &i, "12:00", 0);
+            app.compose(&mut out, &f, &i, "12:00", "11月16日 周一", 0);
             let (drawn, fresh) = (app.frame.as_ref().unwrap(), anew(&app));
             assert!(drawn.canvas.data == fresh.canvas.data, "{cap:?} typed");
             assert_eq!(drawn.hits.iter().map(|h| h.action).collect::<Vec<_>>(), fresh.hits.iter().map(|h| h.action).collect::<Vec<_>>(), "{cap:?} typed");
@@ -921,7 +921,7 @@ mod tests {
         let mut app = opened(Screen::Search, &f, &i);
         let mut screen = Canvas::new(W, H);
         let mut shows = |app: &mut App, now: u64| {
-            app.compose(&mut screen, &f, &i, "12:00", now);
+            app.compose(&mut screen, &f, &i, "12:00", "11月16日 周一", now);
             app.caret_shown
         };
         assert!(shows(&mut app, 1000), "it comes up whole on the page");
@@ -955,30 +955,30 @@ mod tests {
         let (home, field) = (m.content_top, widgets::search_layout(&t).0.y);
         // The device card under the home page's bar.
         let card = m.content_top + m.search_h + m.after_search + m.dp(20.0);
-        app.compose(&mut screen, &f, &i, "12:00", 0);
+        app.compose(&mut screen, &f, &i, "12:00", "11月16日 周一", 0);
         assert_eq!(grey(&screen, card), t.pal.card.r);
 
         tap_at(&mut app, &f, &i, Action::Open(Screen::Search), 1000);
         assert_eq!(app.screen(), Screen::Search);
         assert_eq!(app.deadline(1000), Some(0), "it moves frame by frame");
-        app.compose(&mut screen, &f, &i, "12:00", 1067);
+        app.compose(&mut screen, &f, &i, "12:00", "11月16日 周一", 1067);
         let along = crate::motion::settle(67, MORPH_PERIOD);
         let expected = home + (field - home) * along;
         let at = top(&screen).expect("the bar is on screen");
         assert!((at - expected).abs() <= 2.0, "up {along} of the way after 67 ms: at {at}, not {expected}");
         assert_eq!(grey(&screen, card), t.pal.bg.r, "the home page's cards go at once");
-        app.compose(&mut screen, &f, &i, "12:00", 2500);
+        app.compose(&mut screen, &f, &i, "12:00", "11月16日 周一", 2500);
         assert!(app.morph.is_none(), "settled, the search page shows as itself");
         assert_eq!(top(&screen), Some(field.ceil()));
 
         tap_at(&mut app, &f, &i, Action::CloseSearch, 3000);
         assert_eq!(app.screen(), Screen::Home);
-        app.compose(&mut screen, &f, &i, "12:00", 3067);
+        app.compose(&mut screen, &f, &i, "12:00", "11月16日 周一", 3067);
         let expected = field + (home - field) * along;
         let at = top(&screen).expect("the bar is on screen");
         assert!((at - expected).abs() <= 2.0, "down {along} of the way after 67 ms: at {at}, not {expected}");
         assert_eq!(grey(&screen, card + (at - home)), t.pal.card.r, "the cards come down under the bar");
-        app.compose(&mut screen, &f, &i, "12:00", 4500);
+        app.compose(&mut screen, &f, &i, "12:00", "11月16日 周一", 4500);
         assert!(app.morph.is_none());
         assert_eq!(top(&screen), Some(home.ceil()));
     }

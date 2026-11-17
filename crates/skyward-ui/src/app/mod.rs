@@ -49,6 +49,7 @@ mod keys;
 mod lock;
 mod manager;
 mod mount;
+mod music;
 mod nav;
 mod power;
 mod prefs;
@@ -76,6 +77,7 @@ pub use frame::*;
 pub use install::*;
 pub use manager::*;
 pub use mount::*;
+pub use music::*;
 pub use prefs::*;
 pub use reboot::*;
 pub use relabel::*;
@@ -99,6 +101,9 @@ pub enum Screen {
     /// The clock the desktop opens: the time counted up and the time counted
     /// down, one face at a time, switched by the bar at the foot of the page.
     Clock,
+    /// The player the desktop opens: a page standing empty while nothing
+    /// comes out of it yet, rather than an app that stops the system.
+    Music,
     Home,
     Settings,
     /// Sound, ring and wallpaper picked the way the user likes them: a
@@ -319,6 +324,10 @@ pub enum Action {
     Type(Cap),
     /// A key of the calculator.
     Calc(CalcKey),
+    /// Show this face of the calculator: the sum, or the units page.
+    CalcFace(CalcFace),
+    /// Show this face of the player: the songs, or the one being played.
+    MusicFace(MusicFace),
     /// Show this face of the clock: the stopwatch, or the timer.
     ClockFace(ClockFace),
     /// Start the face shown counting, or stop it where it is.

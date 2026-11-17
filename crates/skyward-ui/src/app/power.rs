@@ -566,7 +566,7 @@ mod tests {
         app.tick(365);
         app.plugged(1000, true);
         let mut c = Canvas::new(W, H);
-        app.compose(&mut c, &f, &i, "12:00", 3000);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 3000);
         let px = |x: u32, y: u32| {
             let k = ((y * W + x) * 4) as usize;
             [c.data[k], c.data[k + 1], c.data[k + 2]]
@@ -613,11 +613,11 @@ mod tests {
         press(&mut app, Key::Power, 1000);
         let mut c = Canvas::new(W, H);
         let light = |c: &Canvas| c.data.as_chunks::<4>().0.iter().map(|p| p[0] as u64 + p[1] as u64 + p[2] as u64).sum::<u64>();
-        app.compose(&mut c, &f, &i, "12:00", 1000);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 1000);
         let first = light(&c);
-        app.compose(&mut c, &f, &i, "12:00", 1260);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 1260);
         let halfway = light(&c);
-        app.compose(&mut c, &f, &i, "12:00", 1520);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 1520);
         let full = light(&c);
         assert_eq!(first, 0, "black as the panel lights");
         assert!(halfway > full / 2 && halfway < full, "{halfway} of {full} halfway through");

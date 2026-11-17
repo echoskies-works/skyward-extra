@@ -425,18 +425,18 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
         let mut c = Canvas::new(W, H);
-        app.compose(&mut c, &f, &i, "12:00", 0);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 0);
         let home = shot(&c);
         tap_at(&mut app, &f, &i, Action::Open(Screen::Mount), 1000);
         assert_eq!(app.screen(), Screen::Mount);
         assert_eq!(app.deadline(1000), Some(0), "it slides frame by frame");
         // The slide sets off with its first frame, the page opened still
         // past the right edge.
-        app.compose(&mut c, &f, &i, "12:00", 1000);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 1000);
         let first = shot(&c);
-        app.compose(&mut c, &f, &i, "12:00", 1050);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 1050);
         let mid = shot(&c);
-        app.compose(&mut c, &f, &i, "12:00", 3000);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 3000);
         assert!(app.turn.is_none(), "come to rest, the page left is let go");
         assert_ne!(app.deadline(3000), Some(0));
         let mount = shot(&c);
@@ -449,11 +449,11 @@ mod tests {
 
         tap_back(&mut app, &f, &i, 4000);
         assert_eq!(app.screen(), Screen::Home);
-        app.compose(&mut c, &f, &i, "12:00", 4000);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 4000);
         let first = shot(&c);
-        app.compose(&mut c, &f, &i, "12:00", 4060);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 4060);
         let mid = shot(&c);
-        app.compose(&mut c, &f, &i, "12:00", 6000);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 6000);
         assert!(app.turn.is_none());
         let home = shot(&c);
         for y in [H / 3, H / 2, H - 200] {
@@ -468,13 +468,13 @@ mod tests {
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.set_screen_corners(140.0);
         let mut c = Canvas::new(W, H);
-        app.compose(&mut c, &f, &i, "12:00", 0);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 0);
         let home = shot(&c);
         tap_at(&mut app, &f, &i, Action::Open(Screen::Mount), 1000);
-        app.compose(&mut c, &f, &i, "12:00", 1000);
-        app.compose(&mut c, &f, &i, "12:00", 1050);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 1000);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 1050);
         let mid = shot(&c);
-        app.compose(&mut c, &f, &i, "12:00", 3000);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 3000);
         let mount = shot(&c);
         let (front, behind, keep) = slid(false, 50);
         let at = |c: &Canvas, x: u32, y: u32| c.data[((y * W + x) * 4) as usize] as u32;
@@ -489,9 +489,9 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
         let mut c = Canvas::new(W, H);
-        app.compose(&mut c, &f, &i, "12:00", 0);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 0);
         tap_at(&mut app, &f, &i, Action::Open(Screen::Mount), 1000);
-        app.compose(&mut c, &f, &i, "12:00", 1000);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 1000);
         app.touch(Touch::Down(W as f32 / 2.0, H as f32 / 2.0), &f, 1030);
         assert!(app.turn.is_none(), "a finger brings it to rest");
         app.touch(Touch::Up, &f, 1060);

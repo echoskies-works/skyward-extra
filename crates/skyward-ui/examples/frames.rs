@@ -256,7 +256,7 @@ impl<'a> Panel<'a> {
         self.app.tick(now);
         if self.app.take_dirty() {
             let t0 = Instant::now();
-            self.app.compose(&mut self.out, self.f, self.i, "12:00", now);
+            self.app.compose(&mut self.out, self.f, self.i, "12:00", "11月16日 周一", now);
             self.ms.push(t0.elapsed().as_secs_f64() * 1000.0);
         }
     }

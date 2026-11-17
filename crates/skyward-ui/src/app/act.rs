@@ -44,6 +44,17 @@ impl App {
                 self.state.calc.press(key);
                 self.refresh();
             }
+            // The calculator keeps one face at a time the way the clock does,
+            // and the one shown takes the page from the top.
+            Action::CalcFace(face) => {
+                self.state.calc_face = face;
+                self.refresh();
+            }
+            // The player keeps one face at a time the same way.
+            Action::MusicFace(face) => {
+                self.state.music_face = face;
+                self.refresh();
+            }
             // The clock keeps one face at a time; the one shown takes the
             // page from the top, as a page opened afresh does.
             Action::ClockFace(face) => {
@@ -977,11 +988,12 @@ mod tests {
     fn an_icon_with_nothing_behind_it_stops_the_system_and_names_itself() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Desktop, 1080, 2400, 3.0);
-        // The three icons standing in for apps that are not built yet answer
-        // with the one code for all of them and their own word: the code says
-        // what kind of stop it was, the word says which app. Tapping one must
-        // not open anything first — there is nothing to open.
-        for (tag, name) in [("music", "音乐"), ("browser", "浏览器"), ("tasks", "任务管理器")] {
+        // The two icons standing in for apps that are not built yet answer
+        // with the one code for both and their own word: the code says what
+        // kind of stop it was, the word says which app. Tapping one must not
+        // open anything first — there is nothing to open. The player used to
+        // answer this way too and now stands a page of its own.
+        for (tag, name) in [("browser", "浏览器"), ("tasks", "任务管理器")] {
             let fx = tap(&mut app, &f, &i, Action::NotReady(tag));
             assert!(
                 matches!(fx.as_slice(), [Effect::Stop { code: NOT_READY, reason: Some(said) }] if *said == tag),
@@ -998,6 +1010,6 @@ mod tests {
         // crash screen, which is the one place it is needed.
         let mut tags = crate::pages::not_built();
         tags.sort();
-        assert_eq!(tags, ["browser", "music", "tasks"]);
+        assert_eq!(tags, ["browser", "tasks"]);
     }
 }

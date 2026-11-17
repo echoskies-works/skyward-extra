@@ -129,13 +129,13 @@ mod tests {
         let (top, bottom) = ((m.title_top - m.dp(14.0)) as u32, fold.bar.y as u32);
         let title = |screen: &Canvas| screen.crop(0, top, W, bottom - top).data.clone();
 
-        app.compose(&mut screen, &f, &i, "12:00", 0);
+        app.compose(&mut screen, &f, &i, "12:00", "11月16日 周一", 0);
         let (whole, still, first) = (bar(&screen), title(&screen), card(&screen));
         assert_eq!((whole[0], *whole.last().expect("the bar shows")), (fold.bar.y.ceil() as u32, (fold.bar.y + fold.bar.h).floor() as u32 - 1));
 
         let half = (fold.bar.h / 2.0).round();
         scroll_to(&mut app, &f, half, 1000);
-        app.compose(&mut screen, &f, &i, "12:00", 1800);
+        app.compose(&mut screen, &f, &i, "12:00", "11月16日 周一", 1800);
         let rows = bar(&screen);
         assert_eq!(rows[0], whole[0], "its top stays");
         assert_eq!(*rows.last().expect("half the bar shows"), (fold.bar.y + fold.bar.h - half).floor() as u32 - 1, "its foot rises with the page");
@@ -143,13 +143,13 @@ mod tests {
         assert!(title(&screen) == still, "the title holds still");
 
         scroll_to(&mut app, &f, fold.span, 3000);
-        app.compose(&mut screen, &f, &i, "12:00", 3800);
+        app.compose(&mut screen, &f, &i, "12:00", "11月16日 周一", 3800);
         assert!(bar(&screen).is_empty(), "folded away");
         assert_eq!(card(&screen), first - fold.span.round() as u32, "the gap under it closed");
         assert!(title(&screen) == still, "the title holds still till then");
 
         scroll_to(&mut app, &f, fold.span + m.dp(10.0), 5000);
-        app.compose(&mut screen, &f, &i, "12:00", 5800);
+        app.compose(&mut screen, &f, &i, "12:00", "11月16日 周一", 5800);
         assert!(title(&screen) != still, "then it goes up with the page");
         assert!(!app.title.on, "the bar's title waits for the large one to fade");
         scroll_to(&mut app, &f, fold.span + m.dp(TITLE_FADE_DP) + 2.0, 7000);
@@ -510,7 +510,7 @@ mod tests {
         assert_eq!(app.screen(), Screen::Settings);
         let mut c = Canvas::new(W, H);
         app.tick(4008);
-        app.compose(&mut c, &f, &i, "12:00", 4008);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 4008);
         assert_eq!(app.top().1, end, "the page is where it was left");
         assert_eq!((app.title.level(4008), app.bar.level(4008)), (1.0, 1.0), "its bar is up from the first frame");
     }

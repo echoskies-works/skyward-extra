@@ -1,6 +1,17 @@
 //! The calculator the desktop opens: the sum it holds and the keys that
 //! write it. The page that shows it is in `pages`.
 
+/// The two faces of the calculator: the sum being worked, and the page that
+/// converts units. The words across the top show one at a time, and a finger
+/// dragged level across the page turns to the other, as the clock's does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CalcFace {
+    /// The sum and the keys that write it.
+    Sum,
+    /// The units page: named, and not built.
+    Convert,
+}
+
 /// The four sums the calculator works.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CalcOp {

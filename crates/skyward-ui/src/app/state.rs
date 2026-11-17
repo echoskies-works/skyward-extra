@@ -199,6 +199,13 @@ pub struct State {
     pub traffic: Traffic,
     /// The calculator's sum, as the keys last left it.
     pub calc: Calc,
+    /// Which of the calculator's two faces the page shows. Kept apart from
+    /// the sum itself because the keys rewrite the sum whole: clearing it
+    /// puts the figures back to nothing and must not turn the page.
+    pub calc_face: CalcFace,
+    /// Which of the player's two faces the page shows: the songs, or the one
+    /// being played.
+    pub music_face: MusicFace,
     /// The clock's own state: which of its two faces the page shows.
     pub clock: Clock,
     /// The wallpapers' names in the two languages the pages speak, read
@@ -300,6 +307,8 @@ impl Default for State {
             skyward_job: None,
             traffic: Traffic::default(),
             calc: Calc::default(),
+            calc_face: CalcFace::Sum,
+            music_face: MusicFace::List,
             clock: Clock::default(),
             wallpaper_names: skyward_config::WallpaperNames::default(),
             sound_names: skyward_config::SoundNames::default(),

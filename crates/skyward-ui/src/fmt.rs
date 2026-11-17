@@ -4,7 +4,7 @@ use crate::app::{
 };
 use crate::lang::{Lang, Text};
 use crate::tr;
-use jiff::civil::DateTime;
+use jiff::civil::{DateTime, Weekday};
 use jiff::tz::TimeZone;
 use jiff::Timestamp;
 use skyward_info::{Battery, Charge, Cpu, PatchLevel, Storage};
@@ -822,6 +822,29 @@ pub fn file_size(bytes: u64) -> String {
         _ => format!("{v:.2}"),
     };
     format!("{n} {}", UNITS[unit])
+}
+
+/// The day the lock screen names under its clock, in the zone at `zone` in
+/// [`TIME_ZONES`]: `11月16日 周一`, `November 16, Monday`. Shorter than
+/// [`date`] in the year — a lock screen's reader knows which year it is —
+/// and carrying the weekday, which is what that line is read for.
+pub fn lock_date(l: Lang, unix: i64, zone: usize) -> String {
+    let d = local(unix, zone);
+    let (month, day) = (d.month(), d.day());
+    let (hans, hant, en) = match d.weekday() {
+        Weekday::Monday => ("周一", "週一", "Monday"),
+        Weekday::Tuesday => ("周二", "週二", "Tuesday"),
+        Weekday::Wednesday => ("周三", "週三", "Wednesday"),
+        Weekday::Thursday => ("周四", "週四", "Thursday"),
+        Weekday::Friday => ("周五", "週五", "Friday"),
+        Weekday::Saturday => ("周六", "週六", "Saturday"),
+        Weekday::Sunday => ("周日", "週日", "Sunday"),
+    };
+    match l {
+        Lang::Hans => format!("{month}月{day}日 {hans}"),
+        Lang::Hant => format!("{month}月{day}日 {hant}"),
+        Lang::En => format!("{} {day}, {en}", MONTHS[(month - 1) as usize]),
+    }
 }
 
 /// A Unix time in the zone at `zone` in [`TIME_ZONES`], to the minute:

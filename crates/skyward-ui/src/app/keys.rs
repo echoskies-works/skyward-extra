@@ -599,7 +599,7 @@ mod tests {
         app.frame(&f, &i);
         light_on(&mut app, &f, &i, Stop::Hit(Action::Open(Screen::About)));
         let mut c = Canvas::new(W, H);
-        app.compose(&mut c, &f, &i, "12:00", 0);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 0);
         assert!(app.light(0.0).is_some(), "lit while the keys work the page");
         app.touch(Touch::Down(W as f32 / 2.0, 200.0), &f, 0);
         app.touch(Touch::Up, &f, 0);

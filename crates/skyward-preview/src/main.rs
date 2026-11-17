@@ -11,11 +11,13 @@ use skyward_net::wlan::{Bands, Joined, Link, Network, Power, Stage as Joining, T
 use skyward_startup::{Action as StartupAction, Crash as StartupCrash, Lang as StartupLang, Reason as StartupReason, View as StartupView};
 use skyward_systems::{Named, Other, Overview, Who};
 use skyward_ui::app::{
-    Action, Adding, App, Asked, BackupAt, BackupEnd, BackupEntry, BackupJob, BackupRefusal, Choice, Clip, ClockFace, Damage, Data,
+    Action, Adding, App, Asked, BackupAt, BackupEnd, BackupEntry, BackupJob, BackupRefusal, CalcFace, Choice, Clip, ClockFace, Damage,
+    Data,
     DownloadEnd,
     DownloadJob, EraseStop, Field, FileKind, FileOp, FileRow, FileTask, FsAction, FsRow, Have, Held, Install, ItemEnd, JobEnd, Key, Keys,
     Lap,
-    MountFailure, MountRow, Part, PartKind, PartStop, Pick, Place, Screen, SkywardEnd, SkywardJob, SkywardStage, Source, SystemChoice,
+    MountFailure, MountRow, MusicFace, Part, PartKind, PartStop, Pick, Place, Screen, SkywardEnd, SkywardJob, SkywardStage, Source,
+    SystemChoice,
     SystemsWork, TermEnd, Touch, UsbDrive, UsbLink, SCREEN_OFF,
 };
 use skyward_ui::widgets::{self, Bar, Bolt, Cap, Layer};
@@ -339,6 +341,29 @@ fn main() -> Result<()> {
         println!("wrote {}", path.display());
     }
 
+    // The player's two faces, neither with anything behind it yet: the songs
+    // as a list that holds none, and the one being played with the cover, the
+    // name and the keys a song would fill.
+    let music: [(&str, MusicFace); 2] = [("00-09-music-list-light", MusicFace::List), ("00-09-music-play-light", MusicFace::Play)];
+    for (name, face) in music {
+        let mut app = opened(Screen::Music, w, h, ppd);
+        app.state.music_face = face;
+        let mut c = Canvas::new(w, h);
+        app.compose(&mut c, &fonts, &info, "21:40", "11月16日 周一", 0);
+        let path = out.join(format!("{name}.png"));
+        write_png(&path, &c)?;
+        println!("wrote {}", path.display());
+    }
+
+    // The calculator's other face: the units page, named and not built.
+    let mut app = opened(Screen::Calculator, w, h, ppd);
+    app.state.calc_face = CalcFace::Convert;
+    let mut c = Canvas::new(w, h);
+    app.compose(&mut c, &fonts, &info, "21:40", "11月16日 周一", 0);
+    let path = out.join("00-02-calculator-convert-light.png");
+    write_png(&path, &c)?;
+    println!("wrote {}", path.display());
+
     // The lock screen, the page under it kept soft: over a page of the
     // recovery, in both themes, since the veil lightens a light page and
     // darkens a dark one. Each is composed twice — once for the picture the
@@ -354,10 +379,10 @@ fn main() -> Result<()> {
         app.state.dark = dark;
         app.state.data = Data::Open;
         let mut behind = Canvas::new(w, h);
-        app.compose(&mut behind, &fonts, &info, "21:40", 0);
+        app.compose(&mut behind, &fonts, &info, "21:40", "11月16日 周一", 0);
         app.lock_now();
         let mut shot = Canvas::new(w, h);
-        app.compose(&mut shot, &fonts, &info, "21:40", 0);
+        app.compose(&mut shot, &fonts, &info, "21:40", "11月16日 周一", 0);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &shot)?;
         println!("wrote {}", path.display());
@@ -389,7 +414,7 @@ fn main() -> Result<()> {
         app.state.data = Data::Open;
         app.state.dark = true;
         let mut behind = Canvas::new(w, h);
-        app.compose(&mut behind, &fonts, &info, "21:40", 0);
+        app.compose(&mut behind, &fonts, &info, "21:40", "11月16日 周一", 0);
         app.lock_now();
         let m = app.theme().m;
         let foot = m.h as f32 - m.dp(24.0) + 2.0;
@@ -399,7 +424,7 @@ fn main() -> Result<()> {
         app.touch(Touch::Down(600.0, foot), &fonts, 0);
         app.touch(Touch::Move(600.0, foot - by), &fonts, 200);
         let mut shot = Canvas::new(w, h);
-        app.compose(&mut shot, &fonts, &info, "21:40", 0);
+        app.compose(&mut shot, &fonts, &info, "21:40", "11月16日 周一", 0);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &shot)?;
         println!("wrote {}", path.display());
@@ -1450,7 +1475,7 @@ fn main() -> Result<()> {
             }
             app.tick(now);
             let mut c = Canvas::new(w, h);
-            app.compose(&mut c, &fonts, &info, CLOCK, now);
+            app.compose(&mut c, &fonts, &info, CLOCK, "11月16日 周一", now);
             let path = out.join(format!("{name}.png"));
             write_png(&path, &c)?;
             println!("wrote {}", path.display());
@@ -1575,7 +1600,7 @@ fn frames(app: &mut App, f: &Fonts, info: &DeviceInfo, from: u64, to: u64) {
     let mut c = Canvas::new(t.m.w, t.m.h);
     for ms in (from..=to).step_by(8) {
         app.tick(ms);
-        app.compose(&mut c, f, info, CLOCK, ms);
+        app.compose(&mut c, f, info, CLOCK, "11月16日 周一", ms);
     }
 }
 

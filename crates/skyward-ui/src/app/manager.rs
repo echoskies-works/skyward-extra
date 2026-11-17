@@ -635,9 +635,9 @@ mod tests {
         let mut app = in_sdcard(&f, &i);
         app.file_job_started(FileTask::Copy { path: "/sdcard/a.zip".into(), into: "/tmp".into() });
         let mut c = Canvas::new(W, H);
-        app.compose(&mut c, &f, &i, "12:00", 0);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 0);
         app.file_job_ended(JobEnd::Stopped, 0);
-        app.compose(&mut c, &f, &i, "12:00", 16);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 16);
         assert_eq!(app.titles.as_ref().map(|((title, _), _, _)| *title), Some("复制未完成"));
     }
 
@@ -659,10 +659,10 @@ mod tests {
         let rows = app.frame(&f, &i).rows.as_ref().expect("the entries are listed").count();
         assert_eq!(rows, 5000, "every entry has its row");
         let mut c = Canvas::new(W, H);
-        app.compose(&mut c, &f, &i, "12:00", 0);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 0);
         let end = app.max_scroll();
         scroll_to(&mut app, &f, end, 1000);
-        app.compose(&mut c, &f, &i, "12:00", 2000);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 2000);
         assert!(app.drawn.len() < 40, "only the rows near the screen are kept drawn: {}", app.drawn.len());
         assert!(app.drawn.iter().any(|(k, _)| *k == 4999), "the last row shows");
         tap_at(&mut app, &f, &i, Action::OpenEntry(4999), 3000);
@@ -706,13 +706,13 @@ mod tests {
         tap_at(&mut app, &f, &i, Action::OpenEntry(36), 3000);
         app.set_files("/dir036".into(), Ok(vec![entry("a", FileKind::File)]), LISTED);
         app.tick(3008);
-        app.compose(&mut c, &f, &i, "12:00", 3008);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 3008);
         assert_eq!((app.title.level(3008), app.bar.level(3008)), (0.0, 0.0), "a folder opened at its top has only its large title");
         app.tick(4008);
         assert_eq!(app.key(Key::Back, 4100), vec![Effect::ReadDir("/".into())]);
         app.set_files("/".into(), Ok(folders), LISTED);
         app.tick(4108);
-        app.compose(&mut c, &f, &i, "12:00", 4108);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 4108);
         assert_eq!((app.title.level(4108), app.bar.level(4108)), (1.0, 1.0), "back up, the list is under the bar from the first frame");
         assert_ne!(app.deadline(4108), Some(0), "nothing eases in after it");
     }
@@ -730,7 +730,7 @@ mod tests {
         let (_, y) = spot(&mut app, &f, &i, Action::OpenAncestor(0));
         assert!(y > widgets::bar_bottom(&t) && y < widgets::bar_bottom(&t) + t.m.dp(51.0), "the capsules stay under the bar: {y}");
         let mut c = Canvas::new(W, H);
-        app.compose(&mut c, &f, &i, "12:00", 2000);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 2000);
         let (x, _) = spot(&mut app, &f, &i, Action::OpenAncestor(0));
         let px = |c: &Canvas, x: f32, y: f32| c.data[(y as usize * W as usize + x as usize) * 4..][..3].to_vec();
         assert_eq!(px(&c, x - t.m.dp(20.0), y), vec![243, 244, 247], "the root's capsule shows over the list");

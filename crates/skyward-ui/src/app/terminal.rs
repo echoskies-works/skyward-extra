@@ -165,7 +165,7 @@ mod tests {
         let mut c = Canvas::new(W, H);
         let mut pixel = |app: &mut App, now: u64| {
             app.tick(now);
-            app.compose(&mut c, &f, &i, "12:00", now);
+            app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", now);
             c.data[k..k + 4].to_vec()
         };
         let (x, y) = widgets::button_rect(&t).centre();

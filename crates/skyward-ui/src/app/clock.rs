@@ -151,11 +151,11 @@ mod tests {
         let mut app = App::new(Screen::Clock, W, H, PPD);
         let start = 1_000;
         app.state.clock.stop_since = Some(start);
-        app.compose(&mut Canvas::new(W, H), &f, &i, "12:00", start);
+        app.compose(&mut Canvas::new(W, H), &f, &i, "12:00", "11月16日 周一", start);
         // A moment of the count later, the page kept is the page as it now
         // stands: the reading has to follow the count.
         app.tick(start + 500);
-        app.compose(&mut Canvas::new(W, H), &f, &i, "12:00", start + 500);
+        app.compose(&mut Canvas::new(W, H), &f, &i, "12:00", "11月16日 周一", start + 500);
         let kept = &app.frame.as_ref().expect("composed").canvas;
         assert!(kept.data == anew(&app, &f, &i, start + 500).canvas.data, "the reading follows the count");
     }
@@ -167,9 +167,9 @@ mod tests {
         let start = 1_000;
         app.state.clock.face = ClockFace::Timer;
         app.state.clock.left_since = Some(start);
-        app.compose(&mut Canvas::new(W, H), &f, &i, "12:00", start);
+        app.compose(&mut Canvas::new(W, H), &f, &i, "12:00", "11月16日 周一", start);
         app.tick(start + 1_200);
-        app.compose(&mut Canvas::new(W, H), &f, &i, "12:00", start + 1_200);
+        app.compose(&mut Canvas::new(W, H), &f, &i, "12:00", "11月16日 周一", start + 1_200);
         let kept = &app.frame.as_ref().expect("composed").canvas;
         assert!(kept.data == anew(&app, &f, &i, start + 1_200).canvas.data, "the reading runs down");
     }

@@ -1,8 +1,9 @@
 use crate::app::{
-    Action, BackupAt, BackupEnd, BackupJob, CalcKey, CalcOp, Check, ClashChoice, ClockFace, Confirm, Damage, Data, Dock,
+    Action, BackupAt, BackupEnd, BackupJob, CalcFace, CalcKey, CalcOp, Check, ClashChoice, ClockFace, Confirm, Damage, Data, Dock,
     DownloadEnd,
     EraseStop, Field, FileKind,
-    FileOp, FileTask, Fold, Folder, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, Pick, Place, Rows, Screen,
+    FileOp, FileTask, Fold, Folder, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, MusicFace, Pick, Place, Rows,
+    Screen,
     SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, Switch, SystemsWork, Target, UsbDrive, UsbLink, Wipe, ADDABLE,
     BACKUP_PARTS, DATA_ERASED, DATA_PARTITION, DOWNLOADS, FASTBOOT_CHOICES, SCREEN_OFF, TARGETS, TIME_ZONES, USB_DRIVE_UNREADABLE,
     USB_DRIVE_WANTED, WIPES, installs, starting,
@@ -73,6 +74,7 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::Desktop => desktop(cx),
         Screen::Calculator => calculator(cx),
         Screen::Clock => clock(cx),
+        Screen::Music => music(cx),
         Screen::Home => home(cx),
         Screen::Settings => settings(cx),
         Screen::Personalization => personalization(cx),
@@ -276,16 +278,17 @@ const DESKTOP_APPS: [DeskApp; 7] = [
         color: Rgba::rgb(0x67, 0x6e, 0x7a),
         opens: Opens::Page(Screen::Calculator),
     },
-    // The three below are named and drawn, but there is nothing behind them
-    // yet: the player, the browser and the tasks page are still to come. A
-    // touch on one stops the system with the code for an app that is not
-    // built, so the icon answers rather than doing nothing — and the panel
-    // that catches the stop says which of the three it was, in words.
+    // The player stands a page of its own, empty for now: it opens rather
+    // than stopping the system, so the way in is settled before there is
+    // anything to hear. The browser and the tasks page are still nothing but
+    // their icons, and a touch on either stops the system with the code for
+    // an app that is not built, so the icon answers rather than doing
+    // nothing — the panel that catches the stop says which it was, in words.
     DeskApp {
         name: ["音乐", "音樂", "Music"],
         icon: Icon::Music,
         color: Rgba::rgb(0xf2, 0x6b, 0x3a),
-        opens: Opens::NotYet("music"),
+        opens: Opens::Page(Screen::Music),
     },
     DeskApp {
         name: ["浏览器", "瀏覽器", "Browser"],
@@ -435,6 +438,97 @@ pub fn desktop(cx: &Ctx) -> Frame {
     Frame { back: false, header: false, bg: DESKTOP_BG, ..Frame::new(t, c, out, l.pick(DESKTOP_TITLE), 0.0) }
 }
 
+/// The player's two faces, in the order it names them across its top: the
+/// songs, and the one being played.
+const MUSIC_FACES: [(MusicFace, Text); 2] = [(MusicFace::List, ["列表", "清單", "Songs"]), (MusicFace::Play, ["播放", "播放", "Playing"])];
+
+/// The player the desktop opens: the songs as a list, and the one being
+/// played with its cover, its name and the controls that play it. Neither
+/// face has anything behind it yet — there are no songs and nothing comes out
+/// of the speaker — so both say where they stand rather than standing empty.
+///
+/// It keeps the shape the clock and the calculator take: the two words
+/// across the top, no `<` and no large title, and a finger dragged level
+/// across the page turning to the face beside the one shown.
+pub fn music(cx: &Ctx) -> Frame {
+    let (t, f, l) = (cx.t, cx.f, cx.state.lang);
+    let m = &t.m;
+    let mut c = page(cx);
+    let mut out = Vec::new();
+
+    // The two words, the face shown in the page's ink and the other quiet,
+    // centred over what that face puts below them.
+    let tab_px = m.dp(22.5);
+    let tab_gap = m.dp(25.0);
+    let words: Vec<f32> = MUSIC_FACES.iter().map(|(_, name)| c.text_width(&f.heading, l.pick(*name), tab_px)).collect();
+    let strip = words.iter().sum::<f32>() + tab_gap * (words.len() - 1) as f32;
+    let mut tab_x = (m.w as f32 - strip) / 2.0;
+    let tab_base = m.dp(81.2);
+    let pad = m.dp(10.0);
+    for (k, (face, name)) in MUSIC_FACES.iter().enumerate() {
+        let ink = if *face == cx.state.music_face { t.pal.text } else { t.pal.subtitle };
+        c.text(&f.heading, l.pick(*name), tab_x, tab_base, tab_px, ink, None);
+        // The word answers a touch, with a little room around it.
+        let rect = Rect::new(tab_x - pad, tab_base - tab_px - pad, words[k] + pad * 2.0, tab_px + pad * 2.0);
+        out.push(Hit { rect, action: Action::MusicFace(*face) });
+        tab_x += words[k] + tab_gap;
+    }
+
+    match cx.state.music_face {
+        MusicFace::List => {
+            let said = l.pick(["还没有歌曲", "還沒有歌曲", "No songs yet"]);
+            c.text_center(&f.body, said, m.w as f32 / 2.0, m.h as f32 / 2.0, m.sub_px, t.pal.subtitle);
+        }
+        MusicFace::Play => music_play(&mut c, t, f, l),
+    }
+
+    // No `<` and no large title: an app opened from the desktop leaves it the
+    // way the desktop's own apps do, and the two words across the top name it.
+    Frame { back: false, header: false, bg: t.pal.bg, ..Frame::new(t, c, out, "", m.content_top) }
+}
+
+/// The player's playing face: the cover of the song, its name under it, the
+/// line the count runs along and the key that sets it going. There is no song
+/// yet — no cover to show, no count to run and nothing to set going — so the
+/// cover is the player's own mark, the name says as much, and the key is
+/// quiet. The places are laid out all the same: what will fill them is a song
+/// and a sound, not another arrangement.
+fn music_play(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang) {
+    let m = &t.m;
+    let mid = m.w as f32 / 2.0;
+    // The cover: a square the width of the page less its margins, standing
+    // high enough that the name and the keys under it have room to breathe.
+    let cover = m.w as f32 - m.dp(120.0);
+    let top = m.h as f32 * 0.225;
+    let x = mid - cover / 2.0;
+    c.shadow_round_rect(x, top, cover, cover, m.dp(28.0), m.dp(16.0), t.pal.shadow);
+    c.fill_round_rect(x, top, cover, cover, m.dp(28.0), t.pal.card);
+    icons::glyph(c, Icon::Music, mid, top + cover / 2.0, cover * 0.46, t.pal.chevron);
+
+    // The name of what is playing and, under it, the act that would start it:
+    // the two lines a song's cover carries once there is one.
+    let said = l.pick(["没有在放的歌", "沒有在放的歌", "Nothing playing"]);
+    c.text_center(&f.heading, said, mid, top + cover + m.dp(46.0), m.dp(20.0), t.pal.text);
+    let ask = l.pick(["去列表点一首", "去清單點一首", "Pick one from the list"]);
+    c.text_center(&f.label, ask, mid, top + cover + m.dp(76.0), m.sub_px, t.pal.subtitle);
+
+    // The line the count runs along, with nothing run along it yet.
+    let bar_y = top + cover + m.dp(114.0);
+    c.fill_round_rect(x, bar_y, cover, m.dp(3.0), m.dp(1.5), t.pal.track);
+    let base = bar_y + m.dp(26.0);
+    c.text(&f.label, "00:00", x, base, m.sub_px, t.pal.subtitle, None);
+    let end_w = c.text_width(&f.label, "00:00", m.sub_px);
+    c.text(&f.label, "00:00", x + cover - end_w, base, m.sub_px, t.pal.subtitle, None);
+
+    // The key that would set it going: the system's round chip with a
+    // triangle on it, quiet while there is nothing to play.
+    let cy = bar_y + m.dp(88.0);
+    let r = m.dp(31.0);
+    let (art, ox, oy) = widgets::chip_at(t, mid, cy, r);
+    c.lay(&art, ox, oy, 1.0);
+    icons::glyph(c, Icon::Play, mid, cy, r * 0.84, t.pal.chevron);
+}
+
 /// How many keys a calculator's row holds, and how many rows it holds.
 const CALC_COLS: usize = 4;
 
@@ -445,7 +539,9 @@ const CALC_ORANGE: Rgba = Rgba::rgb(255, 105, 0);
 
 /// The two words across the top of the page. The left one is the sum being
 /// worked; the right one is the page that converts units, which is named
-/// here and not built, so it is drawn quiet and answers no touch.
+/// and not built — it says so where the keys would be. Either answers a
+/// touch, and a finger dragged level across the page turns to the other, the
+/// way the clock's two words and the clock's page do.
 const CALC_TABS: [Text; 2] = [["计算", "計算", "Calculate"], ["换算", "換算", "Convert"]];
 
 /// The calculator's keys, in the order a calculator lays them out, with
@@ -532,18 +628,32 @@ pub fn calculator(cx: &Ctx) -> Frame {
     let mut c = sheet(cx, m.h, ground);
     let mut out = Vec::new();
 
-    // The two words, the one being worked in the page's ink and the other
-    // quiet, centred over the figures.
+    // The two words, the face being shown in the page's ink and the other
+    // quiet, centred over what that face puts below them.
     let tab_px = m.dp(22.5);
-    let on = l.pick(CALC_TABS[0]);
-    let off = l.pick(CALC_TABS[1]);
-    let on_w = c.text_width(&f.heading, on, tab_px);
-    let off_w = c.text_width(&f.heading, off, tab_px);
     let tab_gap = m.dp(25.0);
-    let tab_x = (m.w as f32 - (on_w + tab_gap + off_w)) / 2.0;
+    let words: Vec<f32> = CALC_TABS.iter().map(|name| c.text_width(&f.heading, l.pick(*name), tab_px)).collect();
+    let strip = words.iter().sum::<f32>() + tab_gap * (words.len() - 1) as f32;
+    let mut tab_x = (m.w as f32 - strip) / 2.0;
     let tab_base = m.dp(81.2);
-    c.text(&f.heading, on, tab_x, tab_base, tab_px, t.pal.text, None);
-    c.text(&f.heading, off, tab_x + on_w + tab_gap, tab_base, tab_px, t.pal.subtitle, None);
+    let pad = m.dp(10.0);
+    for (k, name) in CALC_TABS.iter().enumerate() {
+        let face = if k == 0 { CalcFace::Sum } else { CalcFace::Convert };
+        let ink = if face == cx.state.calc_face { t.pal.text } else { t.pal.subtitle };
+        c.text(&f.heading, l.pick(*name), tab_x, tab_base, tab_px, ink, None);
+        // The word answers a touch, with a little room around it.
+        let rect = Rect::new(tab_x - pad, tab_base - tab_px - pad, words[k] + pad * 2.0, tab_px + pad * 2.0);
+        out.push(Hit { rect, action: Action::CalcFace(face) });
+        tab_x += words[k] + tab_gap;
+    }
+
+    // The units page is named and not built: it says so where the figures
+    // and the keys would stand, and takes no key of its own.
+    if cx.state.calc_face == CalcFace::Convert {
+        let said = l.pick(["换算还没做好", "換算還沒做好", "Conversion is not built yet"]);
+        c.text_center(&f.body, said, m.w as f32 / 2.0, m.h as f32 / 2.0, m.sub_px, t.pal.subtitle);
+        return Frame { back: false, header: false, bg: ground, ..Frame::new(t, c, out, "", m.content_top) };
+    }
 
     let left = m.dp(30.3);
     let right = m.w as f32 - left;
