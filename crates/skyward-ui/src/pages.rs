@@ -1074,13 +1074,25 @@ const DIAL_NUM_R: f32 = 0.70;
 const DIAL_NUM_PX: f32 = 19.0;
 const DIAL_NUMS: [&str; 2] = ["60", "15"];
 
-/// Loaded once, shared by every draw of the dial. `from_png` expands the
-/// palette to RGBA and keeps the picture's own alpha.
-fn clock_deck() -> &'static Canvas {
-    static DECK: std::sync::OnceLock<Canvas> = std::sync::OnceLock::new();
-    DECK.get_or_init(|| {
-        Canvas::from_png(DECK_PIC).expect("the clock deck picture must decode")
-    })
+/// Loaded once for each palette and shared by every draw of the dial.
+/// `from_png` expands the palette to RGBA and keeps the picture's own alpha.
+///
+/// The ring is drawn in black, which is what the pale dial wants. On the
+/// dark one the disc is a shade off the black page, and black marks on it
+/// are all but invisible: the same picture turned over is the ring in
+/// light, which is how Smartisan's own dark clock sets it.
+fn clock_deck(dark: bool) -> &'static Canvas {
+    static LIGHT: std::sync::OnceLock<Canvas> = std::sync::OnceLock::new();
+    static DARK: std::sync::OnceLock<Canvas> = std::sync::OnceLock::new();
+    if dark {
+        DARK.get_or_init(|| {
+            let mut deck = Canvas::from_png(DECK_PIC).expect("the clock deck picture must decode");
+            deck.invert();
+            deck
+        })
+    } else {
+        LIGHT.get_or_init(|| Canvas::from_png(DECK_PIC).expect("the clock deck picture must decode"))
+    }
 }
 
 /// The dial's still parts — shadow, disc, minute ring and the two numerals —
@@ -1108,7 +1120,7 @@ fn clock_face(m: &crate::theme::Metrics, t: &crate::theme::Theme, f: &Fonts) -> 
     // circle; made of that material it belongs to the keys under it.
     widgets::disc(&mut face, t, cc, cc, d / 2.0, m.dp(DIAL_SHADOW));
     let span = d * DECK_OF_DIAL / DECK_MARK;
-    face.draw_image(clock_deck(), cc - span / 2.0, cc - span / 2.0, span, span);
+    face.draw_image(clock_deck(t.dark), cc - span / 2.0, cc - span / 2.0, span, span);
     let r = d / 2.0 * DIAL_NUM_R;
     let px = m.dp(DIAL_NUM_PX);
     face.text_center(&f.regular, DIAL_NUMS[0], cc, cc - r, px, t.pal.text);

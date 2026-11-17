@@ -277,6 +277,19 @@ impl Canvas {
         }
     }
 
+    /// Turn this canvas's colours over — black to white and the rest of the
+    /// way round — leaving each pixel's alpha where it was, so a picture
+    /// drawn in ink over transparency becomes the same picture in light.
+    /// The colours are held straight, not multiplied into the alpha, so the
+    /// two swap without the transparency having to be taken out and put back.
+    pub fn invert(&mut self) {
+        for p in self.data.as_chunks_mut::<4>().0 {
+            p[0] = 255 - p[0];
+            p[1] = 255 - p[1];
+            p[2] = 255 - p[2];
+        }
+    }
+
     /// `src` stretched over this canvas to `w` × `h`, its top-left corner at
     /// this canvas's: each pixel takes the bilinear sample of the four of
     /// `src` around where it falls, its edges repeating the last row and
@@ -1501,6 +1514,16 @@ mod tests {
         assert_eq!(&pixels[..3], &[10, 20, 30], "the color whatever the alpha, as the panel shows it");
         assert_eq!(&pixels[15..18], &[200, 100, 50]);
         assert_eq!(&pixels[3..6], &[243, 243, 243]);
+    }
+
+    #[test]
+    fn turning_a_picture_over_swaps_its_ink_for_light_and_leaves_its_alpha() {
+        let mut c = Canvas::filled(2, 1, Rgba::rgb(0, 0, 0));
+        c.data[..4].copy_from_slice(&[0, 0, 0, 128]);
+        c.data[4..8].copy_from_slice(&[240, 30, 90, 255]);
+        c.invert();
+        assert_eq!(&c.data[..4], &[255, 255, 255, 128], "black to white, the half cover still half");
+        assert_eq!(&c.data[4..8], &[15, 225, 165, 255], "each channel turned over on its own");
     }
 
     #[test]
