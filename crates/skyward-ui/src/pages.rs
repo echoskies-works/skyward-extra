@@ -841,12 +841,13 @@ const RULER_EDGE: Rgba = Rgba::rgb(200, 205, 199);
 /// line is a shade deeper than the marks, as a pointer has to be.
 const RULER_INK: Rgba = Rgba::rgb(120, 149, 120);
 const RULER_MARK: Rgba = Rgba::rgb(76, 112, 76);
-/// Smartisan's own tick artwork. Once its transparent top rows and right
-/// padding are cropped, 64 px hold two minutes, the long strokes on each
-/// minute and five short ones between. It is recoloured for dark, but its
-/// spacing and stroke shape are the reference's, not a guess.
+/// Smartisan's own tick artwork: 70 px hold two minutes, a stroke every
+/// 7 px, the minute ones twice as tall as the eight between. The last six
+/// columns are empty on purpose — they are the gap that follows the final
+/// stroke, so laid end to end the spacing never tightens. It is recoloured
+/// for dark, but its spacing and stroke shape are the reference's.
 const RULER_DECO_PIC: &[u8] = include_bytes!("../../../resources/clock/rulerdeco.png");
-const RULER_DECO_MINUTE_PX: f32 = 32.0;
+const RULER_DECO_MINUTE_PX: f32 = 35.0;
 const RULER_TICK_TOP: f32 = 0.0;
 const RULER_NUM_PX: f32 = 11.5;
 const RULER_NUM_CY: f32 = 0.42;
@@ -862,9 +863,9 @@ const RULER_BLUE_MARK: Rgba = Rgba::rgb(63, 101, 169);
 /// The tick artwork, once per theme. Every pixel is recoloured to that
 /// theme's ruler ink, transparent ones included: bilinear scaling samples
 /// their RGB at a stroke's edge, and leaving them black gives the ticks a
-/// black fringe. The alpha stays as it was. The source's three empty top
-/// rows and six empty right columns are cropped off so the marks touch the
-/// ruler's top and the last pair ends exactly at 180.
+/// black fringe. The alpha stays as it was, and the picture is kept whole
+/// so the six empty columns that end it go on separating one pair of
+/// minutes from the next.
 fn ruler_ticks(dark: bool) -> &'static Canvas {
     static LIGHT: std::sync::OnceLock<Canvas> = std::sync::OnceLock::new();
     static DARK: std::sync::OnceLock<Canvas> = std::sync::OnceLock::new();
@@ -877,7 +878,7 @@ fn ruler_ticks(dark: bool) -> &'static Canvas {
             px[1] = ink.g;
             px[2] = ink.b;
         }
-        ticks.crop(0, 3, 64, 18)
+        ticks
     })
 }
 
@@ -944,12 +945,14 @@ fn timer_ruler(
     let green_w = (ix + iw - green_x).max(0.0);
     if green_w > 0.0 && tick_h > 0.0 {
         let mut strip = Canvas::new(green_w.ceil() as u32, tick_h.ceil() as u32);
-        // Keep the strip opaque and behind the same gradient it covers. A
-        // transparent strip would have the picture's soft edge multiplied
-        // once by `draw_image` and again by `lay`, which paints it black.
+        // Fill the strip with the very rows the ruler has under it, row for
+        // row, so no tint of our own shows behind the strokes. A transparent
+        // strip would have the picture's soft edge multiplied once by
+        // `draw_image` and again by `lay`, which paints it black.
+        let strip_top = top.round() as i32;
         for row in 0..strip.h {
-            let t = ((row as f32 + 0.5) / ih).clamp(0.0, 1.0);
-            strip.fill_rect(0.0, row as f32, strip.w as f32, 1.0, mix(green_top, green_foot, t));
+            let fy = (strip_top + row as i32) as f32 + 0.5;
+            strip.fill_rect(0.0, row as f32, strip.w as f32, 1.0, mix(green_top, green_foot, fy));
         }
         let first_pair = ((value + (green_x - cx) / minute) / 2.0).floor() as i32 - 2;
         let last_pair = ((value + (green_x + green_w - cx) / minute) / 2.0).ceil() as i32 + 2;
