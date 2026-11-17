@@ -851,14 +851,21 @@ const RULER_DECO_MINUTE_PX: f32 = 35.0;
 const RULER_TICK_TOP: f32 = 0.0;
 const RULER_NUM_PX: f32 = 11.5;
 const RULER_NUM_CY: f32 = 0.42;
-/// In the dark the same pale bar takes a blue hue instead of green, the way
-/// Windows 11 turns its green progress blue on a dark panel. The lightness
-/// stays close to the light ruler; only the hue changes. White stays white.
-const RULER_BLUE_TOP: Rgba = Rgba::rgb(220, 231, 244);
-const RULER_BLUE_FOOT: Rgba = Rgba::rgb(236, 242, 250);
-const RULER_BLUE_EDGE: Rgba = Rgba::rgb(190, 201, 214);
-const RULER_BLUE_INK: Rgba = Rgba::rgb(91, 126, 172);
-const RULER_BLUE_MARK: Rgba = Rgba::rgb(63, 101, 169);
+/// In the dark the bar takes its colours from the CPU graph in Windows'
+/// Task Manager on a dark theme, which is the same problem solved: a sunken
+/// panel of deep teal, gridwork one step off it, and a bright cyan stroke
+/// laid on top. The scale becomes that panel, the ticks and figures become
+/// the stroke, and the choosing line goes one shade brighter than the
+/// stroke so it still reads as the heaviest mark on the bar. The empty
+/// patch keeps its role — the part of the scale not yet used — by sinking
+/// to the card grey the same window puts behind a list entry, a step above
+/// the page's black rather than a white glaring out of it.
+const RULER_BLUE_TOP: Rgba = Rgba::rgb(12, 40, 49);
+const RULER_BLUE_FOOT: Rgba = Rgba::rgb(15, 49, 59);
+const RULER_BLUE_EDGE: Rgba = Rgba::rgb(37, 85, 101);
+const RULER_BLUE_INK: Rgba = Rgba::rgb(57, 184, 227);
+const RULER_BLUE_MARK: Rgba = Rgba::rgb(120, 214, 240);
+const RULER_DARK_PATCH: Rgba = Rgba::rgb(38, 38, 38);
 
 /// The tick artwork, once per theme. Every pixel is recoloured to that
 /// theme's ruler ink, transparent ones included: bilinear scaling samples
@@ -896,10 +903,10 @@ fn ruler_ticks(dark: bool) -> &'static Canvas {
 fn timer_ruler(
     c: &mut Canvas, m: &crate::theme::Metrics, f: &Fonts, cx: f32, cy: f32, rw: f32, rh: f32, value: f32, dark: bool,
 ) -> Rect {
-    let (green_top, green_foot, edge, ink, mark) = if dark {
-        (RULER_BLUE_TOP, RULER_BLUE_FOOT, RULER_BLUE_EDGE, RULER_BLUE_INK, RULER_BLUE_MARK)
+    let (green_top, green_foot, edge, ink, mark, patch) = if dark {
+        (RULER_BLUE_TOP, RULER_BLUE_FOOT, RULER_BLUE_EDGE, RULER_BLUE_INK, RULER_BLUE_MARK, RULER_DARK_PATCH)
     } else {
-        (RULER_GREEN_TOP, RULER_GREEN_FOOT, RULER_EDGE, RULER_INK, RULER_MARK)
+        (RULER_GREEN_TOP, RULER_GREEN_FOOT, RULER_EDGE, RULER_INK, RULER_MARK, RULER_WHITE)
     };
     let (x, y) = (cx - rw / 2.0, cy - rh / 2.0);
     let r = m.dp(RULER_R);
@@ -921,12 +928,12 @@ fn timer_ruler(
     let white_w = white_end - ix;
     if white_w > 0.0 {
         let wr = (r - 1.0).min(white_w / 2.0).min(ih / 2.0);
-        bar.fill_round_rect(ix, iy, white_w, ih, wr, RULER_WHITE);
+        bar.fill_round_rect(ix, iy, white_w, ih, wr, patch);
         if white_w > wr {
             // Square off the right end with the frame's own coverage: a
             // plain rect would fill its last row whole and paint over the
             // one-pixel line the frame keeps along the foot.
-            bar.fill_round_rect(ix + wr, iy, white_w - wr, ih, 0.0, RULER_WHITE);
+            bar.fill_round_rect(ix + wr, iy, white_w - wr, ih, 0.0, patch);
         }
         // Three marks, as the reference draws them: a solid left-pointing
         // triangle with three dots behind it, the first tip 35 dp in from
