@@ -281,7 +281,7 @@ fn main() -> Result<()> {
         TimerEndDark,
         TimerDone,
     }
-    let clock: [(&str, bool, ClockShot); 13] = [
+    let clock: [(&str, bool, ClockShot); 14] = [
         ("00-03-clock-stopwatch-idle-light", false, ClockShot::Idle),
         ("00-03-clock-stopwatch-going-light", false, ClockShot::Going),
         ("00-03-clock-stopwatch-lapped-light", false, ClockShot::Lapped),
@@ -289,6 +289,7 @@ fn main() -> Result<()> {
         ("00-03-clock-stopwatch-paused-light", false, ClockShot::Paused),
         ("00-03-clock-stopwatch-many-light", false, ClockShot::Many),
         ("00-03-clock-timer-idle-light", false, ClockShot::TimerIdle),
+        ("00-03-clock-timer-idle-dark", true, ClockShot::TimerIdle),
         ("00-03-clock-timer-04min-light", false, ClockShot::TimerFour),
         ("00-03-clock-timer-41min-light", false, ClockShot::TimerFortyOne),
         ("00-03-clock-timer-paused-light", false, ClockShot::TimerPaused),
