@@ -815,9 +815,10 @@ fn timer_text(ms: u64) -> String {
 const CLOCK_HINT: Text = ["点击启动秒表", "點擊啟動碼錶", "Tap to start the stopwatch"];
 
 /// The dial: a disc the colour of a card, its own shadow under it, drawn by
-/// the page rather than laid on from a picture. The blue hand Xiaomi paints
-/// lies on that Smartisan disc; the marks, the `60` and `15` and the ring
-/// come later. The count under it carries the reading for now.
+/// the page rather than laid on from a picture. On that disc sit the minute
+/// ring from `clockdeck.png` and the two numerals in the page's own type. The
+/// blue hand Xiaomi paints lies over them; its colour follows whether the
+/// watch is going. The count under it carries the reading for now.
 ///
 /// Across in dp. Smartisan's dial measures about 608 px over a 1080 panel
 /// once its shadow is counted; with the shadow this page lays under it, 212 dp
@@ -828,8 +829,36 @@ const DIAL_D: f32 = 212.0;
 /// figures.
 const DIAL_SHADOW: f32 = 12.0;
 
+/// The minute ring, drawn once by the user at 570 px and kept as a picture
+/// in the tree. Its marks run at radii 265..285 of a 285 half-width, so laid
+/// out at the disc's own width they would crowd the rim: Smartisan's ring
+/// sits at 0.85 of the disc's radius, and the scale below brings ours there.
+/// Black at half alpha in the source, so it reads grey on any card colour.
+const DECK_PIC: &[u8] = include_bytes!("../../../resources/clock/clockdeco.png");
+/// The ring's mark centre, as a fraction of the picture's half width (275 of 285).
+const DECK_MARK: f32 = 275.0 / 285.0;
+/// Where Smartisan puts that ring, as a fraction of the disc's radius.
+const DECK_OF_DIAL: f32 = 0.85;
+/// The two numerals, at twelve and three. Smartisan sets their ink centre at
+/// 0.70 of the disc radius; the size is the height of the glyphs in dp.
+const DIAL_NUM_R: f32 = 0.70;
+const DIAL_NUM_PX: f32 = 19.0;
+const DIAL_NUMS: [&str; 2] = ["60", "15"];
+
+/// Loaded once, shared by every draw of the dial. `from_png` expands the
+/// palette to RGBA and keeps the picture's own alpha.
+fn clock_deck() -> &'static Canvas {
+    static DECK: std::sync::OnceLock<Canvas> = std::sync::OnceLock::new();
+    DECK.get_or_init(|| {
+        Canvas::from_png(DECK_PIC).expect("the clock deck picture must decode")
+    })
+}
+
 /// The blue Xiaomi paints its second hand, sampled off the reference shot.
 const HAND_BLUE: Rgba = Rgba::rgb(52, 130, 255);
+/// The hand when the watch stands: a quiet charcoal, so the dial does not
+/// claim attention until the count runs. The pin stays white either way.
+const HAND_STILL: Rgba = Rgba::rgb(88, 92, 98);
 /// Where that hand lies in the reference, clockwise from twelve. It stands
 /// still for now: ticking comes with the marks and numbers.
 const HAND_DEG: f32 = 228.0;
@@ -884,13 +913,34 @@ pub fn clock_paper_room(m: &crate::theme::Metrics) -> usize {
 
 /// The dial laid on centred at (`cx`, `cy`): the shadow first, so the disc
 /// is drawn over the half of it that falls inside, the disc itself after,
-/// then the hand on top of that.
-fn clock_dial(c: &mut Canvas, m: &crate::theme::Metrics, t: &crate::theme::Theme, cx: f32, cy: f32) {
+/// then the ring, the two numerals and the hand on top of that. `going` is
+/// whether the stopwatch is running: the hand takes Xiaomi's blue only while
+/// the count moves, and a charcoal when it stands.
+fn clock_dial(
+    c: &mut Canvas, m: &crate::theme::Metrics, t: &crate::theme::Theme, f: &Fonts,
+    cx: f32, cy: f32, going: bool,
+) {
     let d = m.dp(DIAL_D);
     let (x, y) = (cx - d / 2.0, cy - d / 2.0);
     c.shadow_round_rect(x, y, d, d, d / 2.0, m.dp(DIAL_SHADOW), t.pal.shadow);
     c.fill_circle(cx, cy, d / 2.0, t.pal.card);
 
+    // The ring: scaled so its marks land where Smartisan's do. The picture's
+    // marks sit at DECK_MARK of its half width; we want that at DECK_OF_DIAL
+    // of the disc's radius, so the picture is laid out at
+    //   span = dial_d * DECK_OF_DIAL / DECK_MARK
+    // and centred on the disc.
+    let span = d * DECK_OF_DIAL / DECK_MARK;
+    c.draw_image(clock_deck(), cx - span / 2.0, cy - span / 2.0, span, span);
+
+    // The numerals: 60 at twelve, 15 at three, set in the page's own face
+    // at the radius Smartisan gives them, centred on that point.
+    let r = d / 2.0 * DIAL_NUM_R;
+    let px = m.dp(DIAL_NUM_PX);
+    c.text_center(&f.regular, DIAL_NUMS[0], cx, cy - r, px, t.pal.text);
+    c.text_center(&f.regular, DIAL_NUMS[1], cx + r, cy, px, t.pal.text);
+
+    let ink = if going { HAND_BLUE } else { HAND_STILL };
     let a = HAND_DEG * std::f32::consts::PI / 180.0;
     let (ux, uy) = (a.sin(), -a.cos());
     let tip = m.dp(HAND_TIP);
@@ -899,14 +949,14 @@ fn clock_dial(c: &mut Canvas, m: &crate::theme::Metrics, t: &crate::theme::Theme
     // The fine stroke runs through the hub to the far end of the tail; the
     // thicker counterweight is laid over its outer part only, so a length of
     // thin line stays between the hub and the weight as Xiaomi draws it.
-    c.line(cx, cy, cx + ux * tip, cy + uy * tip, m.dp(HAND_TIP_W), HAND_BLUE);
-    c.line(cx, cy, cx - ux * tail_end, cy - uy * tail_end, m.dp(HAND_TIP_W), HAND_BLUE);
+    c.line(cx, cy, cx + ux * tip, cy + uy * tip, m.dp(HAND_TIP_W), ink);
+    c.line(cx, cy, cx - ux * tail_end, cy - uy * tail_end, m.dp(HAND_TIP_W), ink);
     c.line(
         cx - ux * gap, cy - uy * gap,
         cx - ux * tail_end, cy - uy * tail_end,
-        m.dp(HAND_TAIL_W), HAND_BLUE,
+        m.dp(HAND_TAIL_W), ink,
     );
-    c.fill_circle(cx, cy, m.dp(HAND_HUB) / 2.0, HAND_BLUE);
+    c.fill_circle(cx, cy, m.dp(HAND_HUB) / 2.0, ink);
     c.fill_circle(cx, cy, m.dp(HAND_PIN) / 2.0, Rgba::rgb(255, 255, 255));
 }
 
@@ -962,7 +1012,11 @@ pub fn clock(cx: &Ctx) -> Frame {
     let mut scroll = None;
     let live = match clock.face {
         ClockFace::Stopwatch => {
-            clock_dial(&mut c, m, t, mid, m.dp(DIAL_CY));
+            // The hand is blue only while the count moves: a watch at rest
+            // or paused keeps the charcoal one. `stop_since` is set exactly
+            // while it runs, the same flag that asks for a frame each tick.
+            let going = clock.stop_since.is_some();
+            clock_dial(&mut c, m, t, f, mid, m.dp(DIAL_CY), going);
             let reading = stopwatch_text(clock.stopwatch(cx.now));
             // The typeface's own weight, not the one the pages set their
             // titles in: the count is read rather than looked at.
@@ -5006,6 +5060,33 @@ mod tests {
 
     fn at(item: usize, done: u64, of: u64, checking: bool) -> BackupAt {
         BackupAt { item, done, of, checking }
+    }
+
+    /// The hand carries Xiaomi's blue only while the watch runs; standing
+    /// still it is a charcoal, the same grey the marks are cut in. Sampling
+    /// a point partway down the fine needle, away from the numerals and the
+    /// counterweight, tells the two apart without depending on the exact
+    /// shade: the running hand is plainly blue, the standing one is not.
+    #[test]
+    fn the_hand_is_blue_only_while_the_watch_runs() {
+        let t = Theme::light(1080, 2400, 2.624);
+        let f = crate::font::bundled();
+        let (cx, cy) = (540.0, t.m.dp(DIAL_CY));
+        // A point 60% of the way from the hub toward the tip, on the needle.
+        let a = HAND_DEG * std::f32::consts::PI / 180.0;
+        let (ux, uy) = (a.sin(), -a.cos());
+        let px = cx + ux * t.m.dp(HAND_TIP) * 0.6;
+        let py = cy + uy * t.m.dp(HAND_TIP) * 0.6;
+        let i = (py as usize * 1080 + px as usize) * 4;
+        let ink = |going: bool| {
+            let mut c = Canvas::new(1080, 2400);
+            clock_dial(&mut c, &t.m, &t, &f, cx, cy, going);
+            [c.data[i], c.data[i + 1], c.data[i + 2]]
+        };
+        let running = ink(true);
+        let still = ink(false);
+        assert!(running[2] > running[0] + 60, "a running hand must read blue, got {running:?}");
+        assert!((still[0] as i32 - still[2] as i32).abs() < 20, "a standing hand must be grey, got {still:?}");
     }
 
     /// The clock is laid out on the 411.6 × 914 dp panel the pages were
