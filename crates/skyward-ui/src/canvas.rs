@@ -290,6 +290,48 @@ impl Canvas {
         }
     }
 
+    /// This canvas at one `n`th of its width and height: each pixel the mean
+    /// of the `n` × `n` it comes from, the colours weighted by their alpha so
+    /// a see-through edge does not drag the colour down with it.
+    ///
+    /// Drawn `n` times the size and shrunk, a face gets edges that thin out
+    /// over a fraction of a dp instead of a whole one: the shapes here cover
+    /// a pixel by however much of it falls inside them, which smooths an edge
+    /// across one pixel and no finer. Pictures laid on from the tree are
+    /// bilinear-sampled and already come out smooth this way; the minute
+    /// ring and the numerals do not, and these are what the oversampling
+    /// serves.
+    pub fn shrink(&self, n: u32) -> Canvas {
+        let n = n.max(1);
+        let (w, h) = (self.w / n, self.h / n);
+        let area = n * n;
+        let mut out = Canvas::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                let (mut r, mut g, mut b, mut a) = (0u32, 0u32, 0u32, 0u32);
+                for dy in 0..n {
+                    for dx in 0..n {
+                        let i = self.at((x * n + dx) as i32, (y * n + dy) as i32);
+                        let p = &self.data[i..i + 4];
+                        let alpha = p[3] as u32;
+                        r += p[0] as u32 * alpha;
+                        g += p[1] as u32 * alpha;
+                        b += p[2] as u32 * alpha;
+                        a += alpha;
+                    }
+                }
+                // A clear cell contributes no colour and no weight, so a
+                // fully clear block divides by one rather than nought and
+                // comes out clear.
+                let w = a.max(1);
+                let q = [(r / w) as u8, (g / w) as u8, (b / w) as u8, (a / area) as u8];
+                let o = out.at(x as i32, y as i32);
+                out.data[o..o + 4].copy_from_slice(&q);
+            }
+        }
+        out
+    }
+
     /// `src` stretched over this canvas to `w` × `h`, its top-left corner at
     /// this canvas's: each pixel takes the bilinear sample of the four of
     /// `src` around where it falls, its edges repeating the last row and
@@ -1524,6 +1566,25 @@ mod tests {
         c.invert();
         assert_eq!(&c.data[..4], &[255, 255, 255, 128], "black to white, the half cover still half");
         assert_eq!(&c.data[4..8], &[15, 225, 165, 255], "each channel turned over on its own");
+    }
+
+    #[test]
+    fn a_picture_shrunk_takes_the_mean_of_the_pixels_it_comes_from() {
+        // One white pixel under three clear ones: a quarter of the area, and
+        // white — the clear pixels' colour is never counted.
+        let mut c = Canvas::new(2, 2);
+        c.data[..4].copy_from_slice(&[255, 255, 255, 255]);
+        let half = c.shrink(2);
+        assert_eq!((half.w, half.h), (1, 1), "half the width and half the height");
+        assert_eq!(&half.data[..4], &[255, 255, 255, 63], "white over a quarter of it");
+        // Four opaque greys: the plain mean of them, channel by channel.
+        let mut c = Canvas::new(2, 2);
+        c.data[..4].copy_from_slice(&[10, 20, 30, 255]);
+        c.data[4..8].copy_from_slice(&[30, 40, 50, 255]);
+        c.data[8..12].copy_from_slice(&[50, 60, 70, 255]);
+        c.data[12..16].copy_from_slice(&[70, 80, 90, 255]);
+        let half = c.shrink(2);
+        assert_eq!(&half.data[..4], &[40, 50, 60, 255], "each channel the mean of the four");
     }
 
     #[test]

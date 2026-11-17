@@ -1074,6 +1074,44 @@ const DIAL_NUM_R: f32 = 0.70;
 const DIAL_NUM_PX: f32 = 19.0;
 const DIAL_NUMS: [&str; 2] = ["60", "15"];
 
+/// The bail the stopwatch hangs from: the ring, the bar across it and the
+/// post running down into the dial's top edge, cut out of Smartisan's own
+/// store with the shadow already in it. Laid on as a picture rather than
+/// built from the disc and the slab, so the light on it is Smartisan's and
+/// not an imitation of it.
+const BAIL_PIC: &[u8] = include_bytes!("../../../resources/clock/swmid.png");
+/// The picture is 228 px across and its ring 182 px; the ring's centre sits
+/// at (113.5, 104) in it, measured off the alpha.
+const BAIL_RING_PX: f32 = 182.0;
+const BAIL_RING_X_PX: f32 = 113.5;
+const BAIL_RING_Y_PX: f32 = 104.0;
+/// The ring across, in dp: Smartisan's measures 178 px on its 1080 panel,
+/// which at our 2.63 px to the dp is 67.7. The dial here comes out a shade
+/// smaller than Smartisan's, so the bail stands a little larger against it;
+/// the ring is the piece the eye takes the size of, and it is left at the
+/// size Smartisan draws it rather than scaled down with the dial.
+const BAIL_RING_DP: f32 = 67.7;
+/// How far above the dial's centre the ring hangs, in dial radii: 374 px on
+/// a dial of 291. Measured to the ring's centre, so the post's foot lands
+/// just inside the dial's top edge and the dial closes over it.
+const BAIL_LIFT: f32 = 374.0 / 291.0;
+
+/// The two pieces on the flanks — the crown and the button — cut from the
+/// store as the bail is. Each picture is 206×200 px and is laid down as it
+/// comes, in either palette; the right one is the left one mirrored, which
+/// is what Smartisan's panel shows.
+const KNOB_L_PIC: &[u8] = include_bytes!("../../../resources/clock/swleft.png");
+const KNOB_R_PIC: &[u8] = include_bytes!("../../../resources/clock/swright.png");
+/// On Smartisan's panel each picture's middle sits 1.053 dial radii out from
+/// the dial's centre, at 45° up and out; the dial here is a shade smaller,
+/// so the knobs are set on that same radius rather than at the panel's own
+/// corners, which is what keeps their bite into the rim as deep as his. The
+/// `X` is the left picture's corner, in dp.
+const KNOB_X: f32 = 84.6;
+const KNOB_Y: f32 = 215.1;
+const KNOB_W: f32 = 78.6;
+const KNOB_H: f32 = 76.3;
+
 /// Loaded once for each palette and shared by every draw of the dial.
 /// `from_png` expands the palette to RGBA and keeps the picture's own alpha.
 ///
@@ -1095,6 +1133,48 @@ fn clock_deck(dark: bool) -> &'static Canvas {
     }
 }
 
+/// The bail's picture, decoded once and kept. It is laid on as Smartisan
+/// cut it in both palettes: the light and the shadow on it are the store's
+/// own, and turning it over for the dark page — as the minute ring is turned
+/// over — would put a halo where the shadow is.
+fn bail_pic() -> &'static Canvas {
+    static PIC: std::sync::OnceLock<Canvas> = std::sync::OnceLock::new();
+    PIC.get_or_init(|| Canvas::from_png(BAIL_PIC).expect("the bail picture must decode"))
+}
+
+/// The bail, laid on above the dial centred on `mid`: the ring hangs clear of
+/// the dial and the post runs down behind its top edge, so this is drawn
+/// before the dial and the dial closes over the post's foot.
+fn clock_bail(c: &mut Canvas, m: &crate::theme::Metrics, mid: f32) {
+    let pic = bail_pic();
+    let scale = m.dp(BAIL_RING_DP) / BAIL_RING_PX;
+    let cy = m.dp(DIAL_CY - DIAL_D / 2.0 * BAIL_LIFT);
+    let (w, h) = (pic.w as f32 * scale, pic.h as f32 * scale);
+    c.draw_image(pic, mid - BAIL_RING_X_PX * scale, cy - BAIL_RING_Y_PX * scale, w, h);
+}
+
+/// One of the two flank pieces, decoded once and kept: the left picture and
+/// the right one, which is its mirror.
+fn knob_pic(right: bool) -> &'static Canvas {
+    static LEFT: std::sync::OnceLock<Canvas> = std::sync::OnceLock::new();
+    static RIGHT: std::sync::OnceLock<Canvas> = std::sync::OnceLock::new();
+    if right {
+        RIGHT.get_or_init(|| Canvas::from_png(KNOB_R_PIC).expect("the right knob must decode"))
+    } else {
+        LEFT.get_or_init(|| Canvas::from_png(KNOB_L_PIC).expect("the left knob must decode"))
+    }
+}
+
+/// The crown and the button on the flanks, laid on before the dial so its
+/// rim closes over them: each is bitten into the dial's edge, and only the
+/// part outside the rim shows.
+fn clock_knobs(c: &mut Canvas, m: &crate::theme::Metrics) {
+    let (w, h) = (m.dp(KNOB_W), m.dp(KNOB_H));
+    let (x, y) = (m.dp(KNOB_X), m.dp(KNOB_Y));
+    c.draw_image(knob_pic(false), x, y, w, h);
+    c.draw_image(knob_pic(true), m.w as f32 - x - w, y, w, h);
+}
+
 /// The dial's still parts — shadow, disc, minute ring and the two numerals —
 /// drawn once into a cache and laid down with a single `draw_image` each
 /// frame. Only the hand changes as the watch runs, so nothing else on the
@@ -1109,8 +1189,8 @@ fn clock_face(m: &crate::theme::Metrics, t: &crate::theme::Theme, f: &Fonts) -> 
     if let Some(face) = faces.lock().expect("no poison").get(&key) {
         return face;
     }
-    let d = m.dp(DIAL_D);
-    let pad = m.dp(DIAL_FACE_PAD);
+    let d = m.dp(DIAL_D) * FACE_SS;
+    let pad = m.dp(DIAL_FACE_PAD) * FACE_SS;
     let side = (d + pad * 2.0).ceil() as u32;
     let mut face = Canvas::new(side, side);
     let cc = side as f32 / 2.0;
@@ -1118,13 +1198,14 @@ fn clock_face(m: &crate::theme::Metrics, t: &crate::theme::Theme, f: &Fonts) -> 
     // sits on: the chip's own fill, its bright hairline rim and its fade of
     // shadow, all four times the size. Read on its own the face is a plain
     // circle; made of that material it belongs to the keys under it.
-    widgets::disc(&mut face, t, cc, cc, d / 2.0, m.dp(DIAL_SHADOW));
+    widgets::disc(&mut face, t, cc, cc, d / 2.0, m.dp(DIAL_SHADOW) * FACE_SS);
     let span = d * DECK_OF_DIAL / DECK_MARK;
     face.draw_image(clock_deck(t.dark), cc - span / 2.0, cc - span / 2.0, span, span);
     let r = d / 2.0 * DIAL_NUM_R;
-    let px = m.dp(DIAL_NUM_PX);
+    let px = m.dp(DIAL_NUM_PX) * FACE_SS;
     face.text_center(&f.regular, DIAL_NUMS[0], cc, cc - r, px, t.pal.text);
     face.text_center(&f.regular, DIAL_NUMS[1], cc + r, cc, px, t.pal.text);
+    let face = if FACE_SS > 1.0 { face.shrink(FACE_SS as u32) } else { face };
     let face: &'static Canvas = Box::leak(Box::new(face));
     let mut faces = faces.lock().expect("no poison");
     faces.entry(key).or_insert(face)
@@ -1139,6 +1220,14 @@ const HAND_STILL: Rgba = Rgba::rgb(88, 92, 98);
 /// reach, plus a pixel of air. This is the margin the cached face is drawn
 /// into.
 const DIAL_FACE_PAD: f32 = DIAL_SHADOW + 2.0;
+/// How many times over the face is drawn before it is halved down to the
+/// panel. Every shape here -- the disc, its rim, the minute ring, the two
+/// numerals -- smooths an edge across one pixel and no finer, which is as
+/// much as a pixel can say; drawn twice the size and averaged back, the same
+/// edge thins out across half a pixel and reads smooth when the panel is
+/// looked at close. The face is drawn once and cached, so the doubling is
+/// paid for once per size and palette rather than once a frame.
+const FACE_SS: f32 = 2.0;
 /// The fine needle, from the centre to its point. Opposite it a fine line
 /// runs out from the hub before widening into the counterweight: Xiaomi
 /// leaves about 30 px of thin line before the thick part starts on a 600 px
@@ -1153,6 +1242,14 @@ const HAND_TAIL_W: f32 = 4.2;
 /// fixed one the hand turns about.
 const HAND_HUB: f32 = 7.0;
 const HAND_PIN: f32 = 3.0;
+/// The shadow the hand lays on the face, and how far below the hand it is
+/// set: the light comes from above, so the shadow is a copy of the hand
+/// straight under it. At twelve the two lie along each other and nothing of
+/// the shadow shows; at six it stands clear of the hand's end, which is what
+/// makes it grow as the hand turns back toward twelve and go as the hand
+/// comes round.
+const HAND_SHADOW: Rgba = Rgba::rgb(0, 0, 0).with_alpha(26);
+const HAND_SHADOW_DROP: f32 = 2.5;
 
 /// Where the stopwatch's parts sit in dp: the dial's centre from the top of
 /// the page, the count's centre and size under it, the short rule the paper
@@ -1214,17 +1311,37 @@ fn clock_dial(
     c: &mut Canvas, m: &crate::theme::Metrics, t: &crate::theme::Theme, f: &Fonts,
     cx: f32, cy: f32, deg: f32, tint: f32,
 ) {
+    clock_bail(c, m, cx);
+    clock_knobs(c, m);
     clock_face_at(c, m, t, f, cx, cy);
 
-    let ink = mix(HAND_STILL, HAND_BLUE, tint);
+    // The hand stands off the face, so it lays a shadow on it: the dial is
+    // lit from above and a little behind, which puts the shadow straight
+    // under the hand. Under it means along it when the hand stands at
+    // twelve — the shadow hides behind the hand there and is not seen at
+    // all — and furthest out from it when the hand lies down at six, which
+    // is the shadow growing as the hand turns, without anything having to
+    // follow the turn.
+    clock_hand(c, m, cx, cy, deg, HAND_SHADOW, m.dp(HAND_SHADOW_DROP));
+    clock_hand(c, m, cx, cy, deg, mix(HAND_STILL, HAND_BLUE, tint), 0.0);
+    c.fill_circle(cx, cy, m.dp(HAND_PIN) / 2.0, Rgba::rgb(255, 255, 255));
+}
+
+/// The hand at `deg` in `ink`, standing `drop` below where it is normally
+/// turned about — nothing for the hand itself, and the offset it is cast by
+/// for its shadow. The fine stroke runs through the hub to the far end of
+/// the tail; the thicker counterweight is laid over its outer part only, so
+/// a length of thin line stays between the hub and the weight as Xiaomi
+/// draws it.
+fn clock_hand(
+    c: &mut Canvas, m: &crate::theme::Metrics, cx: f32, cy: f32, deg: f32, ink: Rgba, drop: f32,
+) {
+    let cy = cy + drop;
     let a = deg * std::f32::consts::PI / 180.0;
     let (ux, uy) = (a.sin(), -a.cos());
     let tip = m.dp(HAND_TIP);
     let gap = m.dp(HAND_TAIL_GAP);
     let tail_end = gap + m.dp(HAND_TAIL);
-    // The fine stroke runs through the hub to the far end of the tail; the
-    // thicker counterweight is laid over its outer part only, so a length of
-    // thin line stays between the hub and the weight as Xiaomi draws it.
     c.line(cx, cy, cx + ux * tip, cy + uy * tip, m.dp(HAND_TIP_W), ink);
     c.line(cx, cy, cx - ux * tail_end, cy - uy * tail_end, m.dp(HAND_TIP_W), ink);
     c.line(
@@ -1233,7 +1350,6 @@ fn clock_dial(
         m.dp(HAND_TAIL_W), ink,
     );
     c.fill_circle(cx, cy, m.dp(HAND_HUB) / 2.0, ink);
-    c.fill_circle(cx, cy, m.dp(HAND_PIN) / 2.0, Rgba::rgb(255, 255, 255));
 }
 
 /// The clock: the two words across the top that switch between the time
