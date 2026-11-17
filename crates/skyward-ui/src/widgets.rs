@@ -917,16 +917,31 @@ pub fn chip_at(t: &Theme, cx: f32, cy: f32, r: f32) -> (Canvas, i32, i32) {
 
 /// Such a chip about the disc centred at (`cx`, `cy`) of radius `r`.
 fn chip(t: &Theme, (cx, cy, r): (f32, f32, f32)) -> (Canvas, i32, i32) {
-    let m = &t.m;
-    let (fill, rim) = if t.dark { (Rgba::rgb(38, 38, 38), Rgba::rgb(62, 62, 62)) } else { (Rgba::rgb(248, 248, 248), Rgba::rgb(255, 255, 255)) };
-    let spread = m.dp(7.0);
+    let spread = t.m.dp(7.0);
     let reach = r + spread;
     let (x0, y0) = ((cx - reach).floor() as i32 - 1, (cy - reach).floor() as i32 - 1);
     let size = (reach * 2.0).ceil() as u32 + 3;
     let mut c = Canvas::new(size, size);
-    let (cx, cy) = (cx - x0 as f32, cy - y0 as f32);
-    for py in 0..size as i32 {
-        for px in 0..size as i32 {
+    disc(&mut c, t, cx - x0 as f32, cy - y0 as f32, r, spread);
+    (c, x0, y0)
+}
+
+/// The material a round control is made of, laid on `c` about a centre and
+/// radius: a fill a shade off the page, a hairline rim brighter than both,
+/// and a fade of shadow reaching `spread` beyond the edge that lifts it off
+/// the page. Every round thing the system draws is this one disc — the `<`
+/// chip, the clock's keys, the music page's play key — and the clock's dial
+/// is the same disc at a larger size, so its face reads as part of that
+/// family rather than a plain circle of its own.
+pub fn disc(c: &mut Canvas, t: &Theme, cx: f32, cy: f32, r: f32, spread: f32) {
+    let (fill, rim) = (disc_fill(t), disc_rim(t));
+    // Only the ring itself is walked: a dial's canvas holds far more than
+    // the fade covers, and nothing outside the ring is ever written.
+    let reach = r + spread;
+    let (lo_x, lo_y) = ((cx - reach).floor() as i32, (cy - reach).floor() as i32);
+    let (hi_x, hi_y) = ((cx + reach).ceil() as i32, (cy + reach).ceil() as i32);
+    for py in lo_y.max(0)..hi_y.min(c.h as i32) {
+        for px in lo_x.max(0)..hi_x.min(c.w as i32) {
             let d = (px as f32 + 0.5 - cx).hypot(py as f32 + 0.5 - cy) - r;
             if d > 0.0 && d < spread {
                 let k = 1.0 - d / spread;
@@ -935,9 +950,27 @@ fn chip(t: &Theme, (cx, cy, r): (f32, f32, f32)) -> (Canvas, i32, i32) {
         }
     }
     c.fill_circle(cx, cy, r, fill);
-    let rim_w = m.dp(0.8);
+    let rim_w = t.m.dp(0.8);
     c.stroke_circle(cx, cy, r - rim_w / 2.0, rim_w, rim);
-    (c, x0, y0)
+}
+
+/// The fill a round control is made of in this theme: a shade off the page,
+/// so it reads as a piece laid on the page rather than a hole in it.
+pub fn disc_fill(t: &Theme) -> Rgba {
+    if t.dark {
+        Rgba::rgb(38, 38, 38)
+    } else {
+        Rgba::rgb(248, 248, 248)
+    }
+}
+
+/// The hairline laid round the edge of one, a step brighter than the fill.
+fn disc_rim(t: &Theme) -> Rgba {
+    if t.dark {
+        Rgba::rgb(62, 62, 62)
+    } else {
+        Rgba::rgb(255, 255, 255)
+    }
 }
 
 /// A short message in a dark capsule above the bottom edge.

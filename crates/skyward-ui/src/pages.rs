@@ -871,7 +871,12 @@ const RULER_NUM_CY: f32 = 0.42;
 /// the page's black rather than a white glaring out of it.
 const RULER_BLUE_TOP: Rgba = Rgba::rgb(12, 40, 49);
 const RULER_BLUE_FOOT: Rgba = Rgba::rgb(15, 49, 59);
-const RULER_BLUE_EDGE: Rgba = Rgba::rgb(3, 29, 35);
+/// In the dark the bar carries no frame of its own: the panel sinks straight
+/// into the black page and its rounded corners say where it ends. A line
+/// there — even one as deep as the panel's own top — reads as a blue ring
+/// standing off the page, which is the one thing a sunken panel must not
+/// look like.
+const RULER_BLUE_EDGE: Rgba = Rgba::rgb(0, 0, 0);
 const RULER_BLUE_INK: Rgba = Rgba::rgb(57, 184, 227);
 const RULER_BLUE_MARK: Rgba = Rgba::rgb(120, 214, 240);
 const RULER_DARK_PATCH: Rgba = Rgba::rgb(38, 38, 38);
@@ -1047,9 +1052,10 @@ const TIMER_HINT: Text = ["滑动尺子以计时", "滑動尺子以計時", "Sli
 /// once its shadow is counted; with the shadow this page lays under it, 212 dp
 /// brings our disc to the same span and the same place on the panel.
 const DIAL_D: f32 = 212.0;
-/// How far the dial's shadow is blurred, in dp. Small on purpose: it has to
-/// have faded out well above the count, or its grey would sit on the
-/// figures.
+/// How far the dial's shadow reaches beyond its edge, in dp. It is the
+/// chip's own fade — the one around every round key — widened to the disc
+/// four times the size, so the lift off the page reads at the same strength
+/// instead of as a hard cut.
 const DIAL_SHADOW: f32 = 12.0;
 
 /// The minute ring, drawn once by the user at 570 px and kept as a picture
@@ -1096,8 +1102,11 @@ fn clock_face(m: &crate::theme::Metrics, t: &crate::theme::Theme, f: &Fonts) -> 
     let side = (d + pad * 2.0).ceil() as u32;
     let mut face = Canvas::new(side, side);
     let cc = side as f32 / 2.0;
-    face.shadow_round_rect(cc - d / 2.0, cc - d / 2.0, d, d, d / 2.0, m.dp(DIAL_SHADOW), t.pal.shadow);
-    face.fill_circle(cc, cc, d / 2.0, t.pal.card);
+    // The dial is laid on the same disc every round control on the system
+    // sits on: the chip's own fill, its bright hairline rim and its fade of
+    // shadow, all four times the size. Read on its own the face is a plain
+    // circle; made of that material it belongs to the keys under it.
+    widgets::disc(&mut face, t, cc, cc, d / 2.0, m.dp(DIAL_SHADOW));
     let span = d * DECK_OF_DIAL / DECK_MARK;
     face.draw_image(clock_deck(), cc - span / 2.0, cc - span / 2.0, span, span);
     let r = d / 2.0 * DIAL_NUM_R;
@@ -1114,9 +1123,10 @@ const HAND_BLUE: Rgba = Rgba::rgb(52, 130, 255);
 /// The hand when the watch stands: a quiet charcoal, so the dial does not
 /// claim attention until the count runs. The pin stays white either way.
 const HAND_STILL: Rgba = Rgba::rgb(88, 92, 98);
-/// Room left around the disc for its shadow to fade out. Three sigma, plus
-/// a pixel of air: this is the margin the cached face is drawn into.
-const DIAL_FACE_PAD: f32 = 3.0 * DIAL_SHADOW + 2.0;
+/// Room left around the disc for its shadow to fade out: the fade's own
+/// reach, plus a pixel of air. This is the margin the cached face is drawn
+/// into.
+const DIAL_FACE_PAD: f32 = DIAL_SHADOW + 2.0;
 /// The fine needle, from the centre to its point. Opposite it a fine line
 /// runs out from the hub before widening into the counterweight: Xiaomi
 /// leaves about 30 px of thin line before the thick part starts on a 600 px

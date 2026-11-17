@@ -751,7 +751,10 @@ mod tests {
             let k = (m.dp(cy).round() as usize * w as usize + w as usize / 2) * 4;
             [fr.canvas.data[k], fr.canvas.data[k + 1], fr.canvas.data[k + 2]]
         };
-        let disc = [t.pal.card.r, t.pal.card.g, t.pal.card.b];
+        // The dial is the very disc the keys under it are made of, which is
+        // the chip's fill rather than the page's card.
+        let round = crate::widgets::disc_fill(&t);
+        let disc = [round.r, round.g, round.b];
         let rule = [t.pal.hairline.r, t.pal.hairline.g, t.pal.hairline.b];
         let page = [t.pal.bg.r, t.pal.bg.g, t.pal.bg.b];
         assert_eq!(at(&app, crate::pages::DIAL_CY), disc, "the dial is the stopwatch's own face, and no hand on it");
