@@ -815,32 +815,55 @@ fn timer_text(ms: u64) -> String {
 const CLOCK_HINT: Text = ["点击启动秒表", "點擊啟動碼錶", "Tap to start the stopwatch"];
 
 /// The dial: a disc the colour of a card, its own shadow under it, drawn by
-/// the page rather than laid on from a picture. Nothing is on it yet — the
-/// marks, the `60` and `15`, the ring and the hand all come later; the count
-/// under it carries the reading for now.
+/// the page rather than laid on from a picture. The blue hand Xiaomi paints
+/// lies on that Smartisan disc; the marks, the `60` and `15` and the ring
+/// come later. The count under it carries the reading for now.
 ///
-/// Across in dp. The picture it replaced showed a face 661 px wide on a
-/// 1080 panel; this is a shade under that, so the dial reads as the same
-/// instrument set a little further back.
-const DIAL_D: f32 = 236.0;
+/// Across in dp. Smartisan's dial measures about 608 px over a 1080 panel
+/// once its shadow is counted; with the shadow this page lays under it, 212 dp
+/// brings our disc to the same span and the same place on the panel.
+const DIAL_D: f32 = 212.0;
 /// How far the dial's shadow is blurred, in dp. Small on purpose: it has to
 /// have faded out well above the count, or its grey would sit on the
 /// figures.
 const DIAL_SHADOW: f32 = 12.0;
 
+/// The blue Xiaomi paints its second hand, sampled off the reference shot.
+const HAND_BLUE: Rgba = Rgba::rgb(52, 130, 255);
+/// Where that hand lies in the reference, clockwise from twelve. It stands
+/// still for now: ticking comes with the marks and numbers.
+const HAND_DEG: f32 = 228.0;
+/// The fine needle, from the centre to its point. Opposite it a fine line
+/// runs out from the hub before widening into the counterweight: Xiaomi
+/// leaves about 30 px of thin line before the thick part starts on a 600 px
+/// dial, so the thick stroke sits at the far end rather than at the centre.
+/// All in dp.
+const HAND_TIP: f32 = 82.0;
+const HAND_TIP_W: f32 = 2.4;
+const HAND_TAIL_GAP: f32 = 10.5;
+const HAND_TAIL: f32 = 20.0;
+const HAND_TAIL_W: f32 = 4.2;
+/// The blue disc over the join, and the white pin on top that reads as the
+/// fixed one the hand turns about.
+const HAND_HUB: f32 = 7.0;
+const HAND_PIN: f32 = 3.0;
+
 /// Where the stopwatch's parts sit in dp: the dial's centre from the top of
 /// the page, the count's centre and size under it, the short rule the paper
-/// hangs from, and where the paper starts and how tall a row of it is.
-const DIAL_CY: f32 = 272.0;
-const READ_CY: f32 = 462.0;
+/// hangs from, and where the paper starts and how tall a row of it is. The
+/// dial sits where Smartisan's sits on a 1080 panel; the count, rule and
+/// paper follow it down by the space it gained, so the paper still clears
+/// the keys and keeps its closing rule when it overflows.
+const DIAL_CY: f32 = 329.0;
+const READ_CY: f32 = 507.0;
 const READ_PX: f32 = 30.5;
 /// The count run past an hour, when `H:MM:SS.cc` needs the room.
 const READ_LONG_PX: f32 = 24.0;
-const RULE_CY: f32 = 505.0;
+const RULE_CY: f32 = 550.0;
 const RULE_W: f32 = 226.0;
-const HINT_CY: f32 = 528.0;
+const HINT_CY: f32 = 573.0;
 const HINT_PX: f32 = 11.5;
-const PAPER_TOP: f32 = 515.0;
+const PAPER_TOP: f32 = 560.0;
 const PAPER_ROW: f32 = 30.0;
 
 /// The foot of the stopwatch's paper: the top of the keys, less the gap the
@@ -860,12 +883,31 @@ pub fn clock_paper_room(m: &crate::theme::Metrics) -> usize {
 }
 
 /// The dial laid on centred at (`cx`, `cy`): the shadow first, so the disc
-/// is drawn over the half of it that falls inside, the disc itself after.
+/// is drawn over the half of it that falls inside, the disc itself after,
+/// then the hand on top of that.
 fn clock_dial(c: &mut Canvas, m: &crate::theme::Metrics, t: &crate::theme::Theme, cx: f32, cy: f32) {
     let d = m.dp(DIAL_D);
     let (x, y) = (cx - d / 2.0, cy - d / 2.0);
     c.shadow_round_rect(x, y, d, d, d / 2.0, m.dp(DIAL_SHADOW), t.pal.shadow);
     c.fill_circle(cx, cy, d / 2.0, t.pal.card);
+
+    let a = HAND_DEG * std::f32::consts::PI / 180.0;
+    let (ux, uy) = (a.sin(), -a.cos());
+    let tip = m.dp(HAND_TIP);
+    let gap = m.dp(HAND_TAIL_GAP);
+    let tail_end = gap + m.dp(HAND_TAIL);
+    // The fine stroke runs through the hub to the far end of the tail; the
+    // thicker counterweight is laid over its outer part only, so a length of
+    // thin line stays between the hub and the weight as Xiaomi draws it.
+    c.line(cx, cy, cx + ux * tip, cy + uy * tip, m.dp(HAND_TIP_W), HAND_BLUE);
+    c.line(cx, cy, cx - ux * tail_end, cy - uy * tail_end, m.dp(HAND_TIP_W), HAND_BLUE);
+    c.line(
+        cx - ux * gap, cy - uy * gap,
+        cx - ux * tail_end, cy - uy * tail_end,
+        m.dp(HAND_TAIL_W), HAND_BLUE,
+    );
+    c.fill_circle(cx, cy, m.dp(HAND_HUB) / 2.0, HAND_BLUE);
+    c.fill_circle(cx, cy, m.dp(HAND_PIN) / 2.0, Rgba::rgb(255, 255, 255));
 }
 
 /// The clock: the two words across the top that switch between the time
