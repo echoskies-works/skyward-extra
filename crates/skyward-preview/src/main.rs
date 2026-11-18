@@ -461,11 +461,12 @@ fn main() -> Result<()> {
     write_png(&path, &c)?;
     println!("wrote {}", path.display());
 
-    // The tasks page's two faces, neither with anything read off the phone
-    // yet: the processes as a list that holds none, and the performance with
-    // the figures it will draw.
-    let tasks: [(&str, TasksFace, bool); 3] = [
+    // The tasks page's three faces, none with anything read off the phone
+    // yet: the processes as a list that holds none, the services it keeps,
+    // and the performance with the figures it will draw.
+    let tasks: [(&str, TasksFace, bool); 4] = [
         ("00-10-tasks-process-light", TasksFace::Process, false),
+        ("00-10-tasks-service-light", TasksFace::Service, false),
         ("00-10-tasks-performance-light", TasksFace::Performance, false),
         ("00-10-tasks-process-dark", TasksFace::Process, true),
     ];

@@ -213,8 +213,8 @@ pub struct State {
     /// Which shelf the player's list looks at: every song, or the albums,
     /// the artists or the folders it keeps them by.
     pub music_filter: MusicFilter,
-    /// Which of the tasks page's two faces the page shows: the processes, or
-    /// the performance.
+    /// Which of the tasks page's three faces the page shows: the processes,
+    /// the services or the performance.
     pub tasks_face: TasksFace,
     /// The clock's own state: which of its two faces the page shows.
     pub clock: Clock,

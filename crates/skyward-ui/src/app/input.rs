@@ -37,13 +37,14 @@ impl App {
         self.refresh();
     }
 
-    /// Turn the tasks page to the face beside the one shown: the processes
-    /// first, the performance to their right, as its two words say.
+    /// Step the tasks page to the face beside the one shown: processes,
+    /// services, performance, left to right as its three words say. The ends
+    /// hold — a pull past the last face does not wrap round to the first.
     pub(super) fn turn_tasks_face(&mut self, onward: bool) {
-        self.state.tasks_face = match (self.state.tasks_face, onward) {
-            (TasksFace::Process, true) => TasksFace::Performance,
-            _ => TasksFace::Process,
-        };
+        let faces = TasksFace::ALL;
+        let at = faces.iter().position(|f| *f == self.state.tasks_face).unwrap_or(0);
+        let next = if onward { (at + 1).min(faces.len() - 1) } else { at.saturating_sub(1) };
+        self.state.tasks_face = faces[next];
         self.refresh();
     }
 
@@ -265,8 +266,8 @@ impl App {
                             Drag::Face
                         }
                         _ if self.screen() == Screen::Tasks && dx.abs() > slop && dx.abs() > dy.abs() => {
-                            // And the tasks page's: the processes first, the
-                            // performance to their right.
+                            // And the tasks page's: processes, services,
+                            // performance, left to right.
                             self.turn_tasks_face(dx < 0.0);
                             Drag::Face
                         }

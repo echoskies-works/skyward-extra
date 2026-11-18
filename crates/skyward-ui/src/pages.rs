@@ -633,41 +633,47 @@ fn music_play(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang) {
     icons::glyph(c, Icon::Play, mid, cy, r * 0.84, t.pal.chevron);
 }
 
-/// The tasks page's two faces, in the order it names them across its top:
-/// the processes the machine runs, and the performance it runs them at.
-const TASKS_FACES: [(TasksFace, Text); 2] =
-    [(TasksFace::Process, ["进程", "進程", "Processes"]), (TasksFace::Performance, ["性能", "效能", "Performance"])];
+/// The tasks page's three faces, in the order it names them across its top:
+/// the processes the machine runs, the services it keeps and the performance
+/// it runs them at.
+const TASKS_FACES: [(TasksFace, Text); 3] = [
+    (TasksFace::Process, ["进程", "進程", "Processes"]),
+    (TasksFace::Service, ["服务", "服務", "Services"]),
+    (TasksFace::Performance, ["性能", "效能", "Performance"]),
+];
 
-/// The tasks page the desktop opens: the processes as a list, and the
-/// performance with the figures it will draw. Neither face has anything
-/// behind it yet — nothing is read off the phone — so each says where it
-/// stands rather than standing empty, as the player's list does.
+/// The tasks page the desktop opens: the processes as a list, the services
+/// the machine keeps and the performance with the figures it will draw.
+/// None of the three has anything behind it yet — nothing is read off the
+/// phone — so each says where it stands rather than standing empty, as the
+/// player's list does.
 ///
-/// It keeps the shape the clock, the calculator and the player take: the two
+/// It keeps the shape the clock, the calculator and the player take: the
 /// words across the top, no `<` and no large title, the gear at the top right
-/// and a finger dragged level across the page turning to the face beside the
-/// one shown.
+/// and a finger dragged level across the page stepping to the face beside
+/// the one shown.
 pub fn tasks(cx: &Ctx) -> Frame {
     let (t, f, l) = (cx.t, cx.f, cx.state.lang);
     let m = &t.m;
     let mut c = page(cx);
     let mut out = Vec::new();
 
-    // The two words, the face shown in the page's ink and the other quiet,
-    // centred over what that face puts below them.
+    // The words, the face shown in the page's ink and the others quiet,
+    // centred over what each face puts below them.
     out.extend(face_tabs(&mut c, t, f, l, &TASKS_FACES, cx.state.tasks_face, Action::TasksFace));
 
     let said = match cx.state.tasks_face {
         TasksFace::Process => l.pick(["还没有读取进程", "還沒有讀取進程", "Processes are not read yet"]),
+        TasksFace::Service => l.pick(["还没有读取服务", "還沒有讀取服務", "Services are not read yet"]),
         TasksFace::Performance => l.pick(["还没有读数", "還沒有讀數", "Nothing is measured yet"]),
     };
     c.text_center(&f.body, said, m.w as f32 / 2.0, m.h as f32 / 2.0, m.sub_px, t.pal.subtitle);
 
     // No `<` and no large title: an app opened from the desktop leaves it the
-    // way the desktop's own apps do, and the two words across the top name
-    // it. The button at the right end is the clock's own gear, so the four
-    // apps carry one band of controls; this page has no settings behind it
-    // yet, so it answers a touch with nothing.
+    // way the desktop's own apps do, and the words across the top name it.
+    // The button at the right end is the clock's own gear, so the four apps
+    // carry one band of controls; this page has no settings behind it yet,
+    // so it answers a touch with nothing.
     Frame {
         back: false,
         header: false,
