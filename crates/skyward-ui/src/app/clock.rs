@@ -403,7 +403,7 @@ impl App {
             "時長為{minutes}分鐘的計時已結束",
             "The {minutes}-minute timer has ended"
         );
-        self.show_sheet(TIMER_DONE_TITLE, said, vec![(TIMER_DONE_OK, Action::TimerDoneOk)], now);
+        self.show_sheet(TIMER_DONE_TITLE, said, vec![vec![(TIMER_DONE_OK, Action::TimerDoneOk)]], now);
     }
 }
 
@@ -649,7 +649,8 @@ mod tests {
         assert!(fx.contains(&Effect::TimerAlarm { on: true }), "the long note starts with the notice");
         let sheet = app.sheet.as_ref().expect("the notice shows");
         assert_eq!(sheet.body, "时长为1分钟的计时已结束");
-        assert_eq!(sheet.buttons.len(), 1, "one 确定 key");
+        assert_eq!(sheet.rows.len(), 1, "one row of keys");
+        assert_eq!(sheet.rows[0].len(), 1, "one 确定 key");
 
         let fx = app.act(Action::TimerDoneOk, 2);
         assert_eq!(fx, vec![Effect::TimerAlarm { on: false }], "the note stops at 确定");

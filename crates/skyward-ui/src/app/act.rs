@@ -148,6 +148,19 @@ impl App {
                 self.refresh();
                 return vec![Effect::TimerAlarm { on: false }];
             }
+            // A power-menu entry: the menu goes, and the three that change
+            // the phone's state ask for a word first. Cancel only puts the
+            // menu away, so a stray pick leaves everything as it was.
+            Action::PowerMenuChoice(choice) => {
+                self.hide_power_menu();
+                if choice != power::PowerChoice::Cancel {
+                    let (title, body, rows) = power::power_confirm(choice, l);
+                    self.show_sheet(title, body, rows, now);
+                }
+            }
+            // The cancelling key of a sheet: it goes, and whatever was under
+            // it — desktop, app or lock — carries on untouched.
+            Action::SheetCancel => self.close_sheet(now),
             // A running stopwatch takes an entry: the run since the entry
             // before, and the whole of what it has counted.
             Action::ClockLap => {
@@ -288,7 +301,12 @@ impl App {
                     self.refresh();
                 }
             }
-            Action::RebootTo(target) => return vec![Effect::Reboot(target)],
+            // The 确定 of a power confirmation: the sheet falls back as the
+            // phone leaves for the target. Off a sheet this is harmless.
+            Action::RebootTo(target) => {
+                self.close_sheet(now);
+                return vec![Effect::Reboot(target)];
+            }
             Action::EnterRecovery => return vec![Effect::EnterRecovery],
             Action::Dismiss => {
                 self.stack = vec![(Screen::Desktop, 0.0, Focus::Unset)];

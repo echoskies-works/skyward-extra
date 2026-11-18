@@ -3,41 +3,70 @@
 
 use super::*;
 
-/// The power menu comes up over the page as a phone's own does: over this
-/// long, the page dims to `POWER_MENU_DIM` of itself and the card rises the
-/// last few dp into place.
-pub(super) const POWER_MENU_MS: u64 = 170;
-const POWER_MENU_IN: Ease = Ease::Out(POWER_MENU_MS, 2);
-const POWER_MENU_DIM: f32 = 0.45;
-
 /// The power menu as it shows: the entry lit, and when it came up, for the
-/// dim and the card to come in over a frame or two.
+/// soft ground and the card to rise with. Its card is the common sheet's —
+/// the same shape, the same keys — but its ground is softened, not darkened.
+/// That is the one thing that tells it from the confirmations it opens.
 pub(super) struct PowerMenu {
     pub(super) chosen: usize,
     pub(super) since: u64,
 }
 
-/// The card the power menu shows in, and the rows it lists, on a screen of
-/// the metrics `t` carries: the card in the middle of the screen, one row
-/// for each entry of [`POWER_MENU`].
-fn power_menu_layout(t: &Theme) -> (Rect, [Rect; POWER_MENU.len()]) {
-    let m = &t.m;
-    let (pad, item) = (m.dp(8.0), m.dp(56.0));
-    let w = m.dp(288.0);
-    let h = item * POWER_MENU.len() as f32 + pad * 2.0;
-    let (x, y) = ((m.w as f32 - w) / 2.0, (m.h as f32 - h) / 2.0);
-    let rows = std::array::from_fn(|i| Rect::new(x + pad, y + pad + item * i as f32, w - pad * 2.0, item));
-    (Rect::new(x, y, w, h), rows)
+/// The four ways out of the power menu, in the order shown: the three that
+/// ask for a word first, and cancel, which only puts the menu away. The
+/// restart card holds recovery and bootloader as its own whole-row keys.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PowerChoice {
+    PowerOff,
+    Restart,
+    Suspend,
+    Cancel,
 }
 
-/// What picking `target` on the menu does: leave for it, or — for the
-/// suspend this system has nowhere to go to yet — nothing at all. The menu
-/// is put away either way, so a press on an entry that does nothing reads
-/// as "that did nothing" rather than as a hang.
-fn power_effect(target: Target) -> Vec<Effect> {
-    match target {
-        Target::Suspend => Vec::new(),
-        _ => vec![Effect::Reboot(target)],
+const POWER_TITLE: Text = ["电源选项", "電源選項", "Power options"];
+const POWER_CHOICES: [(PowerChoice, Text); 4] = [
+    (PowerChoice::PowerOff, ["关机", "關機", "Power off"]),
+    (PowerChoice::Restart, ["重新启动", "重新啟動", "Restart"]),
+    (PowerChoice::Suspend, ["挂起", "掛起", "Suspend"]),
+    (PowerChoice::Cancel, ["取消", "取消", "Cancel"]),
+];
+
+/// The menu's keys as a sheet's rows: a whole row for each of the four.
+fn power_rows() -> dialog::SheetRows {
+    POWER_CHOICES.iter().map(|(choice, name)| vec![(*name, Action::PowerMenuChoice(*choice))]).collect()
+}
+
+/// The words of the sheet a choice opens, and the keys on it. Power off and
+/// restart go on to leave the system once confirmed; suspend is not wired
+/// up, so its 确定 does no more than its 取消.
+pub(super) fn power_confirm(choice: PowerChoice, lang: crate::lang::Lang) -> (Text, String, dialog::SheetRows) {
+    let ok: Text = ["确定", "確定", "OK"];
+    let cancel: Text = ["取消", "取消", "Cancel"];
+    match choice {
+        PowerChoice::PowerOff => (
+            ["关机", "關機", "Power off"],
+            lang.pick(["您的手机将会关机。", "您的手機將會關機。", "Your phone will power off."]).to_string(),
+            vec![vec![(ok, Action::RebootTo(Target::PowerOff)), (cancel, Action::SheetCancel)]],
+        ),
+        PowerChoice::Restart => (
+            ["重新启动", "重新啟動", "Restart"],
+            lang.pick(["您的手机将会重新启动。", "您的手機將會重新啟動。", "Your phone will restart."]).to_string(),
+            vec![
+                vec![(ok, Action::RebootTo(Target::System)), (cancel, Action::SheetCancel)],
+                vec![(["重启到Recovery", "重啟到Recovery", "Restart to recovery"], Action::RebootTo(Target::Recovery))],
+                vec![(["重启到Bootloader", "重啟到Bootloader", "Restart to bootloader"], Action::RebootTo(Target::Bootloader))],
+            ],
+        ),
+        PowerChoice::Suspend => (
+            ["确定要挂起吗？", "確定要掛起嗎？", "Suspend?"],
+            lang.pick([
+                "挂起后，Skyward-Extra当前状态将保留，随后您可以启动至其他操作系统，只要不关机再启动回Skyward-Extra，就会恢复挂起之前的状态。",
+                "掛起後，Skyward-Extra當前狀態將保留，隨後您可以啟動至其他操作系統，只要不關機再啟動回Skyward-Extra，就會恢復掛起之前的狀態。",
+                "Once suspended, Skyward-Extra keeps its current state. Start another system, then return to Skyward-Extra without powering off and the state before suspending is restored.",
+            ]).to_string(),
+            vec![vec![(ok, Action::SheetCancel), (cancel, Action::SheetCancel)]],
+        ),
+        PowerChoice::Cancel => unreachable!("cancel never opens a sheet"),
     }
 }
 
@@ -203,93 +232,78 @@ impl App {
         self.dirty = true;
     }
 
-/// A finger on the power menu: a tap on an entry does what it says, a
-/// tap beside the card puts the menu away and does nothing else.
-pub(super) fn power_menu_touch(&mut self, ev: Touch, now: u64) -> Vec<Effect> {
-        let Touch::Down(x, y) = ev else { return Vec::new() };
-        let t = self.theme();
-        // The card is drawn a few dp low on its way in; the rows come with
-        // it, and a finger landing that early finds them where they stood.
-        let rise = self.power_menu.as_ref().map_or(0.0, |m| {
-            let along = POWER_MENU_IN.progress(now.saturating_sub(m.since));
-            (1.0 - along) * t.m.dp(14.0)
-        });
-        let (card, rows) = power_menu_layout(&t);
-        for (i, row) in rows.iter().enumerate() {
-            if x >= row.x && x < row.x + row.w && y >= row.y + rise && y < row.y + rise + row.h {
-                self.power_menu = None;
-                self.dirty = true;
-                return power_effect(POWER_MENU[i].0);
-            }
-        }
-        if x < card.x || x >= card.x + card.w || y < card.y + rise || y >= card.y + rise + card.h {
+/// A finger on the power menu: a tap on an entry takes it, a tap beside the
+/// card puts the menu away and does nothing else. The card is the common
+/// sheet's; a finger landing while it rises finds the keys where they were.
+pub(super) fn power_menu_touch(&mut self, ev: Touch, f: &Fonts, now: u64) -> Vec<Effect> {
+    let Touch::Down(x, y) = ev else { return Vec::new() };
+    let t = self.theme();
+    let shown = self.power_menu.as_ref().map_or(0.0, |m| dialog::shown_sheet(m.since, None, now));
+    let rows = power_rows();
+    if let Some(action) = dialog::sheet_hit(&t, f, &rows, "", shown, x, y) {
+        return self.act(action, now);
+    }
+    if dialog::sheet_miss(&t, f, &rows, "", shown, x, y) {
+        self.hide_power_menu();
+    }
+    Vec::new()
+}
+
+/// The keys while the power menu shows: the volume keys move the light
+/// down the list and up it, the power key takes what is lit, back puts the
+/// menu away. Taking a key hands the choice to `act`, which puts the menu
+/// away and opens the sheet that asks for the word.
+pub(super) fn power_menu_key(&mut self, key: Key, now: u64) -> Vec<Effect> {
+    let Some(menu) = self.power_menu.as_mut() else { return Vec::new() };
+    let last = POWER_CHOICES.len() - 1;
+    menu.chosen = match key {
+        Key::VolumeUp => menu.chosen.checked_sub(1).unwrap_or(last),
+        Key::VolumeDown => (menu.chosen + 1) % POWER_CHOICES.len(),
+        _ => menu.chosen,
+    };
+    let chosen = menu.chosen;
+    self.dirty = true;
+    match key {
+        Key::Power => self.act(Action::PowerMenuChoice(POWER_CHOICES[chosen].0), now),
+        Key::Back => {
             self.hide_power_menu();
+            Vec::new()
         }
-        Vec::new()
+        _ => {
+            self.stir(now);
+            Vec::new()
+        }
     }
+}
 
-    /// The keys while the power menu shows: the volume keys move the light
-    /// down the list and up it, the power key does what the lit entry says,
-    /// and back puts the menu away.
-    pub(super) fn power_menu_key(&mut self, key: Key, now: u64) -> Vec<Effect> {
-        let Some(menu) = self.power_menu.as_mut() else { return Vec::new() };
-        let last = POWER_MENU.len() - 1;
-        menu.chosen = match key {
-            Key::VolumeUp => menu.chosen.checked_sub(1).unwrap_or(last),
-            Key::VolumeDown => (menu.chosen + 1) % POWER_MENU.len(),
-            _ => menu.chosen,
-        };
-        let chosen = menu.chosen;
-        self.dirty = true;
-        match key {
-            Key::Power => {
-                self.power_menu = None;
-                power_effect(POWER_MENU[chosen].0)
-            }
-            Key::Back => {
-                self.power_menu = None;
-                Vec::new()
-            }
-            _ => {
-                self.stir(now);
-                Vec::new()
-            }
-        }
+/// The power menu over the page: the same card the sheets use, but the page
+/// under it is softened, not darkened — the one thing that tells this menu
+/// from the confirmations it opens. The soft copy is made once and laid over
+/// the page a little more each frame as the card rises from the foot.
+pub(super) fn compose_power_menu(&mut self, out: &mut Canvas, f: &Fonts, now: u64) {
+    let Some(menu) = self.power_menu.as_ref() else { return };
+    let since = menu.since;
+    let chosen = menu.chosen;
+    let t = self.theme();
+    let lang = self.state.lang;
+    let m = &t.m;
+    let along = dialog::shown_sheet(since, None, now);
+    if along <= 0.0 {
+        return;
     }
-
-    /// The power menu over the page: the page blurred and dimmed under it,
-    /// the card come up into the middle of the screen with its entries
-    /// listed and the one the keys stand on lit.
-    pub(super) fn compose_power_menu(&mut self, out: &mut Canvas, f: &Fonts, now: u64) {
-        let Some(menu) = self.power_menu.as_ref() else { return };
-        let t = self.theme();
-        let lang = self.state.lang;
-        let m = &t.m;
-        let along = POWER_MENU_IN.progress(now.saturating_sub(menu.since));
-        // The page stands soft under the card: blurred once when the menu
-        // comes up, and that soft copy shown for as long as it stands.
-        if self.power_blur.is_none() {
-            self.power_blur = Some(super::lock::soft_ground(out, m.w, m.h));
-        }
-        *out = self.power_blur.as_ref().expect("made just above").clone();
-        out.dim(1.0 - POWER_MENU_DIM * along);
-        let (card, rows) = power_menu_layout(&t);
-        let radius = m.dp(26.0);
-        // The card rises the last few dp into place rather than snapping
-        // there, as a phone's own menus do.
-        let rise = (1.0 - along) * m.dp(14.0);
-        let (x, y) = (card.x, card.y + rise);
-        out.shadow_round_rect(x, y, card.w, card.h, radius, m.dp(16.0), t.pal.shadow);
-        out.fill_round_rect(x, y, card.w, card.h, radius, t.pal.card);
-        for (i, (_, name)) in POWER_MENU.iter().enumerate() {
-            let row = Rect::new(rows[i].x, rows[i].y + rise, rows[i].w, rows[i].h);
-            if i == menu.chosen {
-                let inset = m.dp(3.0);
-                out.fill_round_rect(row.x, row.y + inset, row.w, row.h - inset * 2.0, m.dp(18.0), t.pal.track);
-            }
-            out.text_center(&f.label, lang.pick(*name), row.x + row.w / 2.0, row.y + row.h / 2.0, m.row_title_px, t.pal.text);
-        }
+    // Blurred once into a copy kept while the menu stands, then laid back
+    // over the page as the card comes up: softened ground, not a dark one.
+    if self.power_blur.is_none() {
+        self.power_blur = Some(super::lock::soft_ground(out, m.w, m.h));
     }
+    if let Some(blur) = self.power_blur.clone() {
+        out.lay(&blur, 0, 0, along);
+    }
+    let rows = power_rows();
+    let geom = dialog::sheet_geom(&t, f, "", &rows);
+    let off = dialog::sheet_off(&t, along);
+    dialog::paint_sheet(out, &t, f, lang, POWER_TITLE, &rows, &geom, off, Some(chosen));
+}
 }
 
 #[cfg(test)]
@@ -297,6 +311,132 @@ mod tests {
     use super::*;
     use crate::app::testing::*;
     use skyward_info::Charge;
+
+    /// The centre of the `index`-th key of a sheet's rows, once it has risen.
+    fn sheet_key_at(app: &App, f: &Fonts, rows: &dialog::SheetRows, body: &str, index: usize) -> (f32, f32) {
+        let t = app.theme();
+        let geom = dialog::sheet_geom(&t, f, body, rows);
+        let off = dialog::sheet_off(&t, 1.0);
+        let (rect, _) = geom.rows.iter().flatten().zip(rows.iter().flatten()).nth(index).unwrap();
+        (rect.x + rect.w / 2.0, rect.y + off + rect.h / 2.0)
+    }
+
+    /// The power menu is four whole-row keys: the three that change the
+    /// phone's state and cancel. Its card is a sheet's, but its ground is
+    /// softened, which is what tells it from the confirmations to come.
+    #[test]
+    fn the_power_menu_lists_four_ways_out() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.show_power_menu(0);
+        let rows = power_rows();
+        assert_eq!(rows.len(), 4, "four rows");
+        assert!(rows.iter().all(|r| r.len() == 1), "each a whole row");
+        assert_eq!(rows[3][0].1, Action::PowerMenuChoice(PowerChoice::Cancel), "cancel is last");
+        // A finger on a key hands its choice to act, which opens the card.
+        let (x, y) = sheet_key_at(&app, &f, &rows, "", 0);
+        assert!(app.touch(Touch::Down(x, y), &f, dialog::RISE_MS).is_empty(), "power off asks first");
+        assert!(app.power_menu.is_none(), "the menu went");
+        let sheet = app.sheet.as_ref().unwrap();
+        assert_eq!(sheet.title, ["关机", "關機", "Power off"]);
+        assert_eq!(sheet.body, "您的手机将会关机。");
+        let _ = i;
+    }
+
+    /// Picking cancel from the menu puts it away and asks nothing: the page
+    /// under it carries on, and no sheet is left over.
+    #[test]
+    fn cancelling_the_menu_just_lets_the_page_go_on() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.show_power_menu(0);
+        let rows = power_rows();
+        let (x, y) = sheet_key_at(&app, &f, &rows, "", 3);
+        assert!(app.touch(Touch::Down(x, y), &f, dialog::RISE_MS).is_empty());
+        assert!(app.power_menu.is_none() && app.sheet.is_none(), "nothing stands over the page now");
+        assert_eq!(app.screen(), Screen::Home, "and the page is where it was");
+        let _ = i;
+    }
+
+    /// A confirmation's 确定 does what it says and takes the sheet with it;
+    /// its 取消 only takes the sheet, leaving the page as it was.
+    #[test]
+    fn a_confirmation_goes_on_cancel_and_leaves_on_ok() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.show_power_menu(0);
+        let rows = power_rows();
+        let (x, y) = sheet_key_at(&app, &f, &rows, "", 0);
+        app.touch(Touch::Down(x, y), &f, dialog::RISE_MS); // open the power-off confirmation
+
+        let sheet = app.sheet.as_ref().unwrap();
+        let rows = sheet.rows.clone();
+        assert_eq!(rows[0].len(), 2, "确定 and 取消 share the first row");
+        let (cx, cy) = sheet_key_at(&app, &f, &rows, &app.sheet.as_ref().unwrap().body, 1);
+        assert!(app.touch(Touch::Down(cx, cy), &f, dialog::RISE_MS * 2).is_empty(), "cancel does nothing");
+        assert!(app.sheet.as_ref().unwrap().closing.is_some(), "but the sheet goes");
+        app.tick(dialog::RISE_MS * 2 + dialog::FALL_MS);
+        assert_eq!(app.screen(), Screen::Home, "back to the page that was under it");
+
+        // Open it again and this time confirm.
+        app.show_power_menu(dialog::RISE_MS * 3);
+        let rows = power_rows();
+        let (x, y) = sheet_key_at(&app, &f, &rows, "", 0);
+        app.touch(Touch::Down(x, y), &f, dialog::RISE_MS * 4);
+        let sheet = app.sheet.as_ref().unwrap();
+        let rows = sheet.rows.clone();
+        let body = sheet.body.clone();
+        let (cx, cy) = sheet_key_at(&app, &f, &rows, &body, 0);
+        assert_eq!(
+            app.touch(Touch::Down(cx, cy), &f, dialog::RISE_MS * 5),
+            vec![Effect::Reboot(Target::PowerOff)],
+            "确定 powers off"
+        );
+        let _ = i;
+    }
+
+    /// The restart card carries recovery and bootloader as whole rows below
+    /// 确定 / 取消, picking either leaves for it at once.
+    #[test]
+    fn the_restart_card_carries_recovery_and_bootloader() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.act(Action::PowerMenuChoice(PowerChoice::Restart), 0);
+        let sheet = app.sheet.as_ref().unwrap();
+        assert_eq!(sheet.title, ["重新启动", "重新啟動", "Restart"]);
+        assert_eq!(sheet.body, "您的手机将会重新启动。");
+        let rows = sheet.rows.clone();
+        assert_eq!(rows.len(), 3, "确定/取消, then two whole rows");
+        assert_eq!(rows[1][0].1, Action::RebootTo(Target::Recovery));
+        assert_eq!(rows[2][0].1, Action::RebootTo(Target::Bootloader));
+        let body = sheet.body.clone();
+        // Keys flatten as 确定, 取消, Recovery, Bootloader.
+        let (x, y) = sheet_key_at(&app, &f, &rows, &body, 2);
+        assert_eq!(
+            app.touch(Touch::Down(x, y), &f, dialog::RISE_MS),
+            vec![Effect::Reboot(Target::Recovery)]
+        );
+        let _ = i;
+    }
+
+    /// Suspend is not wired up, so both of its keys close the card and leave
+    /// the phone as it was — the 确定 does no more than the 取消.
+    #[test]
+    fn suspend_confirms_to_nothing_because_it_is_not_built() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.act(Action::PowerMenuChoice(PowerChoice::Suspend), 0);
+        let sheet = app.sheet.as_ref().unwrap();
+        assert_eq!(sheet.title, ["确定要挂起吗？", "確定要掛起嗎？", "Suspend?"]);
+        assert!(sheet.rows[0].iter().all(|(_, a)| *a == Action::SheetCancel), "both keys only close it");
+        let rows = sheet.rows.clone();
+        let body = sheet.body.clone();
+        let (x, y) = sheet_key_at(&app, &f, &rows, &body, 0);
+        assert!(app.touch(Touch::Down(x, y), &f, dialog::RISE_MS).is_empty());
+        assert!(app.sheet.as_ref().unwrap().closing.is_some());
+        assert_eq!(app.screen(), Screen::Home);
+        let _ = i;
+    }
 
     #[test]
     fn power_key_turns_the_panel_off_and_on() {

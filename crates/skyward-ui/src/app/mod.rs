@@ -356,6 +356,12 @@ pub enum Action {
     ClockLap,
     /// Put the timer-end notice away and take the timer back to nothing.
     TimerDoneOk,
+    /// An entry of the power menu was taken. Power off, restart and suspend
+    /// ask for a sheet to confirm them; cancel only puts the menu away.
+    PowerMenuChoice(power::PowerChoice),
+    /// The cancelling key of a sheet: put it away and leave the page as it
+    /// was, whatever was under it — desktop, app or lock screen.
+    SheetCancel,
     /// Set the timer for this many minutes, from zero to the ruler's three
     /// hours.
     ClockSpan(u64),
@@ -1524,7 +1530,7 @@ impl App {
         };
         let blink = self.blink_at(now).filter(|_| self.display_on).map(|(_, next)| next);
         let chord = self.chord.map(|(_, at)| at + CHORD_MS);
-        let menu = self.power_menu.as_ref().map(|m| m.since + power::POWER_MENU_MS);
+        let menu = self.power_menu.as_ref().map(|m| m.since + dialog::RISE_MS);
         // The sheet's rise and fall need their own frames, as the menu's does.
         let sheet = self.sheet.as_ref().and_then(|s| s.deadline(now));
         // The clock's counts go on of their own accord, and the stopwatch

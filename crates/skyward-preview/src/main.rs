@@ -1410,7 +1410,7 @@ fn main() -> Result<()> {
     }
 
     // The panel mid-gesture, to set beside recordings of the same moves.
-    let moments: [Moment; 37] = [
+    let moments: [Moment; 40] = [
         // A page pulled off the screen by its foot, the desktop come in
         // under it: four frames of the one move, the page gone up by about a
         // quarter, a half, three quarters and all but its last strip. The
@@ -1446,21 +1446,46 @@ fn main() -> Result<()> {
             pull_up(app, f, by)
         }),
         // The power menu over the desktop, brought up the way the panel
-        // brings it: the power key and volume up together, then the card
-        // coming in over the page dimmed behind it.
+        // brings it: power and volume up together, then the common card
+        // rising over a softened page. Four whole rows, not the old five.
         ("00-07-power-menu-light", Screen::Desktop, false, &|app, _| {
             let _ = app.key(Key::Power, 1000);
             let _ = app.key(Key::VolumeUp, 1100);
             1400
         }),
-        // The same menu with the light moved down it, as the volume key
-        // does, to show an entry other than the first lit.
+        // The same menu with the light moved down to 挂起, to show a later
+        // row lit and the soft ground standing a little longer.
         ("00-07-power-menu-dark", Screen::Desktop, true, &|app, _| {
             let _ = app.key(Key::Power, 1000);
             let _ = app.key(Key::VolumeUp, 1100);
             let _ = app.key(Key::VolumeDown, 1200);
             let _ = app.key(Key::VolumeDown, 1260);
             1500
+        }),
+        // The three confirmations the menu opens, each a dark sheet over the
+        // page the menu was called from. 关机 and 重新启动 ask one row of
+        // 确定 / 取消; restart carries recovery and bootloader below them;
+        // 挂起 explains what suspending means.
+        ("00-07-power-off-confirm-light", Screen::Desktop, false, &|app, _| {
+            let _ = app.key(Key::Power, 1000);
+            let _ = app.key(Key::VolumeUp, 1100);
+            let _ = app.key(Key::Power, 1200);
+            1700
+        }),
+        ("00-07-power-restart-confirm-light", Screen::Desktop, false, &|app, _| {
+            let _ = app.key(Key::Power, 1000);
+            let _ = app.key(Key::VolumeUp, 1100);
+            let _ = app.key(Key::VolumeDown, 1200);
+            let _ = app.key(Key::Power, 1300);
+            1800
+        }),
+        ("00-07-power-suspend-confirm-light", Screen::Desktop, false, &|app, _| {
+            let _ = app.key(Key::Power, 1000);
+            let _ = app.key(Key::VolumeUp, 1100);
+            let _ = app.key(Key::VolumeDown, 1200);
+            let _ = app.key(Key::VolumeDown, 1260);
+            let _ = app.key(Key::Power, 1360);
+            1860
         }),
         ("08-about-light", Screen::About, false, &|_, _| 2000),
         ("08-about-dark", Screen::About, true, &|_, _| 2000),

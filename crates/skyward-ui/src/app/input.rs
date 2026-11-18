@@ -63,7 +63,7 @@ impl App {
         // The power menu takes the finger while it shows, over everything
         // else on the panel.
         if self.power_menu.is_some() {
-            return self.power_menu_touch(ev, now);
+            return self.power_menu_touch(ev, f, now);
         }
         // A finger on the charging screen sends it away for the page, and
         // does nothing else until it lifts. That screen stands over the lock,
