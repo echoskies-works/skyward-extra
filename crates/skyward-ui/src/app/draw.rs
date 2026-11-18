@@ -421,7 +421,69 @@ impl App {
     /// canvas of its own, the page as it was laid down under it, and the new
     /// one laid over that a little to the right of where it comes to rest,
     /// fading up as it goes.
+    /// Draw the face `at` as a whole page on its own canvas, without
+    /// touching the page being shown. A copy of the state stands in for the
+    /// one on screen with just this page's face changed, so the strip can
+    /// hold two faces at once while the finger moves them.
+    fn face_canvas(&self, at: usize, f: &Fonts, info: &DeviceInfo, now: u64) -> Canvas {
+        let (w, h) = (self.w, self.h);
+        let t = self.theme();
+        let mut state = self.state.clone();
+        let screen = self.screen();
+        match screen {
+            Screen::Clock => state.clock.face = if at == 0 { ClockFace::Stopwatch } else { ClockFace::Timer },
+            Screen::Calculator => state.calc_face = if at == 0 { CalcFace::Sum } else { CalcFace::Convert },
+            Screen::Music => state.music_face = if at == 0 { MusicFace::List } else { MusicFace::Play },
+            Screen::Tasks => state.tasks_face = TasksFace::ALL[at.min(TasksFace::ALL.len() - 1)],
+            _ => {}
+        }
+        let cx = Ctx { t: &t, f, info, state: &state, term: self.term.as_ref(), band: None, now, wallpaper: self.wallpaper.as_ref() };
+        pages::render(screen, &cx).canvas.crop(0, 0, w, h)
+    }
+
+    /// The two faces a finger pulls against each other: the one shown, and
+    /// the one beside it. At either end there is no neighbour, and the
+    /// empty canvas lets the page's ground show through.
+    fn face_pair(&self, f: &Fonts, info: &DeviceInfo, from: usize, to: usize, now: u64) -> (Canvas, Canvas) {
+        let left = self.face_canvas(from, f, info, now);
+        let right = if to == from { Canvas::new(self.w, self.h) } else { self.face_canvas(to, f, info, now) };
+        (left, right)
+    }
+
     fn paint_face(&mut self, out: &mut Canvas, t: &Theme, f: &Fonts, info: &DeviceInfo, view: &View, now: u64) {
+        // Faces under a finger move as one strip: the one shown and its
+        // neighbour side by side, following the finger's shift. No new page
+        // is drawn here — both were drawn whole when the drag began — so a
+        // frame is only two canvases laid down.
+        // The strip is drawn only once: the two faces were rendered whole
+        // when the finger first went over the slop, and every frame after
+        // that lays the same two canvases at a new shift.
+        let undrawn = match self.face_swipe.as_ref() {
+            Some(swipe) if !swipe.drawn => Some((swipe.from, swipe.to)),
+            _ => None,
+        };
+        if let Some((from, to)) = undrawn {
+            let (left, right) = self.face_pair(f, info, from, to, now);
+            if let Some(swipe) = self.face_swipe.as_mut() {
+                swipe.left = left;
+                swipe.right = right;
+                swipe.drawn = true;
+            }
+        }
+        if let Some(swipe) = self.face_swipe.as_ref() {
+            let w = self.w as i32;
+            let shift = swipe.shift.round() as i32;
+            // The face shown always goes with the finger. Its neighbour
+            // comes in from the side the finger pulled away from: from the
+            // right on a leftward pull, from the left on a rightward one.
+            // At the ends the neighbour is an empty canvas, so the page's
+            // ground shows where a face is not.
+            let neighbor_at = if swipe.onward { shift + w } else { shift - w };
+            out.clear(t.pal.bg);
+            out.lay(&swipe.left, shift, 0, 1.0);
+            out.lay(&swipe.right, neighbor_at, 0, 1.0);
+            return;
+        }
         let along = match &self.face_turn {
             Some(turn) => dialog::eased(now.saturating_sub(turn.since), FACE_MS),
             None => 1.0,

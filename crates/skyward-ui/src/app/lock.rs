@@ -434,6 +434,34 @@ mod tests {
         assert!(lock.sheet.is_none(), "and nothing of it is drawn under the dark");
     }
 
+    /// Lighting the panel after a power-key sleep shows the lock coming up
+    /// from black, never the page it went to sleep on. The page is under the
+    /// lock's own wallpaper, which covers the screen from the first lit
+    /// frame, so the brightening is of the lock and not a flash of the old
+    /// page before the lock arrives.
+    #[test]
+    fn lighting_the_panel_shows_the_lock_not_the_page_it_left() {
+        let f = crate::font::bundled();
+        let i = crate::app::testing::info();
+        let mut app = App::new(Screen::Desktop, 400, 800, 2.0);
+        app.set_lock_wallpaper(Canvas::filled(400, 800, Rgba::rgb(20, 20, 20)));
+        app.sleep(0);
+        // The power key down: light the panel and put the lock straight back.
+        app.wake(10);
+        app.lock_now();
+        assert!(app.lock.is_some() && app.display_on, "the lock stands over the lit panel");
+        // The first lit frame, and a later one while the content brightens:
+        // the lock's sheet is drawn whole, covering the page under it.
+        for now in [10, 100, 400] {
+            let mut out = Canvas::new(400, 800);
+            app.compose(&mut out, &f, &i, "21:40", "11月18日 周二", now);
+            assert!(app.lock.as_ref().is_some_and(|l| l.sheet.is_some()), "the lock is drawn at {now}");
+            // Its top-left is the lock wallpaper's grey, not the desktop's.
+            let px = &out.data[0..4];
+            assert!(px[0] < 60, "the lock wallpaper shows through at {now}, got {}", px[0]);
+        }
+    }
+
     /// Let go and the spring carries the lock where the swipe said, a frame
     /// at a time. Woken only when the spring was due to land, the panel drew
     /// the lock under the finger and then the page: the motion in between

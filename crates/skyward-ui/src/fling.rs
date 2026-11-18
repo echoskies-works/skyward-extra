@@ -15,6 +15,20 @@ impl Tracker {
         self.samples.clear();
     }
 
+    /// Read the same moments along another axis: a drag that went over the
+    /// slop sideways started as y samples, and from here on its speed is
+    /// wanted along x. Keeping the original times means the first sideways
+    /// move is still measured against where the finger went down.
+    pub fn rebase(&mut self, value: f32) {
+        for (_, at) in self.samples.iter_mut() {
+            *at = value;
+        }
+        // The move that crossed the slop has already put its y into the
+        // tracker. Drop it: the first sideways move adds its own x reading,
+        // and two samples at the same moment would halve the measured speed.
+        self.samples.pop();
+    }
+
     pub fn add(&mut self, at: u64, y: f32) {
         // A finger moving again after a rest starts a new measure.
         if self.samples.last().is_some_and(|&(t, _)| at.saturating_sub(t) > REST_MS) {

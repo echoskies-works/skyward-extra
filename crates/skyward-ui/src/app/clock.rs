@@ -488,6 +488,29 @@ mod tests {
         assert!(clock.hand_tint(2_000 + HAND_TINT_MS) < 0.01, "back to charcoal");
     }
 
+    /// Pausing a still watch fades the hand to charcoal, and a reset sweeps
+    /// it home: neither is a running count, so they ask for frames on their
+    /// own. Wake only once a second and the fade and sweep land in one jump.
+    #[test]
+    fn the_hand_asks_for_frames_while_it_fades_or_sweeps_home() {
+        let mut app = App::new(Screen::Clock, W, H, PPD);
+        // Run the hand up to blue, then pause once the colour has landed:
+        // the count stands still, but the hand is fading back to charcoal.
+        app.state.clock.hand.follow(true, 900);
+        app.state.clock.hand.follow(false, 900 + HAND_TINT_MS);
+        let pause = 900 + HAND_TINT_MS;
+        assert!(app.state.clock.hand.moving(pause), "the fade is under way");
+        assert!(!app.state.clock.running(), "and the count is not running");
+        assert_eq!(app.deadline(pause), Some(pause + CLOCK_STEP_MS), "yet the panel is woken a frame at a time");
+        let _ = app.take_dirty();
+        app.tick(pause + 10);
+        assert!(app.take_dirty(), "and each frame of the fade is drawn");
+        // A reset sweep home, again with no count running.
+        app.state.clock.hand.reset(90.0, 2_000);
+        assert!(app.state.clock.hand.moving(2_000), "the sweep is under way");
+        assert_eq!(app.deadline(2_000), Some(2_000 + CLOCK_STEP_MS), "and it too asks for a frame at a time");
+    }
+
     #[test]
     fn the_reading_is_drawn_again_as_the_stopwatch_runs() {
         let (f, i) = (fonts(), info());

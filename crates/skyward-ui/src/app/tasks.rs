@@ -84,22 +84,24 @@ mod tests {
         let mut app = App::new(Screen::Tasks, W, H, PPD);
         let pull = |app: &mut App, from: f32, to: f32, now: u64| {
             app.touch(Touch::Down(from, 600.0), &f, now);
-            app.touch(Touch::Move(to, 605.0), &f, now);
-            app.touch(Touch::Up, &f, now);
+            app.touch(Touch::Move(to, 605.0), &f, now + 10);
+            app.touch(Touch::Up, &f, now + 20);
+            // The faces follow the finger and settle once it lifts.
+            app.tick(now + 10_000);
         };
 
         pull(&mut app, 700.0, 100.0, 0);
         assert_eq!(app.state.tasks_face, TasksFace::Service, "a pull left shows the service beside the processes");
-        pull(&mut app, 700.0, 100.0, 1_000);
+        pull(&mut app, 700.0, 100.0, 20_000);
         assert_eq!(app.state.tasks_face, TasksFace::Performance, "another shows the performance");
-        pull(&mut app, 700.0, 100.0, 2_000);
+        pull(&mut app, 700.0, 100.0, 40_000);
         assert_eq!(app.state.tasks_face, TasksFace::Performance, "a third stays at the last face");
 
-        pull(&mut app, 100.0, 700.0, 3_000);
+        pull(&mut app, 100.0, 700.0, 60_000);
         assert_eq!(app.state.tasks_face, TasksFace::Service, "a pull back shows the service again");
-        pull(&mut app, 100.0, 700.0, 4_000);
+        pull(&mut app, 100.0, 700.0, 80_000);
         assert_eq!(app.state.tasks_face, TasksFace::Process, "and another brings the processes");
-        pull(&mut app, 100.0, 700.0, 5_000);
+        pull(&mut app, 100.0, 700.0, 100_000);
         assert_eq!(app.state.tasks_face, TasksFace::Process, "a last one stays at the first face");
     }
 

@@ -44,16 +44,24 @@ impl App {
                 self.state.calc.press(key);
                 self.refresh();
             }
-            // The calculator keeps one face at a time the way the clock does,
-            // and the one shown takes the page from the top.
+            // Tapping a tab gives way to the face it names, the one coming
+            // in fading up over the one shown — the same small turn on every
+            // page whose top words are tabs. A finger's swipe is the other
+            // way: `start_face_swipe` draws both faces and lets the finger
+            // move them instead.
             Action::CalcFace(face) => {
-                self.state.calc_face = face;
-                self.refresh();
+                if self.state.calc_face != face {
+                    self.face_turn = self.face_snapshot(now);
+                    self.state.calc_face = face;
+                    self.refresh();
+                }
             }
-            // The player keeps one face at a time the same way.
             Action::MusicFace(face) => {
-                self.state.music_face = face;
-                self.refresh();
+                if self.state.music_face != face {
+                    self.face_turn = self.face_snapshot(now);
+                    self.state.music_face = face;
+                    self.refresh();
+                }
             }
             // The shelf a touch names is the one the list looks at; the page
             // stays where it is, its face untouched.
@@ -61,15 +69,13 @@ impl App {
                 self.state.music_filter = filter;
                 self.refresh();
             }
-            // The tasks page keeps one face at a time the same way.
             Action::TasksFace(face) => {
-                self.state.tasks_face = face;
-                self.refresh();
+                if self.state.tasks_face != face {
+                    self.face_turn = self.face_snapshot(now);
+                    self.state.tasks_face = face;
+                    self.refresh();
+                }
             }
-            // The clock keeps one face at a time; the one coming in is drawn
-            // over the one shown, a little to the right of where it comes to
-            // rest and fading up, so the change reads as the page turning
-            // over rather than as being replaced.
             Action::ClockFace(face) => {
                 if self.state.clock.face != face {
                     self.face_turn = self.face_snapshot(now);

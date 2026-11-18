@@ -4,48 +4,66 @@
 use super::*;
 
 impl App {
-    /// Turn the clock to the face beside the one shown: a finger dragged
-    /// level across the page turns it as the two words across its top do.
-    pub(super) fn turn_face(&mut self, onward: bool) {
-        let clock = &mut self.state.clock;
-        // There are the two faces and no more: a pull one way shows the one
-        // to the right of the watch, a pull the other way the watch itself.
-        clock.face = match (clock.face, onward) {
-            (ClockFace::Stopwatch, true) => ClockFace::Timer,
-            _ => ClockFace::Stopwatch,
-        };
-        self.refresh();
+    /// A finger has gone over the slop level across a page whose top words
+    /// are tabs. Draw both faces whole and hand them to the finger: the one
+    /// shown and the one beside it in the direction it pulled. At either
+    /// end there is no neighbour, so the second canvas is left empty and
+    /// the ground of the page shows through as the finger drags past it.
+    /// The face itself changes only when the finger settles on it.
+    pub(super) fn start_face_swipe(&mut self, now: u64, onward: bool, x0: f32, x: f32) {
+        let Some((from, count)) = self.face_slots() else { return };
+        let at = if onward { (from + 1).min(count - 1) } else { from.saturating_sub(1) };
+        let to = if at == from { from } else { at };
+        // The strip runs sideways, so the speed measured from here on is
+        // along x: the y samples the touch began with are of no use to it.
+        // Rebase them rather than clear them, so the first sideways move is
+        // still measured against the moment the finger went down. This very
+        // move is still in `Drag::Press`, so add its x here: the `Drag::Face`
+        // branch only sees the moves that come after it.
+        self.tracker.rebase(x0);
+        self.tracker.add(now, x);
+        // The two faces are drawn where they are painted, where the fonts
+        // and device are at hand; here only the finger's travel is known.
+        let (w, h) = (self.w, self.h);
+        self.face_swipe = Some(FaceSwipe { from, to, onward, shift: x - x0, spring: None, target: 0.0, drawn: false, left: Canvas::new(w, h), right: Canvas::new(w, h) });
+        self.face_turn = None;
+        self.face_page = None;
+        self.dirty = true;
     }
 
-    /// Turn the calculator to the face beside the one shown, the same way
-    /// round: a pull to the left shows the page to the right of the sum.
-    pub(super) fn turn_calc_face(&mut self, onward: bool) {
-        self.state.calc_face = match (self.state.calc_face, onward) {
-            (CalcFace::Sum, true) => CalcFace::Convert,
-            _ => CalcFace::Sum,
-        };
-        self.refresh();
+    /// Carry a face strip along with the finger while it is down. The two
+    /// faces were drawn when it began; only their shift changes, so no page
+    /// needs drawing again on the way.
+    pub(super) fn drag_face_swipe(&mut self, x0: f32, x: f32) {
+        if let Some(swipe) = self.face_swipe.as_mut() {
+            let w = self.w as f32;
+            swipe.shift = (x - x0).clamp(-w, w);
+            self.dirty = true;
+        }
     }
 
-    /// Turn the player to the face beside the one shown: the songs first,
-    /// the one being played to their right, as the words across its top say.
-    pub(super) fn turn_music_face(&mut self, onward: bool) {
-        self.state.music_face = match (self.state.music_face, onward) {
-            (MusicFace::List, true) => MusicFace::Play,
-            _ => MusicFace::List,
+    /// The finger has lifted off a face strip: send it to the face it pulled
+    /// far enough towards, or back to the one it came from, with a spring
+    /// that carries it there a frame at a time.
+    pub(super) fn release_face_swipe(&mut self, now: u64, velocity: f32) {
+        let w = self.w as f32;
+        let flick = w * FACE_FLING;
+        let Some(swipe) = self.face_swipe.as_mut() else { return };
+        let (onward, to) = (swipe.onward, swipe.to);
+        let settled = if to == swipe.from {
+            // Past the last face there is nothing to settle on.
+            swipe.from
+        } else if swipe.shift.abs() > w * FACE_COMMIT || velocity.abs() > flick && (velocity < 0.0) == onward {
+            to
+        } else {
+            swipe.from
         };
-        self.refresh();
-    }
-
-    /// Step the tasks page to the face beside the one shown: processes,
-    /// services, performance, left to right as its three words say. The ends
-    /// hold — a pull past the last face does not wrap round to the first.
-    pub(super) fn turn_tasks_face(&mut self, onward: bool) {
-        let faces = TasksFace::ALL;
-        let at = faces.iter().position(|f| *f == self.state.tasks_face).unwrap_or(0);
-        let next = if onward { (at + 1).min(faces.len() - 1) } else { at.saturating_sub(1) };
-        self.state.tasks_face = faces[next];
-        self.refresh();
+        let target = if settled == swipe.from { 0.0 } else if onward { -w } else { w };
+        let spring = Spring::new(now, swipe.shift - target, velocity, FACE_PERIOD);
+        swipe.spring = Some(spring);
+        swipe.target = target;
+        swipe.to = settled;
+        self.dirty = true;
     }
 
     pub fn touch(&mut self, ev: Touch, f: &Fonts, now: u64) -> Vec<Effect> {
@@ -257,33 +275,15 @@ impl App {
                             self.dirty = true;
                             Drag::Page { start: x0 }
                         }
-                        _ if self.screen() == Screen::Clock && dx.abs() > slop && dx.abs() > dy.abs() => {
-                            // Dragged level across the clock, it turns to the
-                            // face beside the one shown — the way the words
-                            // across its top turn it, and the same way round:
-                            // a pull to the left shows the one to the right.
-                            self.turn_face(dx < 0.0);
-                            Drag::Face
-                        }
-                        _ if self.screen() == Screen::Calculator && dx.abs() > slop && dx.abs() > dy.abs() => {
-                            // The calculator's two faces answer the same
-                            // way, and keep the same side: the sum first, the
-                            // units page to its right.
-                            self.turn_calc_face(dx < 0.0);
-                            Drag::Face
-                        }
-                        _ if self.screen() == Screen::Music && dx.abs() > slop && dx.abs() > dy.abs() => {
-                            // The player's two faces answer the same way too:
-                            // the songs first, the one being played to their
-                            // right.
-                            self.turn_music_face(dx < 0.0);
-                            Drag::Face
-                        }
-                        _ if self.screen() == Screen::Tasks && dx.abs() > slop && dx.abs() > dy.abs() => {
-                            // And the tasks page's: processes, services,
-                            // performance, left to right.
-                            self.turn_tasks_face(dx < 0.0);
-                            Drag::Face
+                        _ if self.face_slots().is_some() && dx.abs() > slop && dx.abs() > dy.abs() => {
+                            // Dragged level across a page whose top words are
+                            // tabs, its faces come along with the finger —
+                            // the way the words name them, a pull to the left
+                            // showing the one to the right. Every such page
+                            // answers this one way; a new one only has to
+                            // name its faces in `face_slots`.
+                            self.start_face_swipe(now, dx < 0.0, x0, x);
+                            Drag::Face { from: x0 }
                         }
                         _ if dy < -slop && dy.abs() > dx.abs() && y0 > m.h as f32 - m.dp(FOOT_DP) && !self.working() => {
                             // Over the desktop there is nowhere further to go
@@ -412,7 +412,11 @@ impl App {
                 }
                 Drag::Waking => self.drag = Drag::Waking,
                 Drag::Held => self.drag = Drag::Held,
-                Drag::Face => self.drag = Drag::Face,
+                Drag::Face { from } => {
+                    self.tracker.add(now, x);
+                    self.drag_face_swipe(from, x);
+                    self.drag = Drag::Face { from };
+                }
                 // A finger on the lock, which is swiped by its own path in
                 // `lock_touch` and never reaches here.
                 Drag::Lock { from } => self.drag = Drag::Lock { from },
@@ -426,6 +430,13 @@ impl App {
                     fx.extend(self.act(a, now));
                 }
                 Drag::Press { x, y, action: None, .. } if self.screen() == Screen::Editor => self.place_caret(f, x, y + scroll),
+                Drag::Face { .. } => {
+                    // The faces settle on the one the finger pulled towards,
+                    // or spring back to the one it came from. A last quick
+                    // flick decides it even when the travel was short.
+                    let speed = self.tracker.velocity(now);
+                    self.release_face_swipe(now, speed);
+                }
                 Drag::History { pitch, .. } => {
                     // A finger lifted while still moving sends the rows
                     // gliding on.
@@ -952,16 +963,65 @@ mod tests {
         let f = fonts();
         let mut app = App::new(Screen::Clock, W, H, PPD);
         assert_eq!(app.state.clock.face, ClockFace::Stopwatch, "it opens on the watch");
-        // A pull to the left shows the face to its right.
+        // A pull to the left shows the face to its right once the strip has
+        // settled — it follows the finger until then, not changing at the
+        // moment it passes the slop.
         app.touch(Touch::Down(900.0, 1600.0), &f, 0);
-        app.touch(Touch::Move(700.0, 1605.0), &f, 0);
-        app.touch(Touch::Up, &f, 0);
+        app.touch(Touch::Move(100.0, 1605.0), &f, 10);
+        assert!(app.face_swipe.is_some(), "the two faces are held under the finger");
+        app.touch(Touch::Up, &f, 20);
+        app.tick(10_000);
         assert_eq!(app.state.clock.face, ClockFace::Timer);
         // And a pull to the right brings the watch back.
-        app.touch(Touch::Down(500.0, 1600.0), &f, 0);
-        app.touch(Touch::Move(700.0, 1605.0), &f, 0);
-        app.touch(Touch::Up, &f, 0);
+        app.touch(Touch::Down(100.0, 1600.0), &f, 10_000);
+        app.touch(Touch::Move(900.0, 1605.0), &f, 10_010);
+        app.touch(Touch::Up, &f, 10_020);
+        app.tick(20_000);
         assert_eq!(app.state.clock.face, ClockFace::Stopwatch);
+    }
+
+    /// A quick flick throws the strip to the next face even when it never
+    /// travels far; the same travel with a pause before lifting does not.
+    #[test]
+    fn a_flick_commits_a_face_even_when_it_travels_little() {
+        let f = fonts();
+        let mut app = App::new(Screen::Clock, W, H, PPD);
+        // 40 px is past the 28 px slop at 3.5 px/dp but nowhere near the
+        // 32%-of-1440 commit mark; only the speed can carry it over.
+        app.touch(Touch::Down(900.0, 1600.0), &f, 0);
+        app.touch(Touch::Move(860.0, 1600.0), &f, 10);
+        app.touch(Touch::Up, &f, 10);
+        app.tick(10_000);
+        assert_eq!(app.state.clock.face, ClockFace::Timer, "the flick throws it onward");
+
+        app.touch(Touch::Down(900.0, 1600.0), &f, 20_000);
+        app.touch(Touch::Move(860.0, 1600.0), &f, 20_010);
+        app.touch(Touch::Up, &f, 20_060);
+        app.tick(30_000);
+        assert_eq!(app.state.clock.face, ClockFace::Timer, "a rest before lifting springs back to where it was");
+    }
+
+    /// A short pull short of the mark springs back and leaves the face as it
+    /// was, and a pull past the end shows the ground and comes back too.
+    #[test]
+    fn a_faces_strip_springs_back_when_it_does_not_commit() {
+        let f = fonts();
+        let mut app = App::new(Screen::Clock, W, H, PPD);
+        // Past the slop, and the finger rests before it lifts: not far
+        // enough, and no flick to carry it over either.
+        app.touch(Touch::Down(900.0, 1600.0), &f, 0);
+        app.touch(Touch::Move(860.0, 1601.0), &f, 10);
+        app.touch(Touch::Up, &f, 60);
+        app.tick(10_000);
+        assert_eq!(app.state.clock.face, ClockFace::Stopwatch, "a short pull springs back");
+        // At the first face, a pull to the right has no neighbour: it shows
+        // the ground and springs back rather than wrapping to the last.
+        app.touch(Touch::Down(100.0, 1600.0), &f, 10_000);
+        app.touch(Touch::Move(900.0, 1601.0), &f, 10_010);
+        assert!(app.face_swipe.as_ref().is_some_and(|s| s.to == s.from), "there is no neighbour past the first face");
+        app.touch(Touch::Up, &f, 10_020);
+        app.tick(20_000);
+        assert_eq!(app.state.clock.face, ClockFace::Stopwatch, "and it comes back to the one face");
     }
 
     #[test]

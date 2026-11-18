@@ -716,9 +716,10 @@ enum Drag {
     /// down at `start`. Letting go past a quarter of the screen turns it to
     /// the page beside the one it was on; short of that, it goes back.
     Page { start: f32 },
-    /// A finger dragged level across the clock: it turns to the face beside
-    /// the one shown, once, and nothing more of the drag counts.
-    Face,
+    /// Faces of a tabbed page, drawn whole and moved with the finger, from
+    /// the x where it first went over the slop. The faces follow it until it
+    /// lifts, then spring to the one it settled on.
+    Face { from: f32 },
     /// A finger pulling the timer's ruler. `last_x` is where it was on the
     /// last move; `direction` remembers the way the scale last travelled so
     /// letting go can settle between two minutes on that side.
@@ -1156,6 +1157,14 @@ struct View {
 /// short and it moves only a little.
 const FACE_MS: u64 = 180;
 const FACE_SLIDE_DP: f32 = 12.0;
+/// How long a face strip takes to settle once the finger lifts.
+const FACE_PERIOD: f32 = 0.28;
+/// Past this share of a screen's width a pull commits to the face it pulled
+/// in; short of it, the strip goes back where it came from.
+const FACE_COMMIT: f32 = 0.32;
+/// A flick faster than this many screen widths a second commits to the face
+/// it was thrown towards, however far the finger travelled.
+const FACE_FLING: f32 = 1.2;
 
 /// A clock face giving way to the other: the page as the face left showed
 /// it, and when the change was asked for. The face coming in is drawn over
@@ -1164,6 +1173,49 @@ const FACE_SLIDE_DP: f32 = 12.0;
 struct FaceTurn {
     since: u64,
     left: Canvas,
+}
+
+/// A strip of faces under a finger, going where the finger goes. The face
+/// left stands on the page beside the one it gives way to, and the two are
+/// moved together by `shift` — the finger's own travel — until it lifts:
+/// then a spring carries them to the face it settled on or back to the one
+/// it came from. At either end the neighbour is empty, so pulling past the
+/// last face shows the page's ground rather than a face that is not there.
+struct FaceSwipe {
+    /// Which face was showing when the finger came down, and which one it
+    /// pulls in. The order is the one the words across the top name.
+    from: usize,
+    /// The one the finger pulls in, one past `from` in either direction, or
+    /// `from` itself when there is none that way.
+    to: usize,
+    /// Which way the finger pulled: left for the face to the right of this
+    /// one. Kept even at the ends, where there is no `to` to tell it by.
+    onward: bool,
+    /// How far the finger has dragged the strip, in pixels: negative when
+    /// it pulled the next face in from the right. While the finger is down
+    /// this is its travel; once it lifts, a spring carries it on.
+    shift: f32,
+    /// The spring settling the strip on letting go, and the shift at which
+    /// it comes to rest: nought for the face it came from, a screen's width
+    /// for the one it pulled in.
+    spring: Option<Spring>,
+    target: f32,
+    /// The two faces have been drawn whole, once, where the fonts and device
+    /// were at hand. Until the first frame of the drag they are empty.
+    drawn: bool,
+    /// The page as it showed under the finger, drawn whole once so the
+    /// faces can be moved without drawing them again each frame.
+    left: Canvas,
+    /// The face pulled in, drawn whole once; empty at either end.
+    right: Canvas,
+}
+
+impl FaceSwipe {
+    /// Whether the strip is still being carried by a spring after the finger
+    /// lifted, and so wants a frame at a time.
+    fn moving(&self) -> bool {
+        self.spring.is_some()
+    }
 }
 
 /// A page sliding over another as it opens or goes back, as the stock
@@ -1364,6 +1416,9 @@ pub struct App {
     /// in is drawn on while it does.
     face_turn: Option<FaceTurn>,
     face_page: Option<Canvas>,
+    /// Faces drawn whole under a finger and moved with it, on the pages
+    /// whose top words are tabs.
+    face_swipe: Option<FaceSwipe>,
     /// A finger at the foot of the screen pulling, and what it pulls.
     foot: Option<Foot>,
     /// While a page slides: the page shown drawn on its own, and how it
@@ -1456,6 +1511,7 @@ impl App {
             turn: None,
             face_turn: None,
             face_page: None,
+            face_swipe: None,
             foot: None,
             layer: None,
             stale: Vec::new(),
@@ -1587,7 +1643,11 @@ impl App {
         // fallback below, which is a whole second.
         // The ruler's way home from a reset asks for frames of its own: it
         // is not a count, so `running` does not see it.
-        let busy = self.state.clock.running() || self.state.clock.ruler_sweeping(now);
+        // The second hand's colour fade and its sweep home on a reset are
+        // their own motion: after a pause or a reset the count stands still,
+        // so `running` does not see them. Without them here the loop woke
+        // only at the one-second fallback and the hand jumped to its end.
+        let busy = self.state.clock.running() || self.state.clock.ruler_sweeping(now) || self.state.clock.hand.moving(now);
         let ticking = (self.display_on && busy).then(|| now + clock::step(&self.state.clock, now));
         [self.toast.as_ref().map(|t| t.1), self.volume_bar, easing, self.idle_due(), held, repeat, blink, darkens, chord, ticking]
             .into_iter()
@@ -1614,6 +1674,55 @@ impl App {
     /// on counts: that is the one that puts the turn away.
     fn face_moving(&self, now: u64) -> bool {
         self.face_turn.as_ref().is_some_and(|t| now <= t.since + FACE_MS)
+            || self.face_swipe.as_ref().is_some_and(|s| s.moving())
+    }
+
+    /// The tab faces a page holds, where the face shown stands among them,
+    /// and how to show a given one. Every page whose top words are tabs
+    /// answers these three, so a new one needs no more than this to take
+    /// the same turn and the same swipe as the rest. `None` where a page
+    /// has no tabs at all.
+    fn face_slots(&self) -> Option<(usize, usize)> {
+        match self.screen() {
+            Screen::Clock => Some((if self.state.clock.face == ClockFace::Stopwatch { 0 } else { 1 }, 2)),
+            Screen::Calculator => Some((if self.state.calc_face == CalcFace::Sum { 0 } else { 1 }, 2)),
+            Screen::Music => Some((if self.state.music_face == MusicFace::List { 0 } else { 1 }, 2)),
+            Screen::Tasks => Some((TasksFace::ALL.iter().position(|f| *f == self.state.tasks_face).unwrap_or(0), TasksFace::ALL.len())),
+            _ => None,
+        }
+    }
+
+    /// Show the face at `at`, counting from the leftmost word across the
+    /// top. The caller has already settled which face that is.
+    fn show_face(&mut self, at: usize) {
+        match self.screen() {
+            Screen::Clock => self.state.clock.face = if at == 0 { ClockFace::Stopwatch } else { ClockFace::Timer },
+            Screen::Calculator => self.state.calc_face = if at == 0 { CalcFace::Sum } else { CalcFace::Convert },
+            Screen::Music => self.state.music_face = if at == 0 { MusicFace::List } else { MusicFace::Play },
+            Screen::Tasks => self.state.tasks_face = TasksFace::ALL[at.min(TasksFace::ALL.len() - 1)],
+            _ => {}
+        }
+        self.refresh();
+    }
+
+    /// Carry a face strip on after the finger lifted: the spring moves it
+    /// towards the face it settled on, and once it lands the state shows
+    /// that face and the strip is put away.
+    fn settle_face_swipe(&mut self, now: u64) {
+        let Some(swipe) = self.face_swipe.as_ref() else { return };
+        let Some(spring) = swipe.spring else { return };
+        let (off, settled) = spring.at(now);
+        let (to, target) = (swipe.to, swipe.target);
+        if settled {
+            self.face_swipe = None;
+            self.show_face(to);
+            self.dirty = true;
+        } else {
+            if let Some(swipe) = self.face_swipe.as_mut() {
+                swipe.shift = off + target;
+            }
+            self.dirty = true;
+        }
     }
 
     /// The page as it stands, kept for the face coming in to be drawn over.
@@ -1658,6 +1767,7 @@ impl App {
         // A sheet whose key was pressed leaves once it has fallen to the
         // foot, letting the page brighten behind it.
         self.settle_sheet(now);
+        self.settle_face_swipe(now);
         // The card has fallen and the page under it is black: the phone is
         // asked to leave now, not the moment the key was pressed. The
         // black-out stands while it goes, so the screen never comes back.
