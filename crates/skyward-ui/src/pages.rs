@@ -579,7 +579,7 @@ pub fn music(cx: &Ctx) -> Frame {
     // No `<` and no large title: an app opened from the desktop leaves it the
     // way the desktop's own apps do, and the two words across the top name it.
     // The button at the right end is the clock's own settings gear, so the
-    // three apps carry one band of controls; the player has no settings page
+    // four apps carry one band of controls; the player has no settings page
     // yet, so it answers a touch with nothing.
     Frame {
         back: false,
