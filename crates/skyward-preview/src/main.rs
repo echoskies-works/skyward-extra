@@ -401,6 +401,26 @@ fn main() -> Result<()> {
         println!("wrote {}", path.display());
     }
 
+    // The clock's settings, opened by the gear at the page's top right: the
+    // sound the timer's end makes, a rule, and the two switches that say
+    // whether the clock ticks — in both themes, and the page of sounds it
+    // opens, named as the ramdisk names them.
+    for (name, dark, screen) in [
+        ("00-03-clock-settings-light", false, Screen::ClockSettings),
+        ("00-03-clock-settings-dark", true, Screen::ClockSettings),
+        ("00-03-clock-sounds-light", false, Screen::ClockSound),
+    ] {
+        let mut app = opened(screen, w, h, ppd);
+        app.state.dark = dark;
+        app.state.sound_names.ring.insert(
+            skyward_ui::app::DEFAULT_TIMER_SOUND.to_string(),
+            skyward_config::SoundName { zh: "恋爱裁判".into(), en: "Love Trial".into() },
+        );
+        let path = out.join(format!("{name}.png"));
+        write_png(&path, &whole_page(&mut app, &fonts, &info))?;
+        println!("wrote {}", path.display());
+    }
+
     // The player's two faces, neither with anything behind it yet: the songs
     // as a list that holds none, and the one being played with the cover, the
     // name and the keys a song would fill.
@@ -408,8 +428,13 @@ fn main() -> Result<()> {
     for (name, face) in music {
         let mut app = opened(Screen::Music, w, h, ppd);
         app.state.music_face = face;
+        // The page is drawn the panel's way, so its own clock and date show.
+        // The bar the round button's chip fades in with only moves on a tick,
+        // so the panel is ticked once and the page taken a moment later: the
+        // chip then stands where a phone's would a moment after it opened.
+        let _ = app.tick(0);
         let mut c = Canvas::new(w, h);
-        app.compose(&mut c, &fonts, &info, "21:40", "11月16日 周一", 0);
+        app.compose(&mut c, &fonts, &info, "21:40", "11月16日 周一", 200);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &c)?;
         println!("wrote {}", path.display());
@@ -418,8 +443,9 @@ fn main() -> Result<()> {
     // The calculator's other face: the units page, named and not built.
     let mut app = opened(Screen::Calculator, w, h, ppd);
     app.state.calc_face = CalcFace::Convert;
+    let _ = app.tick(0);
     let mut c = Canvas::new(w, h);
-    app.compose(&mut c, &fonts, &info, "21:40", "11月16日 周一", 0);
+    app.compose(&mut c, &fonts, &info, "21:40", "11月16日 周一", 200);
     let path = out.join("00-02-calculator-convert-light.png");
     write_png(&path, &c)?;
     println!("wrote {}", path.display());

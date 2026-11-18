@@ -101,6 +101,11 @@ pub enum Screen {
     /// The clock the desktop opens: the time counted up and the time counted
     /// down, one face at a time, switched by the bar at the foot of the page.
     Clock,
+    /// The clock's settings, opened by the gear at the page's top right: the
+    /// sound its timer's end makes, and whether it ticks.
+    ClockSettings,
+    /// Which of the sounds the ramdisk carries the timer's end makes.
+    ClockSound,
     /// The player the desktop opens: a page standing empty while nothing
     /// comes out of it yet, rather than an app that stops the system.
     Music,
@@ -342,6 +347,8 @@ pub enum Action {
     /// Set the timer for this many minutes, from zero to the ruler's three
     /// hours.
     ClockSpan(u64),
+    /// Make the sound at this place in the sounds the timer's end can make.
+    ClockSound(usize),
     /// A key of the row above the keyboard, the terminal's or the editor's.
     TermKey(TermKey),
     /// Empty the search field.
@@ -431,6 +438,11 @@ pub enum Action {
     StopSkywardUpdate,
     /// A control whose work is not wired up yet; touching it says so.
     Unavailable(&'static str),
+    /// A control drawn where it belongs but with nothing behind it yet: the
+    /// settings gear on the pages whose settings page is not built. It takes
+    /// the press — the chip darkens under the finger — and lets it go
+    /// without a word, where [`Action::Unavailable`] would say one.
+    Idle,
 }
 
 /// One finger, in screen pixels.

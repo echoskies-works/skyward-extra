@@ -960,11 +960,15 @@ pub fn disc(c: &mut Canvas, t: &Theme, cx: f32, cy: f32, r: f32, spread: f32) {
 /// still covers it. [`disc`]'s even fade is right for a key a thumb's width
 /// across; the dial is the one piece large enough for the difference to
 /// show, and it is laid by this.
+///
+/// The rim is left off. A hairline is a hairline on a key a thumb's width
+/// across; run round a disc this wide it reads as a drawn outline, a dark
+/// ring in the dark and a bright one in the light, and the dial is meant to
+/// be a face of its own material with nothing drawn round it — what lifts
+/// it off the page is the shadow.
 pub fn disc_lit(c: &mut Canvas, t: &Theme, cx: f32, cy: f32, r: f32, sigma: f32, ink: f32) {
     c.shadow_circle(cx, cy, r, sigma, ink);
     c.fill_circle(cx, cy, r, disc_fill(t));
-    let rim_w = t.m.dp(0.8);
-    c.stroke_circle(cx, cy, r - rim_w / 2.0, rim_w, disc_rim(t));
 }
 
 /// The fill a round control is made of in this theme: a shade off the page,
@@ -1138,6 +1142,8 @@ pub enum Glyph {
     Terminal,
     /// A tick: keep what was done.
     Done,
+    /// The gear the stock settings open on: the clock's settings.
+    Gear,
 }
 
 /// The centre and radius of the round button at the right end of the bar,
@@ -1163,6 +1169,11 @@ pub fn button_glyph(c: &mut Canvas, t: &Theme, glyph: Glyph, color: Rgba) {
     glyph_at(c, t, glyph, 0.0, 0.0, color);
 }
 
+/// How wide the gear's box stands in its chip, in dp: the gear's drawing
+/// fills about five sixths of its box, so the box is set wider than the
+/// arrow's reach for the mark to read the same size.
+const GEAR_DP: f32 = 23.0;
+
 /// The glyph moved by (`dx`, `dy`), its strokes spanning the same box about
 /// the disc's centre either way.
 fn glyph_at(c: &mut Canvas, t: &Theme, glyph: Glyph, dx: f32, dy: f32, color: Rgba) {
@@ -1180,6 +1191,16 @@ fn glyph_at(c: &mut Canvas, t: &Theme, glyph: Glyph, dx: f32, dy: f32, color: Rg
         Glyph::Done => {
             stroke(at(-8.0, 0.0), at(-2.5, 5.5));
             stroke(at(-2.5, 5.5), at(8.0, -5.5));
+        }
+        // The gear is a shape rather than a stroke: it is drawn from the
+        // icons' own set, the toothed wheel the rows would show if a row
+        // could carry a gear at this size. In the light it is inked the grey
+        // the clock's own keys ink their pictures with, not the page's black:
+        // a black gear sits heavier on its chip than the keys under it do, and
+        // the settings button is meant to read as one of them.
+        Glyph::Gear => {
+            let ink = if t.dark { color } else { Rgba::rgb(68, 68, 68) };
+            crate::icons::glyph(c, crate::icons::Icon::Settings, cx, cy, m.dp(GEAR_DP), ink);
         }
     }
 }

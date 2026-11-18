@@ -559,7 +559,10 @@ impl App {
         }
         if let Some((glyph, action)) = frame.button {
             let (_, chip, x, y) = self.button_chip.as_ref().expect("a page's round button is drawn with its chip");
-            out.lay(chip, *x, *y, bar);
+            // A page that stands at its top for good is given the chip
+            // whole: no scroll would ever bring it up.
+            let level = if frame.button_still { 1.0 } else { bar };
+            out.lay(chip, *x, *y, level);
             if pressing == Some(action) {
                 widgets::button_held(out, t, glyph);
             } else {

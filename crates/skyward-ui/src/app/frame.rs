@@ -49,6 +49,11 @@ pub struct Frame {
     /// The round button at the right end of the bar: what it shows, and
     /// what touching it does.
     pub button: Option<(widgets::Glyph, Action)>,
+    /// The round button stands on its chip for good rather than with the
+    /// bar: a page with no title to scroll away — the clock's, the
+    /// calculator's, the player's — is at its top for good, so there is no
+    /// scroll that would ever bring its chip up.
+    pub button_still: bool,
     /// The rows of the page that go on changing of their own accord, as a
     /// count runs: drawn again a frame at a time, and nothing else of the
     /// page with them.
@@ -217,6 +222,7 @@ impl Frame {
             dock: None,
             caret: None,
             button: None,
+            button_still: false,
             live: None,
             clock_ruler: None,
         }

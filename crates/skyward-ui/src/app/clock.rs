@@ -487,7 +487,7 @@ impl App {
 mod tests {
     use super::*;
     use crate::app::testing::*;
-    use crate::app::{App, Ctx, Frame, Screen};
+    use crate::app::{App, Ctx, Frame, Screen, Switch, DEFAULT_TIMER_SOUND};
     use crate::canvas::Canvas;
     use crate::font::Fonts;
     use crate::theme::Theme;
@@ -765,5 +765,76 @@ mod tests {
         app.state.clock.span = 0;
         app.state.clock.left = 0;
         assert_eq!(at(&app, crate::pages::RULE_CY), rule, "and a reset brings it back");
+    }
+
+    /// The gear at the page's top right is the bar's round button, the `<`
+    /// chip mirrored: a page that does not scroll never brings the chip up,
+    /// so the gear stands there on its own. It opens the clock's settings,
+    /// which hold the timer's sound, a rule, and the two switches that say
+    /// whether the clock ticks.
+    #[test]
+    fn the_gear_opens_the_clock_s_settings_and_its_switches_move() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Clock, W, H, PPD);
+        assert_eq!(app.frame(&f, &i).button, Some((crate::widgets::Glyph::Gear, Action::Open(Screen::ClockSettings))));
+        tap_button(&mut app, &f, &i, 0);
+        assert_eq!(app.screen(), Screen::ClockSettings);
+        let frame = app.frame(&f, &i);
+        assert!(frame.back && frame.header, "a page of the settings goes back with `<`");
+        let acts: Vec<Action> = frame.hits.iter().map(|h| h.action).collect();
+        assert_eq!(
+            acts,
+            [Action::Open(Screen::ClockSound), Action::Toggle(Switch::ClockTicking), Action::Toggle(Switch::ClockTickingBackground)]
+        );
+        assert!(app.state.clock_ticking, "the clock ticks until it is told not to");
+        assert!(!app.state.clock_ticking_background, "and stops when its page goes, until told otherwise");
+        tap_at(&mut app, &f, &i, Action::Toggle(Switch::ClockTicking), 1_000);
+        assert!(!app.state.clock_ticking);
+        tap_at(&mut app, &f, &i, Action::Toggle(Switch::ClockTickingBackground), 2_000);
+        assert!(app.state.clock_ticking_background);
+    }
+
+    /// The gear stands at the top right of the calculator and of the player
+    /// as it does on the clock, and both keep it on its chip rather than
+    /// wait for a scroll that cannot come. Neither has a settings page yet,
+    /// so a touch leaves the page where it is and says nothing about it.
+    #[test]
+    fn the_gear_stands_on_the_calculator_and_the_player_with_nothing_behind_it() {
+        let (f, i) = (fonts(), info());
+        for screen in [Screen::Calculator, Screen::Music] {
+            let mut app = App::new(screen, W, H, PPD);
+            let frame = app.frame(&f, &i);
+            assert_eq!(frame.button, Some((crate::widgets::Glyph::Gear, Action::Idle)), "{screen:?} carries the clock's gear");
+            assert!(frame.button_still, "{screen:?} never scrolls, so its chip stands");
+            tap_button(&mut app, &f, &i, 0);
+            assert_eq!(app.screen(), screen, "{screen:?} stays where it is");
+            assert!(app.toast.is_none(), "{screen:?} says nothing about a page it does not have");
+        }
+    }
+
+    /// The sound a timer's end makes is one of the sounds the ramdisk
+    /// carries, shown by the name the names file gives it, and the one in
+    /// use is ticked. The page stays once another is taken, as the
+    /// language page's does.
+    #[test]
+    fn the_timer_s_sound_is_chosen_from_the_ones_the_ramdisk_carries() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Clock, W, H, PPD);
+        let named = |zh: &str, en: &str| skyward_config::SoundName { zh: zh.into(), en: en.into() };
+        app.state.sound_names.ring.insert(DEFAULT_TIMER_SOUND.into(), named("恋爱裁判", "Love Trial"));
+        app.state.sound_names.ring.insert("bell".into(), named("铃声", "Bell"));
+        // The two by their keys: `bell` comes before `love_trial`.
+        assert_eq!(crate::pages::timer_sounds(&app.state, crate::Lang::Hans), [
+            ("bell".to_string(), "铃声".to_string()),
+            (DEFAULT_TIMER_SOUND.to_string(), "恋爱裁判".to_string()),
+        ]);
+        tap_button(&mut app, &f, &i, 0);
+        tap(&mut app, &f, &i, Action::Open(Screen::ClockSound));
+        assert_eq!(app.screen(), Screen::ClockSound);
+        tap(&mut app, &f, &i, Action::ClockSound(0));
+        assert_eq!(app.state.timer_sound, "bell");
+        assert_eq!(app.screen(), Screen::ClockSound, "the page stays with its tick moved");
+        tap(&mut app, &f, &i, Action::ClockSound(1));
+        assert_eq!(app.state.timer_sound, DEFAULT_TIMER_SOUND, "and the one it started with is there to go back to");
     }
 }

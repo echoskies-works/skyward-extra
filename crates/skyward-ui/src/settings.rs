@@ -52,6 +52,21 @@ pub struct Settings {
     pub install: Install,
     pub backup: Backup,
     pub logs: Logs,
+    pub clock: Clock,
+}
+
+/// The clock's settings: the sound its timer's end makes, and whether it
+/// ticks.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Clock {
+    /// The sound the timer's end makes, by its key among the sounds the
+    /// ramdisk carries.
+    pub timer_sound: String,
+    /// The clock ticks as it runs.
+    pub ticking: bool,
+    /// The ticking goes on with the clock's page left behind.
+    pub ticking_background: bool,
 }
 
 /// The install page's options.
@@ -113,6 +128,12 @@ impl Default for Logs {
     }
 }
 
+impl Default for Clock {
+    fn default() -> Self {
+        Settings::default().clock
+    }
+}
+
 impl Settings {
     /// The settings `state` holds.
     pub fn of(state: &State) -> Settings {
@@ -138,6 +159,11 @@ impl Settings {
                 verify: state.verify,
             },
             logs: Logs { kinds: names(&state.logs, &LOGS), to: LOG_PLACES[state.logs_to].to_string() },
+            clock: Clock {
+                timer_sound: state.timer_sound.clone(),
+                ticking: state.clock_ticking,
+                ticking_background: state.clock_ticking_background,
+            },
         }
     }
 
@@ -198,6 +224,14 @@ impl Settings {
         if let Some(at) = LOG_PLACES.iter().position(|place| *place == self.logs.to) {
             state.logs_to = at;
         }
+        // A file that names no sound leaves the one a recovery starts with:
+        // a timer whose end has nothing to play would be no better off for
+        // the silence having been chosen by a page.
+        if !self.clock.timer_sound.is_empty() {
+            state.timer_sound = self.clock.timer_sound.clone();
+        }
+        state.clock_ticking = self.clock.ticking;
+        state.clock_ticking_background = self.clock.ticking_background;
     }
 }
 
@@ -212,9 +246,13 @@ fn picked<const N: usize>(kept: &[String], all: &[&str; N]) -> [bool; N] {
 }
 
 /// What the settings file held as the recovery started.
+///
+/// The settings themselves arrive boxed: they are read once as the recovery
+/// starts and handed over as they are, and a `Kept` that is not them is the
+/// one thing that is not a whole file's worth of settings.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Kept {
-    Settings(Settings),
+    Settings(Box<Settings>),
     /// No settings: no file, or one that does not read as settings.
     Nothing,
     /// Where the file is could not be read; it is left alone this time.
@@ -225,8 +263,7 @@ impl Kept {
     /// The settings the file held, if it held any.
     pub fn settings(&self) -> Option<&Settings> {
         match self {
-            Kept::Settings(settings) => Some(settings),
-            Kept::Nothing | Kept::Unreadable => None,
+            Kept::Settings(settings) => Some(settings.as_ref()),            Kept::Nothing | Kept::Unreadable => None,
         }
     }
 }
@@ -246,7 +283,7 @@ pub struct Keeper {
 impl Keeper {
     pub fn new(kept: &Kept) -> Keeper {
         let holds = match kept {
-            Kept::Settings(settings) => Some(Some(settings.clone())),
+            Kept::Settings(settings) => Some(Some(settings.as_ref().clone())),
             Kept::Nothing => Some(None),
             Kept::Unreadable => None,
         };
@@ -316,6 +353,9 @@ mod tests {
             verify: false,
             logs: [false, true],
             logs_to: 1,
+            timer_sound: "bell".into(),
+            clock_ticking: false,
+            clock_ticking_background: true,
             ..State::default()
         };
         let kept = Settings::read(&Settings::of(&state).text()).unwrap();
@@ -323,6 +363,7 @@ mod tests {
         kept.apply(&mut back);
         assert_eq!(Settings::of(&back), Settings::of(&state));
         assert_eq!((back.lang, back.screen_off, back.time_zone), (Lang::En, 6, 7));
+        assert_eq!((back.timer_sound.as_str(), back.clock_ticking, back.clock_ticking_background), ("bell", false, true));
     }
 
     #[test]
@@ -334,6 +375,11 @@ mod tests {
         assert_eq!(json["time_zone"], "Asia/Hong_Kong");
         assert_eq!(json["backup"]["parts"], serde_json::json!(["boot", "modem"]));
         assert_eq!(json["logs"]["to"], "temporary");
+        assert_eq!(json["clock"], serde_json::json!({
+            "timer_sound": "love_trial",
+            "ticking": true,
+            "ticking_background": false,
+        }));
         assert_eq!(json["spoken"], "zh-Hans");
         assert!(json.get("language").is_none(), "no language is chosen until one is");
         let never = Settings::of(&State { screen_off: SCREEN_OFF.len() - 1, ..State::default() });
@@ -375,7 +421,7 @@ mod tests {
 
     #[test]
     fn changed_settings_are_written_once_they_have_stood_for_a_moment() {
-        let mut keeper = Keeper::new(&Kept::Settings(Settings::default()));
+        let mut keeper = Keeper::new(&Kept::Settings(Box::default()));
         assert_eq!(keeper.due(Settings::default(), 0), None, "what the file holds is not written again");
         let dark = Settings { dark: true, ..Settings::default() };
         assert_eq!(keeper.due(dark.clone(), 1_000), None);

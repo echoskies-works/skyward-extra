@@ -32,6 +32,10 @@ pub enum Switch {
     /// The volume keys move the light from control to control, rather than
     /// turning the volume up and down.
     VolumeKeys,
+    /// The clock ticks as it runs.
+    ClockTicking,
+    /// The ticking goes on with the clock's page left behind.
+    ClockTickingBackground,
 }
 
 /// How long the screen stays on with nothing touched, in milliseconds, in

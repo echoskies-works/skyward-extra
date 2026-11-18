@@ -91,6 +91,9 @@ pub enum Icon {
     Minus,
     /// Two bars crossed: the timer's key that puts a minute on it.
     Plus,
+    /// A toothed wheel with a round hole: the gear the clock's settings
+    /// button carries, where the nut above would read as a nut.
+    Settings,
 }
 
 /// The stock icons' box: every outline here is laid out in it.
@@ -221,8 +224,34 @@ const GEAR: &[Part] = &[
     )),
 ];
 
-const POWER: &[Part] = &[add(Shape::Line("M10.14,9.48A6.9,6.9 0 1 0 17.86,9.48", 2.4)), add(Shape::Line("M14,5.9V13", 2.4))];
+/// The gear the clock's settings button carries, cut from the user's own
+/// SVG: a toothed wheel with a round hole. [`GEAR`] above is a nut, which
+/// the eye takes for a gear on a tile sixteen dp across and more but not on
+/// a bar button, where its teeth run together; this one keeps its teeth at
+/// that size.
+const SETTINGS: &[Part] = &[add(Shape::EvenOdd(
+    "M14.001,18.049C15.116,18.049,16.07,17.654,16.861,16.862\
+     C17.653,16.07,18.049,15.117,18.049,14.001C18.049,12.886,17.653,11.932,16.861,11.14\
+     C16.07,10.349,15.116,9.953,14.001,9.953C12.885,9.953,11.931,10.349,11.14,11.14\
+     C10.348,11.932,9.952,12.886,9.952,14.001C9.952,15.117,10.348,16.07,11.14,16.862\
+     C11.931,17.654,12.885,18.049,14.001,18.049ZM22.584,15.133L25.013,17.023\
+     C25.265,17.203,25.301,17.455,25.122,17.779L22.8,21.774\
+     C22.655,22.026,22.422,22.098,22.098,21.991L19.237,20.857\
+     C18.482,21.397,17.834,21.775,17.293,21.991L16.861,25.014\
+     C16.789,25.338,16.609,25.5,16.321,25.5L11.679,25.5C11.391,25.5,11.211,25.338,11.139,25.014\
+     L10.707,21.991C10.023,21.703,9.374,21.325,8.763,20.857L5.902,21.991\
+     C5.578,22.099,5.344,22.027,5.2,21.774L2.878,17.779C2.699,17.455,2.735,17.203,2.987,17.023\
+     L5.416,15.133C5.38,14.881,5.361,14.504,5.361,14C5.361,13.496,5.38,13.119,5.416,12.867\
+     L2.987,10.977C2.735,10.797,2.699,10.545,2.878,10.221L5.2,6.226\
+     C5.345,5.974,5.578,5.902,5.902,6.009L8.763,7.143C9.518,6.603,10.166,6.225,10.707,6.009\
+     L11.139,2.986C11.211,2.662,11.391,2.5,11.679,2.5L16.321,2.5\
+     C16.609,2.5,16.789,2.662,16.861,2.986L17.293,6.009C17.977,6.297,18.626,6.675,19.237,7.143\
+     L22.098,6.009C22.422,5.901,22.656,5.973,22.8,6.226L25.122,10.221\
+     C25.301,10.545,25.265,10.797,25.013,10.977L22.584,12.867\
+     C22.62,13.119,22.639,13.496,22.639,14C22.639,14.504,22.62,14.881,22.584,15.133Z",
+))];
 
+const POWER: &[Part] = &[add(Shape::Line("M10.14,9.48A6.9,6.9 0 1 0 17.86,9.48", 2.4)), add(Shape::Line("M14,5.9V13", 2.4))];
 const GLOBE: &[Part] = &[add(Shape::Fill(
     "M14,5.168C18.877,5.168 22.83,9.122 22.83,14C22.83,18.878 18.877,22.832 14,22.832C9.123,22.832 5.17,18.878 5.17,14\
      C5.17,9.122 9.123,5.168 14,5.168Z\
@@ -450,16 +479,17 @@ const WEATHER: &[Part] = &[
 /// The stopwatch's four keys, as the watch face's own drawing tool drew
 /// them — the same 1024-unit box, scaled into this file's 28.
 ///
-/// The four were drawn as two sets and sit at different heights in their
-/// box — the flag fills it, the triangle a little over half — so each has a
-/// scale of its own that lifts it until all four reach the same top and
-/// bottom. That shared height is what makes four pictures by two hands read
-/// as one set of keys.
+/// The three squareish ones were drawn as one set and sit at different
+/// heights in their box — the flag fills it, the triangle a little over
+/// half — so each has a scale of its own that lifts it until all three
+/// reach the same top and bottom. That shared height is what makes three
+/// pictures by two hands read as one set of keys.
 ///
-/// `replay` is the drawing as it came, arrow to the left: its head reaches up
-/// past the ring, so its ink sits high in the box, and the outline is nudged
-/// down by the 1.176 that puts its middle back on the box's. Without that,
-/// lifting it to the box's height would push the head off the top.
+/// `replay` is the drawing as it came, arrow to the left, and it is wide
+/// rather than tall: its ring is nearly four times as wide as it is high,
+/// so it is set to the box's width and stands on the box's middle, 28 by
+/// 12.33. Lifted to the box's height instead it would run out of the box
+/// on both sides and be cut off there.
 const PLAY: &[Part] = &[add(Shape::Fill("M9.352,5.852L22.149,14L9.352,22.148L9.352,5.851Z"))];
 
 const PAUSE: &[Part] = &[add(Shape::Fill(
@@ -473,22 +503,23 @@ const FLAG: &[Part] = &[add(Shape::Fill(
      L15.65,17.5L21.667,17.5L19.759,12.25L21.667,7L14.684,7L12.35,4.667L5.833,4.667L5.833,15.167Z",
 ))];
 
+/// The reset key's picture, redrawn from the user's own `reset.svg`: a ring
+/// broken at the left with an arrow turning back into it. It is laid out at
+/// the box's full width, so it needs no scale of its own; see the note
+/// over [`PLAY`] for why it is the one key not lifted to the box's height.
 const REPLAY: &[Part] = &[add(Shape::Fill(
-    "M14,7.028C16.588,7.028,18.794,7.94,20.617,9.763C22.44,11.586,23.352,13.773,23.352,16.325\
-     C23.352,18.914,22.432,21.119,20.591,22.942C18.75,24.766,16.553,25.677,14.001,25.677\
-     C11.449,25.677,9.253,24.766,7.412,22.942C5.571,21.119,4.65,18.914,4.65,16.325L7.002,16.325\
-     C7.002,18.257,7.686,19.907,9.053,21.274C10.421,22.642,12.07,23.325,14.002,23.325\
-     C15.934,23.325,17.584,22.642,18.951,21.274C20.319,19.907,21.002,18.257,21.002,16.325\
-     C21.002,14.393,20.319,12.744,18.951,11.376C17.584,10.009,15.934,9.325,14.002,9.325\
-     L14.002,14.028L8.15,8.176L14.002,2.324L14.002,7.027Z",
+    "M14.386,9.248C17.511,9.248,20.316,10.169,22.799,12.01\
+     C25.283,13.852,27.017,16.228,28.001,19.138L24.79,20.166\
+     C24.062,17.939,22.745,16.13,20.84,14.739C18.935,13.348,16.783,12.653,14.386,12.653\
+     C11.732,12.653,9.377,13.509,7.322,15.222L12.331,20.166L0.001,20.166L0.001,7.836L4.882,12.78\
+     C7.579,10.426,10.747,9.248,14.387,9.248Z",
 ))];
 
-/// The height each of those pictures has in the drawings' 1024 box — the
-/// scale that lifts it to the whole box.
+/// The height each of the three squareish pictures has in the drawings'
+/// 1024 box — the scale that lifts it to the whole box.
 const PLAY_SCALE: f32 = 1024.0 / 596.0;
 const PAUSE_SCALE: f32 = 1024.0 / 596.0;
 const FLAG_SCALE: f32 = 1024.0 / 874.666_7;
-const REPLAY_SCALE: f32 = 1024.0 / 854.0;
 
 /// The timer's two keys, which take a minute off the length and put one on:
 /// a bar, and two bars crossed. They are set in the same box as the
@@ -535,9 +566,10 @@ fn outline(icon: Icon) -> (&'static [Part], f32) {
         Icon::Play => (PLAY, PLAY_SCALE),
         Icon::Pause => (PAUSE, PAUSE_SCALE),
         Icon::Flag => (FLAG, FLAG_SCALE),
-        Icon::Replay => (REPLAY, REPLAY_SCALE),
+        Icon::Replay => (REPLAY, 1.0),
         Icon::Minus => (MINUS, 1.0),
         Icon::Plus => (PLUS, 1.0),
+        Icon::Settings => (SETTINGS, 1.0),
     }
 }
 
@@ -693,7 +725,7 @@ fn path(d: &str) -> tiny_skia::Path {
 mod tests {
     use super::*;
 
-    const ALL: [Icon; 27] = [
+    const ALL: [Icon; 28] = [
         Icon::Install,
         Icon::Backup,
         Icon::Restore,
@@ -721,6 +753,7 @@ mod tests {
         Icon::Browser,
         Icon::Tasks,
         Icon::Weather,
+        Icon::Settings,
     ];
 
     /// Pixels a unit of the box takes in these tests.
@@ -768,15 +801,15 @@ mod tests {
     }
 
     #[test]
-    fn the_stopwatch_keys_are_laid_out_one_height_so_four_pictures_read_as_one_set() {
-        // These four are not on tiles, so the rule above — the stock glyphs'
+    fn the_stopwatch_keys_are_laid_out_as_one_set_and_the_reset_arrow_keeps_its_own_shape() {
+        // These are not on tiles, so the rule above — the stock glyphs'
         // middle 23 units — is not theirs to keep: a key's picture is meant to
         // fill the box it is given. What they must share is where they end up.
-        // The four were drawn as two sets and sit at different heights in their
-        // 1024 box, so each has a scale of its own; a picture left taller than
-        // the one beside it would read as a heavier key rather than a bigger
-        // one.
-        let keys = [Icon::Play, Icon::Pause, Icon::Flag, Icon::Replay];
+        // The three squareish ones were drawn as one set and sit at different
+        // heights in their 1024 box, so each has a scale of its own; a picture
+        // left taller than the one beside it would read as a heavier key
+        // rather than a bigger one.
+        let keys = [Icon::Play, Icon::Pause, Icon::Flag];
         let heights = keys.map(|icon| {
             let (l, t, r, b) = ink(&drawn(icon));
             assert!(r > l && b > t, "{icon:?} covers nothing");
@@ -786,6 +819,17 @@ mod tests {
         for (icon, h) in keys.into_iter().zip(&heights) {
             assert!((h - heights[0]).abs() <= 0.5, "{icon:?} stands {h} tall, the play key {}", heights[0]);
         }
+        // The reset arrow is the fourth key and the one picture here that is
+        // wider than it is tall — nearly four times, as it was drawn. Lifted
+        // to the others' height it would run past the box on both sides and be
+        // cut off, so it is held to the box's width and to its middle instead.
+        let (l, t, r, b) = ink(&drawn(Icon::Replay));
+        assert!(r > l && b > t, "the reset arrow covers nothing");
+        assert!(l >= 0.0 && t >= 0.0 && r <= BOX && b <= BOX, "the reset arrow runs past its box: {l}, {t} to {r}, {b}");
+        assert!((r - l - BOX).abs() <= 0.5, "the reset arrow spans {} wide, not the box's {BOX}", r - l);
+        let (x, y) = ((l + r) / 2.0, (t + b) / 2.0);
+        assert!((x - 14.0).abs() <= 0.75 && (y - 14.0).abs() <= 0.75, "the reset arrow stands at {x}, {y}");
+        assert!(b - t < heights[0] / 2.0, "the reset arrow stands {} tall: it is drawn wide, not square", b - t);
     }
 
     #[test]

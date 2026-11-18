@@ -167,6 +167,16 @@ impl App {
                 }
                 self.refresh();
             }
+            // The sound chosen is kept by its key; the page lists the keys
+            // in the order it shows them, so the place is all there is. The
+            // page stays, as the language page's does, with its tick moved.
+            Action::ClockSound(at) => {
+                let l = self.state.lang;
+                if let Some((key, _)) = crate::pages::timer_sounds(&self.state, l).get(at) {
+                    self.state.timer_sound = key.clone();
+                    self.refresh();
+                }
+            }
             // The switch moves at once; the runtime then tells how the WLAN
             // came up, or went off.
             Action::Toggle(Switch::Wlan) => {
@@ -186,6 +196,8 @@ impl App {
                     Switch::KeepRecovery => &mut self.state.keep_recovery,
                     Switch::ShowPassword => &mut self.state.show_password,
                     Switch::VolumeKeys => &mut self.state.volume_keys,
+                    Switch::ClockTicking => &mut self.state.clock_ticking,
+                    Switch::ClockTickingBackground => &mut self.state.clock_ticking_background,
                     Switch::Wlan => unreachable!("the WLAN switch is turned above"),
                 };
                 *on = !*on;
@@ -691,6 +703,10 @@ impl App {
                 }
             }
             Action::Unavailable(text) => self.say(text, now),
+            // Nothing to do, and nothing to say about it: the press has
+            // already shown under the finger, which is all this control
+            // promises until the page behind it exists.
+            Action::Idle => {}
         }
         Vec::new()
     }

@@ -2,6 +2,10 @@
 
 use super::*;
 
+/// The sound the timer's end makes until another is chosen: the one the
+/// ramdisk carries and `sfx.toml` names 恋爱裁判.
+pub const DEFAULT_TIMER_SOUND: &str = "love_trial";
+
 /// Choices the pages show and the user changes, and where installing
 /// stands.
 #[derive(Clone, Debug, PartialEq)]
@@ -208,6 +212,13 @@ pub struct State {
     pub music_face: MusicFace,
     /// The clock's own state: which of its two faces the page shows.
     pub clock: Clock,
+    /// The sound the timer's end makes: the key of one of the sounds the
+    /// ramdisk carries, [`DEFAULT_TIMER_SOUND`] until another is chosen.
+    pub timer_sound: String,
+    /// The clock ticks as it runs.
+    pub clock_ticking: bool,
+    /// The ticking goes on with the clock's page left behind.
+    pub clock_ticking_background: bool,
     /// The wallpapers' names in the two languages the pages speak, read
     /// from the ramdisk: the「个性化选项」page shows the one in use by
     /// them.
@@ -220,8 +231,7 @@ pub struct State {
 
 impl Default for State {
     fn default() -> Self {
-        State {
-            lang: Lang::Hans,
+        State {            lang: Lang::Hans,
             language_chosen: false,
             dark: false,
             brightness: SLIDER_START,
@@ -310,6 +320,9 @@ impl Default for State {
             calc_face: CalcFace::Sum,
             music_face: MusicFace::List,
             clock: Clock::default(),
+            timer_sound: DEFAULT_TIMER_SOUND.to_string(),
+            clock_ticking: true,
+            clock_ticking_background: false,
             wallpaper_names: skyward_config::WallpaperNames::default(),
             sound_names: skyward_config::SoundNames::default(),
         }

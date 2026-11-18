@@ -5,7 +5,7 @@ use crate::app::{
     FileOp, FileTask, Fold, Folder, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, MusicFace, Pick, Place, Rows,
     Screen,
     SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, Switch, SystemsWork, Target, UsbDrive, UsbLink, Wipe, ADDABLE,
-    BACKUP_PARTS, CLOCK_MOST, DATA_ERASED, DATA_PARTITION, DOWNLOADS, FASTBOOT_CHOICES, RULER_MINUTE_DP, SCREEN_OFF, TARGETS, TIME_ZONES,
+    BACKUP_PARTS, CLOCK_MOST, DATA_ERASED, DATA_PARTITION, DEFAULT_TIMER_SOUND, DOWNLOADS, FASTBOOT_CHOICES, RULER_MINUTE_DP, SCREEN_OFF, TARGETS, TIME_ZONES,
     USB_DRIVE_UNREADABLE, USB_DRIVE_WANTED, WIPES, installs, starting,
 };
 use crate::canvas::Canvas;
@@ -74,6 +74,8 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::Desktop => desktop(cx),
         Screen::Calculator => calculator(cx),
         Screen::Clock => clock(cx),
+        Screen::ClockSettings => clock_settings(cx),
+        Screen::ClockSound => clock_sounds(cx),
         Screen::Music => music(cx),
         Screen::Home => home(cx),
         Screen::Settings => settings(cx),
@@ -447,6 +449,51 @@ pub fn desktop(cx: &Ctx) -> Frame {
     Frame { back: false, header: false, bg: DESKTOP_BG, ..Frame::new(t, c, out, l.pick(DESKTOP_TITLE), 0.0) }
 }
 
+/// The size of the words an app names its faces with across its top, and
+/// the gap between two of them, in dp.
+const TAB_PX: f32 = 22.5;
+const TAB_GAP: f32 = 25.0;
+
+/// The words across the top of an app's page — the faces it switches
+/// between — centred on the page and set on the line the round button at the
+/// page's right end stands on, so the words and that button read as one band
+/// across the top rather than as two things at two heights.
+///
+/// The word shown is in the page's ink and the others quiet. Each answers a
+/// touch with `action`, with a little room around it.
+fn face_tabs<T: Copy + PartialEq>(
+    c: &mut Canvas,
+    t: &Theme,
+    f: &Fonts,
+    l: Lang,
+    faces: &[(T, Text)],
+    shown: T,
+    action: fn(T) -> Action,
+) -> Vec<Hit> {
+    let m = &t.m;
+    let px = m.dp(TAB_PX);
+    let gap = m.dp(TAB_GAP);
+    let words: Vec<f32> = faces.iter().map(|(_, name)| c.text_width(&f.heading, l.pick(*name), px)).collect();
+    let strip = words.iter().sum::<f32>() + gap * (words.len() - 1) as f32;
+    let mut x = (m.w as f32 - strip) / 2.0;
+    // The words are set by the middle of their ink, on the middle of the
+    // button's disc: a word set by its baseline instead would stand a
+    // typeface's own height above that line, which is what made the words
+    // and the button look like two rows rather than one.
+    let cy = widgets::button_disc(t).1;
+    let pad = m.dp(10.0);
+    let mut hits = Vec::with_capacity(faces.len());
+    for (k, (face, name)) in faces.iter().enumerate() {
+        let ink = if *face == shown { t.pal.text } else { t.pal.subtitle };
+        c.text_vc(&f.heading, l.pick(*name), x, cy, px, ink, None);
+        // The word answers a touch, with a little room around it.
+        let rect = Rect::new(x - pad, cy - px / 2.0 - pad, words[k] + pad * 2.0, px + pad * 2.0);
+        hits.push(Hit { rect, action: action(*face) });
+        x += words[k] + gap;
+    }
+    hits
+}
+
 /// The player's two faces, in the order it names them across its top: the
 /// songs, and the one being played.
 const MUSIC_FACES: [(MusicFace, Text); 2] = [(MusicFace::List, ["列表", "清單", "Songs"]), (MusicFace::Play, ["播放", "播放", "Playing"])];
@@ -467,21 +514,7 @@ pub fn music(cx: &Ctx) -> Frame {
 
     // The two words, the face shown in the page's ink and the other quiet,
     // centred over what that face puts below them.
-    let tab_px = m.dp(22.5);
-    let tab_gap = m.dp(25.0);
-    let words: Vec<f32> = MUSIC_FACES.iter().map(|(_, name)| c.text_width(&f.heading, l.pick(*name), tab_px)).collect();
-    let strip = words.iter().sum::<f32>() + tab_gap * (words.len() - 1) as f32;
-    let mut tab_x = (m.w as f32 - strip) / 2.0;
-    let tab_base = m.dp(81.2);
-    let pad = m.dp(10.0);
-    for (k, (face, name)) in MUSIC_FACES.iter().enumerate() {
-        let ink = if *face == cx.state.music_face { t.pal.text } else { t.pal.subtitle };
-        c.text(&f.heading, l.pick(*name), tab_x, tab_base, tab_px, ink, None);
-        // The word answers a touch, with a little room around it.
-        let rect = Rect::new(tab_x - pad, tab_base - tab_px - pad, words[k] + pad * 2.0, tab_px + pad * 2.0);
-        out.push(Hit { rect, action: Action::MusicFace(*face) });
-        tab_x += words[k] + tab_gap;
-    }
+    out.extend(face_tabs(&mut c, t, f, l, &MUSIC_FACES, cx.state.music_face, Action::MusicFace));
 
     match cx.state.music_face {
         MusicFace::List => {
@@ -493,7 +526,17 @@ pub fn music(cx: &Ctx) -> Frame {
 
     // No `<` and no large title: an app opened from the desktop leaves it the
     // way the desktop's own apps do, and the two words across the top name it.
-    Frame { back: false, header: false, bg: t.pal.bg, ..Frame::new(t, c, out, "", m.content_top) }
+    // The button at the right end is the clock's own settings gear, so the
+    // three apps carry one band of controls; the player has no settings page
+    // yet, so it answers a touch with nothing.
+    Frame {
+        back: false,
+        header: false,
+        bg: t.pal.bg,
+        button: Some((widgets::Glyph::Gear, Action::Idle)),
+        button_still: true,
+        ..Frame::new(t, c, out, "", m.content_top)
+    }
 }
 
 /// The player's playing face: the cover of the song, its name under it, the
@@ -551,7 +594,8 @@ const CALC_ORANGE: Rgba = Rgba::rgb(255, 105, 0);
 /// and not built — it says so where the keys would be. Either answers a
 /// touch, and a finger dragged level across the page turns to the other, the
 /// way the clock's two words and the clock's page do.
-const CALC_TABS: [Text; 2] = [["计算", "計算", "Calculate"], ["换算", "換算", "Convert"]];
+const CALC_FACES: [(CalcFace, Text); 2] =
+    [(CalcFace::Sum, ["计算", "計算", "Calculate"]), (CalcFace::Convert, ["换算", "換算", "Convert"])];
 
 /// The calculator's keys, in the order a calculator lays them out, with
 /// `=` where the right hand of the last row ends. The left of the last row
@@ -639,29 +683,21 @@ pub fn calculator(cx: &Ctx) -> Frame {
 
     // The two words, the face being shown in the page's ink and the other
     // quiet, centred over what that face puts below them.
-    let tab_px = m.dp(22.5);
-    let tab_gap = m.dp(25.0);
-    let words: Vec<f32> = CALC_TABS.iter().map(|name| c.text_width(&f.heading, l.pick(*name), tab_px)).collect();
-    let strip = words.iter().sum::<f32>() + tab_gap * (words.len() - 1) as f32;
-    let mut tab_x = (m.w as f32 - strip) / 2.0;
-    let tab_base = m.dp(81.2);
-    let pad = m.dp(10.0);
-    for (k, name) in CALC_TABS.iter().enumerate() {
-        let face = if k == 0 { CalcFace::Sum } else { CalcFace::Convert };
-        let ink = if face == cx.state.calc_face { t.pal.text } else { t.pal.subtitle };
-        c.text(&f.heading, l.pick(*name), tab_x, tab_base, tab_px, ink, None);
-        // The word answers a touch, with a little room around it.
-        let rect = Rect::new(tab_x - pad, tab_base - tab_px - pad, words[k] + pad * 2.0, tab_px + pad * 2.0);
-        out.push(Hit { rect, action: Action::CalcFace(face) });
-        tab_x += words[k] + tab_gap;
-    }
+    out.extend(face_tabs(&mut c, t, f, l, &CALC_FACES, cx.state.calc_face, Action::CalcFace));
 
     // The units page is named and not built: it says so where the figures
     // and the keys would stand, and takes no key of its own.
     if cx.state.calc_face == CalcFace::Convert {
         let said = l.pick(["换算还没做好", "換算還沒做好", "Conversion is not built yet"]);
         c.text_center(&f.body, said, m.w as f32 / 2.0, m.h as f32 / 2.0, m.sub_px, t.pal.subtitle);
-        return Frame { back: false, header: false, bg: ground, ..Frame::new(t, c, out, "", m.content_top) };
+        return Frame {
+            back: false,
+            header: false,
+            bg: ground,
+            button: Some((widgets::Glyph::Gear, Action::Idle)),
+            button_still: true,
+            ..Frame::new(t, c, out, "", m.content_top)
+        };
     }
 
     let left = m.dp(30.3);
@@ -714,11 +750,15 @@ pub fn calculator(cx: &Ctx) -> Frame {
     // No `<` and no large title here: an app opened from the desktop leaves
     // it the way the desktop's own apps do, by a swipe up from the foot of
     // the screen, and the calculator's top line carries its two words
-    // instead of a page's name.
+    // instead of a page's name. The button at its right end is the clock's
+    // settings gear; the calculator has no settings page yet, so it answers
+    // a touch with nothing.
     Frame {
         back: false,
         header: false,
         bg: ground,
+        button: Some((widgets::Glyph::Gear, Action::Idle)),
+        button_still: true,
         ..Frame::new(t, c, out, "", m.content_top)
     }
 }
@@ -765,8 +805,20 @@ fn clock_glyph(c: &mut Canvas, glyph: Glyph, cx: f32, cy: f32, h: f32, ink: Rgba
         Glyph::Minus => Icon::Minus,
         Glyph::Plus => Icon::Plus,
     };
-    icons::glyph(c, icon, cx, cy, h, ink);
+    // The reset arrow is the one picture here that is wide rather than tall —
+    // 28 units by 12.33 — so at a key's box it would stand a third of the
+    // height of the pictures beside it. Its box is made as many times wider,
+    // until the arrow itself stands about seven tenths of their height across
+    // two thirds of the chip: any wider and it reaches the rim, any narrower
+    // and it reads as a smaller key rather than the same one turning back.
+    let size = if matches!(glyph, Glyph::Reset) { h * RESET_BOX } else { h };
+    icons::glyph(c, icon, cx, cy, size, ink);
 }
+
+/// The reset arrow's box as a share of a key's: the drawing is 2.27 times as
+/// wide as it is tall, so a box of the same shape that leaves the arrow seven
+/// tenths of a key's height is 2.27 × 0.68 of a key's box.
+const RESET_BOX: f32 = 1.55;
 
 /// The ink the pictures on the stopwatch's keys are drawn in: the grey the
 /// watch's own keys carry, a shade lighter than the page's black. On a pale
@@ -1414,23 +1466,8 @@ pub fn clock(cx: &Ctx) -> Frame {
     let mid = m.w as f32 / 2.0;
 
     // The two words, the one being shown in the page's ink and the other
-    // quiet, set as the calculator sets its own.
-    let tab_px = m.dp(22.5);
-    let tab_gap = m.dp(25.0);
-    let tab_base = m.dp(81.2);
-    let words: Vec<f32> =
-        CLOCK_FACES.iter().map(|(_, name)| c.text_width(&f.heading, l.pick(*name), tab_px)).collect();
-    let strip = words.iter().sum::<f32>() + tab_gap * (words.len() - 1) as f32;
-    let mut tab_x = (m.w as f32 - strip) / 2.0;
-    let pad = m.dp(10.0);
-    for (k, (face, name)) in CLOCK_FACES.iter().enumerate() {
-        let ink = if *face == clock.face { t.pal.text } else { t.pal.subtitle };
-        c.text(&f.heading, l.pick(*name), tab_x, tab_base, tab_px, ink, None);
-        // The word answers a touch, with a little room around it.
-        let rect = Rect::new(tab_x - pad, tab_base - tab_px - pad, words[k] + pad * 2.0, tab_px + pad * 2.0);
-        out.push(Hit { rect, action: Action::ClockFace(*face) });
-        tab_x += words[k] + tab_gap;
-    }
+    // quiet, set as the calculator and the player set their own.
+    out.extend(face_tabs(&mut c, t, f, l, &CLOCK_FACES, clock.face, Action::ClockFace));
 
     // The keys: a row of the same chips on both faces, one or two of them
     // under the stopwatch and three under the timer, centred on the page.
@@ -1627,14 +1664,120 @@ pub fn clock(cx: &Ctx) -> Frame {
     // No `<` here either: the clock leaves the way the desktop's own apps do.
     // No large title either: the two words are the top of the page, as they
     // are on the calculator.
+    //
+    // The gear at the page's top right is the bar's round button — the `<`
+    // chip mirrored, at the same height. Its chip is laid as the `<`'s is,
+    // fading in with the bar as a page scrolls under it; this page does not
+    // scroll, so what stands there is the gear on its own, the way the
+    // back button stands on a page held at its top.
     Frame {
         back: false,
         header: false,
+        button: Some((widgets::Glyph::Gear, Action::Open(Screen::ClockSettings))),
+        button_still: true,
         live,
         scrollback: scroll,
         clock_ruler: ruler,
         ..Frame::new(t, c, out, "", m.content_top)
     }
+}
+
+/// The clock's settings, opened by the gear at the page's top right: the
+/// sound the timer's end makes, and whether the clock ticks.
+const CLOCK_SETTINGS_TITLE: Text = ["设置", "設定", "Settings"];
+const TIMER_SOUND_ROW: Text = ["计时结束声音", "計時結束聲音", "Timer end sound"];
+const CLOCK_TICKING_ROW: Text = ["钟表运作音效", "鐘錶運作音效", "Clock ticking"];
+const CLOCK_BACKGROUND_ROW: Text = [
+    "后台仍播放钟表运作声音",
+    "背景仍播放鐘錶運作聲音",
+    "Keep the ticking in the background",
+];
+
+/// The sounds a timer's end can make: every sound the ramdisk carries as a
+/// ring, by its key and the name the names file gives it in `l`, in the
+/// order of their keys. A ramdisk that names none still offers the one a
+/// recovery starts with, so the page never stands empty.
+pub fn timer_sounds(s: &State, l: Lang) -> Vec<(String, String)> {
+    let mut sounds: Vec<(String, String)> = s
+        .sound_names
+        .ring
+        .iter()
+        .map(|(key, name)| (key.clone(), sound_name_of(l, name, key)))
+        .collect();
+    sounds.sort_by(|a, b| a.0.cmp(&b.0));
+    if sounds.is_empty() {
+        sounds.push((DEFAULT_TIMER_SOUND.to_string(), l.pick(TIMER_SOUND_DEFAULT).to_string()));
+    }
+    sounds
+}
+
+/// The name the sound a timer's end makes goes by: the one the names file
+/// gives it, or, where the file has no such sound, its key as it stands.
+fn timer_sound_name(s: &State, l: Lang) -> String {
+    timer_sounds(s, l)
+        .into_iter()
+        .find(|(key, _)| *key == s.timer_sound)
+        .map_or_else(|| s.timer_sound.clone(), |(_, name)| name)
+}
+
+/// What the one sound a recovery starts with is called where the ramdisk
+/// names nothing.
+const TIMER_SOUND_DEFAULT: Text = ["恋爱裁判", "戀愛裁判", "Love Trial"];
+
+/// A sound's name in `l`, the key it is kept by where the names file has
+/// none.
+fn sound_name_of(l: Lang, name: &skyward_config::SoundName, key: &str) -> String {
+    let picked = if l == Lang::En { &name.en } else { &name.zh };
+    if picked.is_empty() { key.to_string() } else { picked.clone() }
+}
+
+/// The clock's settings: the sound the timer's end makes, a rule, and the
+/// two switches that say whether the clock ticks. No icon stands before any
+/// of them — they are four words to read, not four apps.
+pub fn clock_settings(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = long_page(cx);
+    let mut out = Vec::new();
+    let top = t.m.content_top;
+    let name = timer_sound_name(s, l);
+    let rows = widgets::list(&mut c, t, f, top, &[
+        Row::new(l.pick(TIMER_SOUND_ROW)).trail(Trail::Value(&name)),
+        Row::new(l.pick(CLOCK_TICKING_ROW)).trail(Trail::Switch(s.clock_ticking)),
+        Row::new(l.pick(CLOCK_BACKGROUND_ROW)).trail(Trail::Switch(s.clock_ticking_background)),
+    ]);
+    out.extend(hits(&rows.rows, &[
+        Action::Open(Screen::ClockSound),
+        Action::Toggle(Switch::ClockTicking),
+        Action::Toggle(Switch::ClockTickingBackground),
+    ]));
+    // The rule between the sound and the two switches: the card holds one
+    // choice and its consequences, and the rule sets the one off from the
+    // other the way the stock settings divide a card. It runs from where
+    // the words start to where the card's own edge is. In the dark the
+    // page's hairline is all but the card's own grey and would not show, so
+    // the rule there is a step up from the card instead.
+    let first = rows.rows[0];
+    let (x0, x1) = (t.m.margin + t.m.inner, t.m.w as f32 - t.m.margin - t.m.inner);
+    let ink = if t.dark { t.pal.round } else { t.pal.hairline };
+    c.fill_rect(x0, first.y + first.h, x1 - x0, 1.0f32.max(t.m.dp(0.5)), ink);
+    Frame::new(t, fit(c, t, rows.bottom), out, l.pick(CLOCK_SETTINGS_TITLE), top)
+}
+
+/// The sounds a timer's end can make, the one in use ticked.
+pub fn clock_sounds(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = page(cx);
+    let mut out = Vec::new();
+    let top = t.m.content_top;
+    let sounds = timer_sounds(s, l);
+    let rows: Vec<Row> = sounds
+        .iter()
+        .map(|(key, name)| Row::new(name.as_str()).trail(Trail::Check(*key == s.timer_sound)))
+        .collect();
+    let list = widgets::list(&mut c, t, f, top, &rows);
+    let picks: Vec<Action> = (0..sounds.len()).map(Action::ClockSound).collect();
+    out.extend(hits(&list.rows, &picks));
+    Frame::new(t, fit(c, t, list.bottom), out, l.pick(TIMER_SOUND_ROW), top)
 }
 
 /// Recovery home, laid out like the Settings root: title, search, a device
