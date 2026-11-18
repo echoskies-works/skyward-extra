@@ -378,6 +378,10 @@ pub fn desktop(cx: &Ctx) -> Frame {
         None => Canvas::filled(m.w, m.h, DESKTOP_BG),
     };
     let mut out = Vec::new();
+    // Where each app's icon stands, for the page it opens to grow out of
+    // that square and go back into it. The square is the tile's own top and
+    // sides, not the whole cell the touch answers.
+    let mut launches = Vec::new();
 
     // The grid, measured off a phone's own desktop at 1080 wide: a tile
     // 164 px square with 90 px between tiles, so four tiles and their gaps
@@ -427,7 +431,10 @@ pub fn desktop(cx: &Ctx) -> Frame {
         // including the ones with nothing behind them, which answer by
         // stopping rather than by opening.
         let action = match app.opens {
-            Opens::Page(screen) => Action::Open(screen),
+            Opens::Page(screen) => {
+                launches.push((screen, Rect::new(x0, y0, tile, tile)));
+                Action::Open(screen)
+            }
             Opens::NotYet(tag) => Action::NotReady(tag),
         };
         out.push(Hit { rect: Rect::new(x - (tile + gap) / 2.0, y, tile + gap, row_h), action });
@@ -447,7 +454,9 @@ pub fn desktop(cx: &Ctx) -> Frame {
         }
     }
 
-    Frame { back: false, header: false, bg: DESKTOP_BG, ..Frame::new(t, c, out, l.pick(DESKTOP_TITLE), 0.0) }
+    let mut frame = Frame { back: false, header: false, bg: DESKTOP_BG, ..Frame::new(t, c, out, l.pick(DESKTOP_TITLE), 0.0) };
+    frame.launches = launches;
+    frame
 }
 
 /// The size of the words an app names its faces with across its top, and

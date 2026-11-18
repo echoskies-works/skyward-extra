@@ -283,7 +283,7 @@ impl App {
             // page sliding in from the right has yet to reach. A page rising
             // is drawn across whole, since it comes up rather than in.
             let wide = match (slide, &self.turn) {
-                (Some((at, _, _)), Some(turn)) if !turn.back && !turn.rise && self.row_press.is_none() => {
+                (Motion::Move { at, .. }, Some(turn)) if !turn.back && !turn.rise && self.row_press.is_none() => {
                     (self.w - at.clamp(0, self.w as i32) as u32).max(self.cols + self.w / 4)
                 }
                 _ => self.w,
@@ -320,7 +320,7 @@ impl App {
         // Let go where the tasks stand, the page keeps that much of its
         // rise and the tasks fill what it has left, so what stands at the
         // foot is the tasks and not the desktop under it.
-        if slide.is_none()
+        if matches!(slide, Motion::None)
             && let Some(off) = self.foot.as_ref().filter(|f| !f.tasks).map(|f| f.pull)
         {
             let mut page = Canvas::new(out.w, out.h);
@@ -343,7 +343,7 @@ impl App {
             return;
         }
         match slide {
-            Some((at, shift, dim)) => {
+            Motion::Move { at, shift, dim } => {
                 // The page shown is drawn on its own canvas, once for as
                 // long as it shows the same, and moved from there with the
                 // page left.
@@ -383,7 +383,27 @@ impl App {
                     self.layer = Some((view, page));
                 }
             }
-            None => {
+            Motion::Zoom { rect, alpha } => {
+                // The page comes out of the icon, or goes back into it: the
+                // desktop underneath stays whole and sharp, the page over
+                // it grows and shows at the same rate, its shape kept.
+                let back = self.turn.as_ref().expect("zooming").back;
+                let still = self.frame.as_ref().is_some_and(|fr| fr.hero.is_none());
+                let page = match self.layer.take() {
+                    Some((shown, c)) if still && shown == view => c,
+                    kept => {
+                        let mut c = kept.map(|(_, c)| c).unwrap_or_else(|| Canvas::new(out.w, out.h));
+                        self.paint_page(&mut c, &t, Some((f, info)), &view);
+                        c
+                    }
+                };
+                let left = &self.turn.as_ref().expect("zooming").left;
+                let (front, behind) = if back { (left, &page) } else { (&page, left) };
+                out.put(behind, 0);
+                out.draw_scaled_alpha(front, rect.x, rect.y, rect.w, rect.h, alpha);
+                self.layer = Some((view, page));
+            }
+            Motion::None => {
                 self.layer = None;
                 self.paint_face(out, &t, f, info, &view, now);
             }
@@ -664,37 +684,77 @@ impl App {
         draw_faded(out, small, 0.0, 0.0, t.pal.text, level, blur);
     }
 
+    /// The rect a page starts from when it grows out of a desktop icon: the
+    /// icon's left and right edges give the width, and the height follows
+    /// the screen's own shape so the page is never stretched. Where the
+    /// icon sits high enough the top edge is the icon's top and the page
+    /// grows down past it; where it sits low the bottom edge is the icon's
+    /// bottom and the page grows up, so the small page stays on screen.
+    fn zoom_start(&self, icon: Rect) -> Rect {
+        let w = self.w as f32;
+        let h = icon.w * (self.h as f32 / w);
+        let top = if icon.y + h <= self.h as f32 {
+            icon.y
+        } else {
+            icon.y + icon.h - h
+        };
+        Rect::new(icon.x, top, icon.w, h)
+    }
+
     /// Where a page sliding in over the page left, or the page left
-    /// sliding off, stands at `now`: how many pixels from the left edge the
-    /// page in front stands, how many left of where it rests the page
-    /// behind, and how dark that is; nothing once the slide is over. See
-    /// [`Turn`].
-    fn slid(&mut self, now: u64) -> Option<(i32, i32, f32)> {
-        let turn = self.turn.as_mut()?;
-        let spring = *turn.spring.get_or_insert_with(|| {
-            if turn.back {
-                Spring::new(now, -1000.0, 0.0, BACK_PERIOD)
-            } else {
-                Spring::new(now, 1000.0, -OPEN_SPEED * 1000.0, OPEN_PERIOD)
-            }
-        });
+    /// sliding off, stands at `now`: across the screen, up it, or growing
+    /// out of a desktop icon. Nothing once the move is over. See [`Turn`].
+    fn slid(&mut self, now: u64) -> Motion {
+        if self.turn.is_none() {
+            return Motion::None;
+        }
+        let zoom = self.turn.as_ref().and_then(|t| t.icon);
+        let back = self.turn.as_ref().is_some_and(|t| t.back);
+        if self.turn.as_ref().is_some_and(|t| t.spring.is_none()) {
+            let made = match zoom {
+                // Both ways run from 1000 down to 0. Opening reads it as
+                // how much of the page shows (0→1, growing out of the
+                // icon); going back as how much is left (1→0, the page
+                // shrinking into the icon while the desktop shows through).
+                Some(_) => Spring::new(now, 1000.0, 0.0, ZOOM_PERIOD),
+                None if back => Spring::new(now, -1000.0, 0.0, BACK_PERIOD),
+                None => Spring::new(now, 1000.0, -OPEN_SPEED * 1000.0, OPEN_PERIOD),
+            };
+            self.turn.as_mut().expect("turn above").spring = Some(made);
+        }
+        let spring = self.turn.as_ref().and_then(|t| t.spring).expect("set above");
         let (x, done) = spring.at(now);
         if done {
             self.backdrop = self.turn.take().map(|t| t.left);
-            return None;
+            return Motion::None;
+        }
+        let back = self.turn.as_ref().is_some_and(|t| t.back);
+        if let Some(icon) = zoom {
+            // How much of the page shows, 0 at the icon and 1 at the whole
+            // screen. Opening goes 0→1 as the spring falls 1000→0; going
+            // back the spring falls the same way, so read it 1→0 and the
+            // page folds back into the icon instead of jumping there. Both
+            // the rect and the fade use this one measure.
+            let q = if back { x / 1000.0 } else { (1000.0 - x) / 1000.0 };
+            let q = q.clamp(0.0, 1.0);
+            let start = self.zoom_start(icon);
+            let (sw, sh) = (self.w as f32, self.h as f32);
+            let lerp = |from: f32, to: f32| from + (to - from) * q;
+            let rect = Rect::new(lerp(start.x, 0.0), lerp(start.y, 0.0), lerp(start.w, sw), lerp(start.h, sh));
+            return Motion::Zoom { rect, alpha: q };
         }
         // Where the page in front stands, in screen widths from the left
         // edge.
-        let along = if turn.back { 1.0 + x / 1000.0 } else { x / 1000.0 };
-        if turn.rise {
+        let along = if back { 1.0 + x / 1000.0 } else { x / 1000.0 };
+        if self.turn.as_ref().is_some_and(|t| t.rise) {
             // Up and down: the row of the screen the page's top edge stands
             // on, from the foot of the screen to the head of it as it comes
             // in, and back down again as it goes.
             let h = self.h as f32;
-            return Some(((along * h).round() as i32, 0, BEHIND_DIM * (1.0 - along)));
+            return Motion::Move { at: (along * h).round() as i32, shift: 0, dim: BEHIND_DIM * (1.0 - along) };
         }
         let w = self.w as f32;
-        Some(((along * w).round() as i32, (BEHIND_SHIFT * w * (1.0 - along)).round() as i32, BEHIND_DIM * (1.0 - along)))
+        Motion::Move { at: (along * w).round() as i32, shift: (BEHIND_SHIFT * w * (1.0 - along)).round() as i32, dim: BEHIND_DIM * (1.0 - along) }
     }
 
     /// Whether the cursor of the text field on `screen` shows at `now`: it
@@ -1071,5 +1131,129 @@ mod tests {
         app.compose(&mut screen, &f, &i, "12:00", "11月16日 周一", 4500);
         assert!(app.morph.is_none());
         assert_eq!(top(&screen), Some(home.ceil()));
+    }
+
+    #[test]
+    fn a_desktop_icon_grows_into_its_page_and_shrinks_back() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Desktop, W, H, PPD);
+        // The clock is one of the icons on the desktop.
+        let fr = app.frame(&f, &i);
+        let icon = fr.launches.iter().find(|(s, _)| *s == Screen::Clock).map(|(_, r)| *r).expect("the clock icon");
+        assert!(icon.w > 0.0 && icon.h > 0.0, "the icon is a real square");
+        // Show the desktop first: a page leaves whatever was last drawn, so
+        // the icon has to have been on screen before the tap opens it.
+        let mut screen = Canvas::new(W, H);
+        app.compose(&mut screen, &f, &i, "12:00", "11月16日 周一", 0);
+
+        tap_at(&mut app, &f, &i, Action::Open(Screen::Clock), 1000);
+        assert_eq!(app.screen(), Screen::Clock);
+        assert!(app.turn.as_ref().is_some_and(|t| t.icon == Some(icon)), "the page came out of that icon");
+        assert_eq!(app.deadline(1000), Some(0), "it grows a frame at a time");
+
+        // The first frame starts at the icon: small and almost clear.
+        app.compose(&mut screen, &f, &i, "12:00", "11月16日 周一", 1000);
+        assert!(app.turn.is_some(), "still growing on the first frame");
+        // Mid growth still asks for frames: it is drawn a frame at a time.
+        app.compose(&mut screen, &f, &i, "12:00", "11月16日 周一", 1120);
+        assert_eq!(app.deadline(1120), Some(0));
+
+        // After it settles the page shows as itself, no turn left.
+        app.compose(&mut screen, &f, &i, "12:00", "11月16日 周一", 3000);
+        assert!(app.turn.is_none(), "settled, the page is whole");
+
+        // Going back shrinks into the same icon.
+        press(&mut app, Key::Back, 4000);
+        assert_eq!(app.screen(), Screen::Desktop);
+        assert!(app.turn.as_ref().is_some_and(|t| t.icon == Some(icon)), "it goes back into the same icon");
+        assert_eq!(app.deadline(4000), Some(0), "it shrinks a frame at a time");
+        app.compose(&mut screen, &f, &i, "12:00", "11月16日 周一", 4120);
+        assert!(app.turn.is_some(), "still shrinking at 4120");
+        app.compose(&mut screen, &f, &i, "12:00", "11月16日 周一", 6000);
+        assert!(app.turn.is_none(), "back on the desktop, the move is let go");
+    }
+
+    #[test]
+    fn a_zoom_grows_monotonically_without_a_jump() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Desktop, W, H, PPD);
+        // The desktop must have shown before a page can leave it.
+        app.compose(&mut Canvas::new(W, H), &f, &i, "12:00", "11月16日 周一", 0);
+        tap_at(&mut app, &f, &i, Action::Open(Screen::Clock), 1000);
+        // Read the rect straight from the motion, a few frames apart.
+        let mut last_w = 0.0;
+        let mut last_a = -1.0;
+        for &now in &[1000, 1020, 1060, 1120, 1200, 1400] {
+            match app.slid(now) {
+                Motion::Zoom { rect, alpha } => {
+                    assert!(rect.w >= last_w, "the page never shrinks while growing: {} < {}", rect.w, last_w);
+                    assert!(alpha >= last_a, "and never fades back: {alpha} < {last_a}");
+                    assert!((rect.h / rect.w - H as f32 / W as f32).abs() < 0.01, "shape held at {now}");
+                    last_w = rect.w;
+                    last_a = alpha;
+                }
+                other => panic!("expected a zoom at {now}, got {other:?}"),
+            }
+        }
+        assert!(last_w > 0.0 && last_a > 0.0, "it really grew and showed");
+        assert!(last_w <= W as f32 + 1.0, "never grows past the screen");
+    }
+
+    #[test]
+    fn a_zoom_back_folds_the_page_into_the_icon_without_a_jump() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Desktop, W, H, PPD);
+        let mut screen = Canvas::new(W, H);
+        app.compose(&mut screen, &f, &i, "12:00", "11月16日 周一", 0);
+        tap_at(&mut app, &f, &i, Action::Open(Screen::Clock), 1000);
+        for now in (1000..=3000).step_by(16) {
+            app.compose(&mut screen, &f, &i, "12:00", "11月16日 周一", now);
+        }
+        assert!(app.turn.is_none(), "opened and settled");
+
+        press(&mut app, Key::Back, 4000);
+        // Going back reads whole-screen first, then folds down to the icon:
+        // the page never jumps small at the start, and is never still whole
+        // at the end only to disappear in one frame.
+        let mut last_w = W as f32 + 1.0;
+        let mut last_a = 1.1;
+        for &now in &[4000, 4020, 4060, 4120, 4200] {
+            match app.slid(now) {
+                Motion::Zoom { rect, alpha } => {
+                    assert!(rect.w <= last_w, "the page never grows while folding: {} > {}", rect.w, last_w);
+                    assert!(alpha <= last_a, "and never shows more: {alpha} > {last_a}");
+                    last_w = rect.w;
+                    last_a = alpha;
+                }
+                other => panic!("expected a folding zoom at {now}, got {other:?}"),
+            }
+        }
+        // The first frame is still nearly the whole screen, not the icon.
+        match app.slid(4000) {
+            Motion::Zoom { rect, .. } => assert!(rect.w > W as f32 * 0.9, "starts whole: {}", rect.w),
+            other => panic!("expected a zoom, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_zoom_keeps_the_pages_own_shape() {
+        let app = App::new(Screen::Desktop, W, H, PPD);
+        let icon = Rect::new(300.0, 200.0, 100.0, 100.0);
+        let r = app.zoom_start(icon);
+        // The width is the icon's left and right edges; the height follows
+        // the screen, so a tall page is never squeezed into a square.
+        assert_eq!(r.x, icon.x, "left edge is the icon's");
+        assert_eq!(r.w, icon.w, "width is the icon's");
+        assert!((r.h / r.w - H as f32 / W as f32).abs() < 0.001, "the page keeps the screen's shape");
+        assert_eq!(r.y, icon.y, "a high icon grows down from its top");
+    }
+
+    #[test]
+    fn a_low_icon_grows_up_from_its_bottom() {
+        let app = App::new(Screen::Desktop, W, H, PPD);
+        let icon = Rect::new(300.0, 3000.0, 100.0, 100.0);
+        let r = app.zoom_start(icon);
+        assert_eq!(r.y + r.h, icon.y + icon.h, "a low icon grows up from its bottom");
+        assert!(r.y >= 0.0, "the small page stays on screen");
     }
 }

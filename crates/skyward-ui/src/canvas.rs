@@ -429,6 +429,66 @@ impl Canvas {
         }
     }
 
+    /// Draw the opaque page `src` into (`x`, `y`, `w`, `h`) at `alpha`, mixed
+    /// over what is already here. The caller keeps `w:h` at `src`'s own
+    /// ratio, so the page grows without ever changing shape. This is how a
+    /// page comes out of the desktop icon: small and clear at first, then
+    /// filling the screen as it becomes whole.
+    ///
+    /// Sampling is bilinear with fixed-point weights worked out once per
+    /// column and row, rather than for every pixel. A page drawn at its own
+    /// size and strength is copied whole, so the last frames of the move
+    /// cost one copy rather than a screen of samples.
+    pub fn draw_scaled_alpha(&mut self, src: &Canvas, x: f32, y: f32, w: f32, h: f32, alpha: f32) {
+        if src.w == 0 || src.h == 0 || w <= 0.0 || h <= 0.0 || alpha <= 0.0 {
+            return;
+        }
+        if alpha >= 0.999
+            && x.abs() < 0.5
+            && y.abs() < 0.5
+            && (w - src.w as f32).abs() < 0.5
+            && (h - src.h as f32).abs() < 0.5
+        {
+            self.put(src, 0);
+            return;
+        }
+        let (sx, sy) = (src.w as f32 / w, src.h as f32 / h);
+        let (x0, x1) = self.columns(x.floor() as i32, (x + w).ceil() as i32);
+        let (y0, y1) = self.rows(y.floor() as i32, (y + h).ceil() as i32);
+        // Which source pixels a sample lies between, and how far, in
+        // 1/256ths. Worked out once along each axis, not at every pixel.
+        let near = |v: f32, n: u32| -> (u32, u32, u16) {
+            let v = v.clamp(0.0, (n - 1) as f32);
+            let i = v.floor() as u32;
+            (i, (i + 1).min(n - 1), ((v - i as f32) * 256.0).round() as u16)
+        };
+        let cols: Vec<(u32, u32, u16)> = (x0..x1).map(|col| near((col as f32 + 0.5 - x) * sx - 0.5, src.w)).collect();
+        let rows: Vec<(u32, u32, u16)> = (y0..y1).map(|row| near((row as f32 + 0.5 - y) * sy - 0.5, src.h)).collect();
+        let lerp = |a: u8, b: u8, f: u16| -> u8 {
+            // Signed: a channel falls as often as it rises, and an unsigned
+            // difference would wrap when b < a.
+            let v = a as i32 * 256 + (b as i32 - a as i32) * f as i32 + 128;
+            (v >> 8).clamp(0, 255) as u8
+        };
+        let strength = (alpha.clamp(0.0, 1.0) * 256.0).round() as u32;
+        for (row, &(sy0, sy1, fy)) in (y0..y1).zip(rows.iter()) {
+            for (col, &(sx0, sx1, fx)) in (x0..x1).zip(cols.iter()) {
+                let ia = ((sy0 * src.w + sx0) * 4) as usize;
+                let ib = ((sy0 * src.w + sx1) * 4) as usize;
+                let ic = ((sy1 * src.w + sx0) * 4) as usize;
+                let id = ((sy1 * src.w + sx1) * 4) as usize;
+                let a = &src.data[ia..ia + 4];
+                let b = &src.data[ib..ib + 4];
+                let c = &src.data[ic..ic + 4];
+                let d = &src.data[id..id + 4];
+                let pixel = [lerp(lerp(a[0], b[0], fx), lerp(c[0], d[0], fx), fy), lerp(lerp(a[1], b[1], fx), lerp(c[1], d[1], fx), fy), lerp(lerp(a[2], b[2], fx), lerp(c[2], d[2], fx), fy), 255];
+                let i = self.at(col, row);
+                let under = [self.data[i], self.data[i + 1], self.data[i + 2], self.data[i + 3]];
+                self.data[i..i + 4].copy_from_slice(&mix(under, pixel, strength));
+            }
+        }
+    }
+
     /// The picture `bytes` holds as a PNG, as pixels: eight bits a channel,
     /// a palette or greys turned to red, green and blue, and transparency
     /// kept.

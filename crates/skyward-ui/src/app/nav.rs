@@ -7,8 +7,17 @@ use super::*;
 const WAIT_OR_STOP: Text = ["请等待完成或停止后再返回", "請等待完成或停止後再返回", "Wait for it to finish, or stop it, before going back"];
 
 impl App {
-    /// Open `screen` over the page shown, sliding in over it.
+    /// Open `screen` over the page shown, sliding in over it — or, from the
+    /// desktop, growing out of the icon that was touched.
     pub(super) fn open(&mut self, screen: Screen) {
+        // A touch on the frame happens before this; the icon it struck is
+        // the one the page grows from and goes back into. Remember it now,
+        // while the frame still holds the desktop that was shown. Pages
+        // opened within an app leave it alone, so a page going back to the
+        // desktop still finds the icon it first came out of.
+        if self.screen() == Screen::Desktop {
+            self.desk_icon = self.frame.as_ref().and_then(|fr| fr.launches.iter().find(|(s, _)| *s == screen).map(|(_, r)| *r));
+        }
         self.leave(false);
         self.push(screen);
     }
@@ -25,6 +34,10 @@ impl App {
     /// page rendered anew since it last showed gives way at once.
     pub(super) fn leave(&mut self, back: bool) {
         let rise = self.rising(back);
+        // A page that came out of a desktop icon grows out of it and goes
+        // back into it; every other page slides. The icon is read while the
+        // stack still says where the page goes back to.
+        let icon = if rise { self.desk_icon } else { None };
         if let Some(turn) = self.turn.as_mut().filter(|t| t.spring.is_none()) {
             // The move already picked its way across the screen or up it:
             // turning back mid-move keeps to that way rather than jumping
@@ -44,13 +57,14 @@ impl App {
         if let Some(fr) = self.frame.as_ref().filter(|_| self.cols < self.w) {
             left.fill_rect(self.cols as f32, 0.0, (self.w - self.cols) as f32, self.h as f32, fr.bg);
         }
-        self.turn = Some(Turn { back, rise, left, spring: None });
+        self.turn = Some(Turn { back, rise, icon, left, spring: None });
         self.dirty = true;
     }
 
     /// Whether the move now under way goes up and down rather than across:
     /// the desktop opens the pages over it, and they sink back down to it,
-    /// while pages opened one from another still go across.
+    /// while pages opened one from another still go across. Either way the
+    /// desktop pages grow out of their icons rather than slide.
     fn rising(&self, back: bool) -> bool {
         if back {
             // The page going is the one shown; the page it goes back to is

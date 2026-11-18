@@ -61,6 +61,9 @@ pub struct Frame {
     /// The clock's timer ruler, when a finger may set it. It takes the
     /// finger before the page's sideways face swipe does.
     pub clock_ruler: Option<Rect>,
+    /// On the desktop, where each app's icon stands, so a page opened from
+    /// one grows out of that square and goes back into it.
+    pub launches: Vec<(Screen, Rect)>,
 }
 
 /// A strip held at the bottom of the screen over the page, such as the
@@ -225,6 +228,7 @@ impl Frame {
             button_still: false,
             live: None,
             clock_ruler: None,
+            launches: Vec::new(),
         }
     }
 

@@ -821,6 +821,10 @@ const QUICK_TAP_MS: u64 = 64;
 const OPEN_PERIOD: f32 = 0.37;
 const OPEN_SPEED: f32 = 2.94;
 const BACK_PERIOD: f32 = 0.393;
+/// A page growing out of a desktop icon, or shrinking back into it, moves
+/// on a spring from rest: unlike a page sliding in it has no rush to catch
+/// up with, so the size and the fade come up evenly together.
+const ZOOM_PERIOD: f32 = 0.3;
 /// While a page in front covers it wholly, the page behind stands this far
 /// left, in screen widths, darkened this much.
 const BEHIND_SHIFT: f32 = 0.25;
@@ -1224,6 +1228,20 @@ impl FaceSwipe {
 /// darkens; going back, the page left slides off to the right over the
 /// page gone back to, which comes back from the left and brightens. The
 /// page in front has its left corners rounded as the screen's are.
+/// Where a page stands while it moves over another, at one instant.
+#[derive(Clone, Copy, Debug)]
+enum Motion {
+    /// Settled; nothing is over anything.
+    None,
+    /// Sliding across the screen or up it: the offset of the front page
+    /// from its rest in pixels, how far the page behind is pushed, and how
+    /// dark that is. Which axis is read from the turn itself.
+    Move { at: i32, shift: i32, dim: f32 },
+    /// Out of a desktop icon: the page's rect on screen and how much of it
+    /// shows. Both grow together so the page never changes shape.
+    Zoom { rect: Rect, alpha: f32 },
+}
+
 struct Turn {
     /// Going back: the page in front is the page left; else the page
     /// opened.
@@ -1231,6 +1249,10 @@ struct Turn {
     /// The move is up and down rather than across: a page opened from the
     /// desktop rises from the foot of the screen, and sinks back to it.
     rise: bool,
+    /// A page coming out of a desktop icon, or going back into it, grows
+    /// from this rect instead of sliding: kept while the move lasts so a
+    /// page going back finds the same icon it came out of.
+    icon: Option<Rect>,
     /// The page left, as it last showed.
     left: Canvas,
     /// How far from the left edge the page in front stands, in thousandths
@@ -1412,6 +1434,10 @@ pub struct App {
     /// A page sliding in over the page left, or off over the page gone
     /// back to.
     turn: Option<Turn>,
+    /// The rect of the desktop icon the page was opened from, kept so going
+    /// back puts it away into the same icon. Only a page opened from the
+    /// desktop uses this; the others just slide.
+    desk_icon: Option<Rect>,
     /// A clock face giving way to the other, and the canvas the face coming
     /// in is drawn on while it does.
     face_turn: Option<FaceTurn>,
@@ -1509,6 +1535,7 @@ impl App {
             row_art: None,
             shown: None,
             turn: None,
+            desk_icon: None,
             face_turn: None,
             face_page: None,
             face_swipe: None,
