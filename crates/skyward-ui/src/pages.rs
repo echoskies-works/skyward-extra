@@ -2,7 +2,7 @@ use crate::app::{
     Action, BackupAt, BackupEnd, BackupJob, CalcFace, CalcKey, CalcOp, Check, ClashChoice, ClockFace, Confirm, Damage, Data, Dock,
     DownloadEnd,
     EraseStop, Field, FileKind,
-    FileOp, FileTask, Fold, Folder, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, MusicFace, Pick, Place, Rows,
+    FileOp, FileTask, Fold, Folder, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, MusicFace, MusicFilter, Pick, Place, Rows,
     Screen,
     SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, Switch, SystemsWork, Target, UsbDrive, UsbLink, Wipe, ADDABLE,
     BACKUP_PARTS, CLOCK_MOST, DATA_ERASED, DATA_PARTITION, DEFAULT_TIMER_SOUND, DOWNLOADS, FASTBOOT_CHOICES, RULER_MINUTE_DP, SCREEN_OFF, TARGETS, TIME_ZONES,
@@ -498,6 +498,52 @@ fn face_tabs<T: Copy + PartialEq>(
 /// songs, and the one being played.
 const MUSIC_FACES: [(MusicFace, Text); 2] = [(MusicFace::List, ["列表", "清單", "Songs"]), (MusicFace::Play, ["播放", "播放", "Playing"])];
 
+/// The four shelves the player's list can look at, in the order the page
+/// names them under its two faces: every song at once, and the three ways
+/// songs are kept. Each carries what the list says while it is empty, none
+/// of the four having anything on it yet.
+const MUSIC_FILTERS: [(MusicFilter, Text, Text); 4] = [
+    (MusicFilter::All, ["全部", "全部", "All"], ["还没有歌曲", "還沒有歌曲", "No songs yet"]),
+    (MusicFilter::Album, ["专辑", "專輯", "Albums"], ["还没有专辑", "還沒有專輯", "No albums yet"]),
+    (MusicFilter::Artist, ["艺术家", "藝術家", "Artists"], ["还没有艺术家", "還沒有藝術家", "No artists yet"]),
+    (MusicFilter::Folder, ["文件夹", "資料夾", "Folders"], ["还没有文件夹", "還沒有資料夾", "No folders yet"]),
+];
+
+/// The row of shelves under the two faces, copied from the stock recorder's
+/// own list: four pills of one width filling the page between its margins,
+/// the one shown filled with the page's grey and the others left the card's
+/// white, its word in the page's ink where it is filled and quiet beside it.
+///
+/// Their size is the stock one's — 42 dp tall, a 13 dp gap, and as wide as
+/// the page's width less its margins and those gaps split four ways. Every
+/// pill answers a touch; none of the four is filled, so a touch turns to the
+/// shelf it names and the list says there is nothing on it yet.
+fn music_filters(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, shown: MusicFilter) -> Vec<Hit> {
+    let m = &t.m;
+    let px = m.dp(15.3);
+    let h = m.dp(42.0);
+    let gap = m.dp(13.0);
+    // Clear of the two faces' words, which stand on the gear's line, and far
+    // enough below them that the row reads as the head of the list rather
+    // than as part of the band of words.
+    let y = m.dp(132.0);
+    let count = MUSIC_FILTERS.len() as f32;
+    let w = (m.w as f32 - m.margin * 2.0 - gap * (count - 1.0)) / count;
+
+    let mut x = m.margin;
+    let mut hits = Vec::new();
+    for (filter, name, _) in MUSIC_FILTERS {
+        let word = l.pick(name);
+        let on = filter == shown;
+        let (fill, ink) = if on { (t.pal.switch_off, t.pal.text) } else { (t.pal.card, t.pal.subtitle) };
+        c.fill_round_rect(x, y, w, h, h / 2.0, fill);
+        c.text_center(&f.body, word, x + w / 2.0, y + h / 2.0, px, ink);
+        hits.push(Hit { rect: Rect::new(x, y, w, h), action: Action::MusicFilter(filter) });
+        x += w + gap;
+    }
+    hits
+}
+
 /// The player the desktop opens: the songs as a list, and the one being
 /// played with its cover, its name and the controls that play it. Neither
 /// face has anything behind it yet — there are no songs and nothing comes out
@@ -518,8 +564,13 @@ pub fn music(cx: &Ctx) -> Frame {
 
     match cx.state.music_face {
         MusicFace::List => {
-            let said = l.pick(["还没有歌曲", "還沒有歌曲", "No songs yet"]);
-            c.text_center(&f.body, said, m.w as f32 / 2.0, m.h as f32 / 2.0, m.sub_px, t.pal.subtitle);
+            out.extend(music_filters(&mut c, t, f, l, cx.state.music_filter));
+            // What the shelf shown says while there is nothing on it. None of
+            // the four has anything yet: the songs are not read off the phone,
+            // and the shelves are the way in for when they are.
+            let at = MUSIC_FILTERS.iter().position(|(filter, ..)| *filter == cx.state.music_filter).unwrap_or(0);
+            let (_, _, empty) = MUSIC_FILTERS[at];
+            c.text_center(&f.body, l.pick(empty), m.w as f32 / 2.0, m.h as f32 / 2.0, m.sub_px, t.pal.subtitle);
         }
         MusicFace::Play => music_play(&mut c, t, f, l),
     }
@@ -812,9 +863,19 @@ fn clock_glyph(c: &mut Canvas, glyph: Glyph, cx: f32, cy: f32, h: f32, ink: Rgba
     // the width is what the eye weighs, and a picture that turns left to
     // right across the whole chip reads as a key of its own rather than as
     // the same key turning back.
-    let size = if matches!(glyph, Glyph::Reset) { h * RESET_BOX } else { h };
-    icons::glyph(c, icon, cx, cy, size, ink);
+    //
+    // It is also the one picture whose weight is not where its box's middle
+    // is: the head at the lower left carries more ink than the arc over it,
+    // so a box centred on the chip leaves the arrow reading low. It is lifted
+    // by a key's twentieth — about a dp — until what the eye puts in the
+    // middle of the chip and the chip's own middle agree.
+    let (size, lift) =
+        if matches!(glyph, Glyph::Reset) { (h * RESET_BOX, h * RESET_LIFT) } else { (h, 0.0) };
+    icons::glyph(c, icon, cx, cy - lift, size, ink);
 }
+
+/// How far up the reset arrow is lifted: a share of a key's box.
+const RESET_LIFT: f32 = 0.055;
 
 /// The reset arrow's box as a share of a key's: the drawing is 2.27 times as
 /// wide as it is tall, so a box of the same shape that leaves the arrow half

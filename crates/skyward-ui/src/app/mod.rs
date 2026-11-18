@@ -333,6 +333,9 @@ pub enum Action {
     CalcFace(CalcFace),
     /// Show this face of the player: the songs, or the one being played.
     MusicFace(MusicFace),
+    /// Show this shelf of the player's list: all the songs, or the albums,
+    /// the artists or the folders they are kept by.
+    MusicFilter(MusicFilter),
     /// Show this face of the clock: the stopwatch, or the timer.
     ClockFace(ClockFace),
     /// Start the face shown counting, or stop it where it is.

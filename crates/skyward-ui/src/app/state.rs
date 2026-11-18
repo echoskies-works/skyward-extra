@@ -210,6 +210,9 @@ pub struct State {
     /// Which of the player's two faces the page shows: the songs, or the one
     /// being played.
     pub music_face: MusicFace,
+    /// Which shelf the player's list looks at: every song, or the albums,
+    /// the artists or the folders it keeps them by.
+    pub music_filter: MusicFilter,
     /// The clock's own state: which of its two faces the page shows.
     pub clock: Clock,
     /// The sound the timer's end makes: the key of one of the sounds the
@@ -319,6 +322,7 @@ impl Default for State {
             calc: Calc::default(),
             calc_face: CalcFace::Sum,
             music_face: MusicFace::List,
+            music_filter: MusicFilter::All,
             clock: Clock::default(),
             timer_sound: DEFAULT_TIMER_SOUND.to_string(),
             clock_ticking: true,

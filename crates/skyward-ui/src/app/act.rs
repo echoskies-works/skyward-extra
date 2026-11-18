@@ -55,6 +55,12 @@ impl App {
                 self.state.music_face = face;
                 self.refresh();
             }
+            // The shelf a touch names is the one the list looks at; the page
+            // stays where it is, its face untouched.
+            Action::MusicFilter(filter) => {
+                self.state.music_filter = filter;
+                self.refresh();
+            }
             // The clock keeps one face at a time; the one shown takes the
             // page from the top, as a page opened afresh does.
             Action::ClockFace(face) => {

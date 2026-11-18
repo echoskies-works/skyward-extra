@@ -16,7 +16,7 @@ use skyward_ui::app::{
     DownloadEnd,
     DownloadJob, EraseStop, Field, FileKind, FileOp, FileRow, FileTask, FsAction, FsRow, Have, Held, Install, ItemEnd, JobEnd, Key, Keys,
     Lap,
-    MountFailure, MountRow, MusicFace, Part, PartKind, PartStop, Pick, Place, Screen, SkywardEnd, SkywardJob, SkywardStage, Source,
+    MountFailure, MountRow, MusicFace, MusicFilter, Part, PartKind, PartStop, Pick, Place, Screen, SkywardEnd, SkywardJob, SkywardStage, Source,
     SystemChoice,
     SystemsWork, TermEnd, Touch, UsbDrive, UsbLink, SCREEN_OFF,
 };
@@ -423,11 +423,22 @@ fn main() -> Result<()> {
 
     // The player's two faces, neither with anything behind it yet: the songs
     // as a list that holds none, and the one being played with the cover, the
-    // name and the keys a song would fill.
-    let music: [(&str, MusicFace); 2] = [("00-09-music-list-light", MusicFace::List), ("00-09-music-play-light", MusicFace::Play)];
-    for (name, face) in music {
+    // name and the keys a song would fill. Under the list stand the four
+    // shelves, the one shown filled: every song, and the three the list is
+    // not read off the phone for yet, which say so where the songs would be.
+    let music: [(&str, MusicFace, MusicFilter, bool); 6] = [
+        ("00-09-music-list-light", MusicFace::List, MusicFilter::All, false),
+        ("00-09-music-list-dark", MusicFace::List, MusicFilter::All, true),
+        ("00-09-music-play-light", MusicFace::Play, MusicFilter::All, false),
+        ("00-09-music-albums-light", MusicFace::List, MusicFilter::Album, false),
+        ("00-09-music-artists-light", MusicFace::List, MusicFilter::Artist, false),
+        ("00-09-music-folders-light", MusicFace::List, MusicFilter::Folder, false),
+    ];
+    for (name, face, filter, dark) in music {
         let mut app = opened(Screen::Music, w, h, ppd);
         app.state.music_face = face;
+        app.state.music_filter = filter;
+        app.state.dark = dark;
         // The page is drawn the panel's way, so its own clock and date show.
         // The bar the round button's chip fades in with only moves on a tick,
         // so the panel is ticked once and the page taken a moment later: the
