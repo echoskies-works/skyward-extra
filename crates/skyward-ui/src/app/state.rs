@@ -36,6 +36,13 @@ pub struct State {
     /// The media volume (the apps and the music), in steps of the same
     /// fifteen-step span.
     pub media_volume: u8,
+    /// The panel has the media volume in hand: its track is the accent and
+    /// the system one grey, the other way round once a finger moves the
+    /// system one.
+    pub volume_media: bool,
+    /// The phone is set silent. Nothing sounds either way yet: it is what
+    /// the panel's switch shows.
+    pub muted: bool,
     /// A computer connected over USB is offered internal storage.
     pub file_transfer: bool,
     pub reboot: usize,
@@ -249,6 +256,10 @@ impl Default for State {
             volume_keys: true,
             system_volume: 8,
             media_volume: 8,
+            // The media one is the one shown in hand until a finger says
+            // otherwise.
+            volume_media: true,
+            muted: false,
             file_transfer: true,
             reboot: 0,
             wipe: [false; WIPES.len()],

@@ -1410,7 +1410,7 @@ fn main() -> Result<()> {
     }
 
     // The panel mid-gesture, to set beside recordings of the same moves.
-    let moments: [Moment; 42] = [
+    let moments: [Moment; 43] = [
         // A page pulled off the screen by its foot, the desktop come in
         // under it: four frames of the one move, the page gone up by about a
         // quarter, a half, three quarters and all but its last strip. The
@@ -1614,6 +1614,18 @@ fn main() -> Result<()> {
             app.frame(f, &info);
             let _ = app.key(Key::VolumeUp, 1000);
             let _ = app.key_up(Key::VolumeUp, 1010);
+            1100
+        }),
+        // The panel with the phone set silent: the media track and its note
+        // in grey rather than the accent, and the switch on.
+        ("00-06-volume-panel-mute-light", Screen::Desktop, false, &|app, f| {
+            app.state.volume_keys = false;
+            app.state.system_volume = 6;
+            app.state.media_volume = 10;
+            app.frame(f, &info);
+            let _ = app.key(Key::VolumeUp, 1000);
+            let _ = app.key_up(Key::VolumeUp, 1010);
+            app.state.muted = true;
             1100
         }),
     ];

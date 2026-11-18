@@ -222,6 +222,7 @@ impl App {
                     Switch::VolumeKeys => &mut self.state.volume_keys,
                     Switch::ClockTicking => &mut self.state.clock_ticking,
                     Switch::ClockTickingBackground => &mut self.state.clock_ticking_background,
+                    Switch::Mute => &mut self.state.muted,
                     Switch::Wlan => unreachable!("the WLAN switch is turned above"),
                 };
                 *on = !*on;

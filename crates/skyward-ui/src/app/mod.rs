@@ -65,6 +65,7 @@ mod terminal;
 #[cfg(test)]
 mod testing;
 mod update;
+mod volume;
 mod wipe;
 mod wlan;
 
@@ -723,6 +724,10 @@ enum Drag {
     /// letting go can settle between two minutes on that side.
     Ruler { last_x: f32, direction: i32 },
     Slider(Slider, Rect),
+    /// A finger dragging one of the volume panel's tracks: the card stands
+    /// still while the track moves under it, so the track's own place is
+    /// kept rather than looked up again each move.
+    Panel(Slider, Rect),
     Confirm { which: Confirm, track: Rect, grab: f32 },
     /// Scrolling a terminal's screen back through what the shell wrote, or
     /// the editor's text, `carry` being the part of a row not yet scrolled.
@@ -766,6 +771,10 @@ enum Press {
     /// long enough, the panel goes off as a press of the key has always
     /// turned it off; held longer, the power menu comes up.
     PowerIdle { at: u64 },
+    /// The power key that lit a dark panel, `at`: the panel stays lit
+    /// whenever it is let go, and held long enough the power menu comes up
+    /// over the lock, as a long press does with the panel already on.
+    PowerWake { at: u64 },
     /// Done with: nothing more comes of it until it is let go.
     Spent,
 }
@@ -773,6 +782,9 @@ enum Press {
 const TOAST_MS: u64 = 2000;
 /// The volume panel stays up this long after the last volume key.
 const VOLUME_BAR_MS: u64 = 1500;
+/// The volume's span, in steps: the panel's tracks and the volume keys both
+/// count the same fifteen.
+const VOLUME_STEPS: u8 = 15;
 /// How long a text field's cursor shows and then hides, as the stock
 /// fields blink it.
 const BLINK_MS: u64 = 500;
@@ -1533,7 +1545,7 @@ impl App {
         let repeat = match self.button {
             Some((_, Press::Volume { next, .. })) => Some(next),
             Some((_, Press::Power { spot: Spot { stop: Stop::Hit(Action::OpenEntry(_)), .. }, at })) => Some(at + LONG_PRESS_MS),
-            Some((_, Press::PowerIdle { at })) => Some(at + LONG_PRESS_MS),
+            Some((_, Press::PowerIdle { at } | Press::PowerWake { at })) => Some(at + LONG_PRESS_MS),
             _ => None,
         };
         let blink = self.blink_at(now).filter(|_| self.display_on).map(|(_, next)| next);
@@ -1623,8 +1635,9 @@ impl App {
             self.button = Some((key, Press::Spent));
             fx.extend(self.held_entry(i));
         }
-        // The power key held with nothing lit brings the power menu up.
-        if let Some((key, Press::PowerIdle { at })) = self.button
+        // The power key held with nothing lit brings the power menu up,
+        // whether it found the panel lit or lit it itself.
+        if let Some((key, Press::PowerIdle { at } | Press::PowerWake { at })) = self.button
             && now >= at + LONG_PRESS_MS
         {
             self.button = Some((key, Press::Spent));

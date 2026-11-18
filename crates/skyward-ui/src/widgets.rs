@@ -1013,39 +1013,96 @@ fn slider_in(c: &mut Canvas, t: &Theme, x: f32, top: f32, w: f32, value: f32, fi
     c.fill_circle(x + fw - h / 2.0, top + h / 2.0, m.slider_knob / 2.0, Rgba::rgb(255, 255, 255));
 }
 
-/// The volume panel: a card floating centred over the page, with the
-/// system and the media volumes, each on a slider in the settings-card
-/// style — a monochrome caption, the label, then the track. The media
-/// volume, the one the keys move, is the accent; the system one is grey.
-/// The card is plain, its own colour, not blurred like the power menu's.
-#[allow(clippy::too_many_arguments)]
-pub fn volume_bar(c: &mut Canvas, t: &Theme, f: &Fonts, title: &str, system: &str, media: &str, system_v: u8, media_v: u8) {
+/// Where the volume panel's parts stand: the card itself, the two tracks a
+/// finger drags, and the row the mute switch answers on.
+pub struct VolumePanel {
+    pub card: Rect,
+    pub system: Rect,
+    pub media: Rect,
+    pub mute: Rect,
+}
+
+/// How tall one of the panel's two stretches is: the caption and the track
+/// beneath it, at the heights the settings' own slider card gives them.
+const PANEL_SEG_DP: f32 = 100.5;
+/// Where a stretch's caption stands, and where its track begins, from the
+/// top of the card.
+const PANEL_HEAD_DP: f32 = 31.2;
+const PANEL_TRACK_DP: f32 = 55.0;
+/// The room left under the mute row.
+const PANEL_FOOT_DP: f32 = 10.0;
+/// How far the card's shadow reaches.
+const PANEL_SHADOW_DP: f32 = 18.0;
+/// The volume's span, in steps, as the keys and the panel count it.
+const VOLUME_STEPS: f32 = 15.0;
+
+/// The panel's geometry, worked out without drawing it: the card stands in
+/// the middle of the screen, `m.margin` in from either side.
+pub fn volume_panel_geom(t: &Theme) -> VolumePanel {
     let m = &t.m;
-    let (card_x, right) = (m.margin, m.w as f32 - m.margin);
-    let card_w = right - card_x;
-    let row_h = m.dp(72.0);
-    let title_h = m.dp(30.0);
-    let pad = m.dp(20.0);
-    let h = title_h + 2.0 * row_h + pad;
+    let (x, right) = (m.margin, m.w as f32 - m.margin);
+    let w = right - x;
+    let h = m.dp(PANEL_SEG_DP) * 2.0 + m.row_h + m.dp(PANEL_FOOT_DP);
     let top = (m.h as f32 - h) / 2.0;
-    c.fill_round_rect(card_x, top, card_w, h, m.card_radius, t.pal.card);
-
-    // The title, set like a card's account name.
-    c.text_vc(&f.heading, title, card_x + m.dp(28.0), top + m.dp(24.0), m.account_title_px, t.pal.text, None);
-
-    let track_x = card_x + m.inner;
-    let track_w = card_w - m.inner * 2.0;
-    for (k, (label, value, active, icon)) in [
-        (system, system_v, false, Icon::Clock),
-        (media, media_v, true, Icon::Music),
-    ].into_iter().enumerate() {
-        let lcy = top + title_h + m.dp(16.0) + k as f32 * row_h;
-        icons::glyph(c, icon, card_x + m.dp(28.0), lcy, m.dp(22.0), if active { t.pal.accent } else { t.pal.info });
-        c.text_vc(&f.heading, label, card_x + m.dp(53.7), lcy, m.account_title_px, t.pal.info, None);
-        let sy = lcy + m.dp(26.0);
-        let fill = if active { t.pal.accent } else { t.pal.track };
-        slider_in(c, t, track_x, sy, track_w, value as f32 / 15.0, fill);
+    let track = |k: f32| {
+        Rect::new(x + m.inner, top + m.dp(PANEL_SEG_DP) * k + m.dp(PANEL_TRACK_DP), w - m.inner * 2.0, m.slider_h)
+    };
+    VolumePanel {
+        card: Rect::new(x, top, w, h),
+        system: track(0.0),
+        media: track(1.0),
+        mute: Rect::new(x + m.inner, top + m.dp(PANEL_SEG_DP) * 2.0, w - m.inner * 2.0, m.row_h),
     }
+}
+
+/// The volume panel: a card in the middle of the screen, the page left
+/// whole under it — no dimming and no blur, which is what tells it from the
+/// power menu's card. It carries the system and the media volumes, each on
+/// a track in the settings-card style, and the mute switch under them.
+///
+/// The track a finger last moved is the accent; the other is the deep grey
+/// of a caption, so neither reads as part of its own groove. Silent, the
+/// media track and its note go grey whatever is in hand.
+#[allow(clippy::too_many_arguments)]
+pub fn volume_panel(c: &mut Canvas, t: &Theme, f: &Fonts, system: &str, media: &str, mute: &str, system_v: u8, media_v: u8, media_active: bool, muted: bool) {
+    let m = &t.m;
+    let g = volume_panel_geom(t);
+    c.shadow_round_rect(g.card.x, g.card.y, g.card.w, g.card.h, m.card_radius, m.dp(PANEL_SHADOW_DP), t.pal.shadow);
+    c.fill_round_rect(g.card.x, g.card.y, g.card.w, g.card.h, m.card_radius, t.pal.card);
+
+    let head_x = g.card.x + m.dp(28.0);
+    let label_x = g.card.x + m.dp(53.7);
+    let rows = [(system, system_v, !media_active, false), (media, media_v, media_active, true)];
+    for (k, (label, value, in_hand, is_media)) in rows.into_iter().enumerate() {
+        let cy = g.card.y + m.dp(PANEL_SEG_DP) * k as f32 + m.dp(PANEL_HEAD_DP);
+        // Silent, the media volume is not the one sounding, so its note goes
+        // grey with its track.
+        let lit = in_hand && !(is_media && muted);
+        let led = if lit { t.pal.accent } else { t.pal.mono_icon };
+        if is_media {
+            icons::glyph(c, Icon::Music, head_x, cy, m.dp(22.0), led);
+        } else {
+            // The note beside the media volume is the phone's own; the
+            // system one borrows the shaking phone until it has a glyph.
+            caption_glyph(c, t, Caption::Vibrate, head_x, cy, led);
+        }
+        c.text_vc(&f.heading, label, label_x, cy, m.account_title_px, t.pal.text, None);
+        let track = if k == 0 { g.system } else { g.media };
+        // The one in hand is the accent; the other, and the media one while
+        // the phone is silent, take the same grey.
+        let fill = if in_hand && !(k == 1 && muted) {
+            t.pal.accent
+        } else {
+            t.pal.value
+        };
+        slider_in(c, t, track.x, track.y, track.w, value as f32 / VOLUME_STEPS, fill);
+    }
+
+    // The mute row: the word at the card's own inset, the switch at its
+    // right end.
+    let cy = g.mute.y + g.mute.h / 2.0;
+    c.text_vc(&f.heading, mute, head_x, cy, m.account_title_px, t.pal.text, None);
+    switch(c, t, g.card.x + g.card.w - m.inner, cy, muted);
 }
 
 /// The home page's search bar in `r`, at `level` of its strength, without
@@ -1868,6 +1925,34 @@ pub enum Caption {
     Vibrate,
 }
 
+/// The monochrome icon beside a slider card's caption, centred on `(cx,
+/// cy)` and drawn in `ink`.
+fn caption_glyph(c: &mut Canvas, t: &Theme, caption: Caption, cx: f32, cy: f32, ink: Rgba) {
+    let m = &t.m;
+    match caption {
+        Caption::Sun => {
+            c.fill_circle(cx, cy, m.dp(5.7), ink);
+            for k in 0..8 {
+                let a = k as f32 * FRAC_PI_4;
+                let (ux, uy) = (a.cos(), a.sin());
+                c.line(cx + ux * m.dp(8.3), cy + uy * m.dp(8.3), cx + ux * m.dp(8.9), cy + uy * m.dp(8.9), m.dp(2.0), ink);
+            }
+        }
+        Caption::Vibrate => {
+            c.stroke_round_rect(cx - m.dp(4.3), cy - m.dp(7.7), m.dp(8.6), m.dp(15.4), m.dp(2.2), m.dp(2.0), ink);
+            for side in [-1.0f32, 1.0] {
+                let x = cx + side * m.dp(8.0);
+                let (out, step) = (side * m.dp(1.7), m.dp(3.2));
+                let ys = [cy - step * 1.5, cy - step * 0.5, cy + step * 0.5, cy + step * 1.5];
+                for (k, pair) in ys.windows(2).enumerate() {
+                    let (a, b) = if k % 2 == 0 { (0.0, out) } else { (out, 0.0) };
+                    c.line(x + a, pair[0], x + b, pair[1], m.dp(1.8), ink);
+                }
+            }
+        }
+    }
+}
+
 /// Card with a monochrome icon caption, a slider, and an optional row below.
 #[allow(clippy::too_many_arguments)]
 pub fn slider_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, caption: Caption, label: &str, value: f32, below: Option<Row>) -> SliderBlock {
@@ -1885,28 +1970,7 @@ pub fn slider_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, caption: Capt
 
     let lcy = top + m.dp(31.2);
     let scx = card_x + m.dp(28.0);
-    match caption {
-        Caption::Sun => {
-            c.fill_circle(scx, lcy, m.dp(5.7), t.pal.mono_icon);
-            for k in 0..8 {
-                let a = k as f32 * FRAC_PI_4;
-                let (ux, uy) = (a.cos(), a.sin());
-                c.line(scx + ux * m.dp(8.3), lcy + uy * m.dp(8.3), scx + ux * m.dp(8.9), lcy + uy * m.dp(8.9), m.dp(2.0), t.pal.mono_icon);
-            }
-        }
-        Caption::Vibrate => {
-            c.stroke_round_rect(scx - m.dp(4.3), lcy - m.dp(7.7), m.dp(8.6), m.dp(15.4), m.dp(2.2), m.dp(2.0), t.pal.mono_icon);
-            for side in [-1.0f32, 1.0] {
-                let x = scx + side * m.dp(8.0);
-                let (out, step) = (side * m.dp(1.7), m.dp(3.2));
-                let ys = [lcy - step * 1.5, lcy - step * 0.5, lcy + step * 0.5, lcy + step * 1.5];
-                for (k, pair) in ys.windows(2).enumerate() {
-                    let (a, b) = if k % 2 == 0 { (0.0, out) } else { (out, 0.0) };
-                    c.line(x + a, pair[0], x + b, pair[1], m.dp(1.8), t.pal.mono_icon);
-                }
-            }
-        }
-    }
+    caption_glyph(c, t, caption, scx, lcy, t.pal.mono_icon);
     // The caption is set like the account name, in the softer text colour.
     c.text_vc(&f.heading, label, card_x + m.dp(53.7), lcy, m.account_title_px, t.pal.info, None);
     let track = Rect::new(card_x + m.inner, slider_top, right - card_x - m.inner * 2.0, m.slider_h);

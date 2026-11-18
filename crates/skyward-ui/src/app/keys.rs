@@ -20,6 +20,9 @@ impl App {
                         Slider::Vibration => {
                             ["按音量键调节振动强度，按电源键完成", "按音量鍵調整震動強度，按電源鍵完成", "Set the vibration with the volume keys, then press the power key"]
                         }
+                        // The panel's tracks are the finger's, not the keys':
+                        // the light never comes to rest on one.
+                        Slider::SystemVolume | Slider::MediaVolume => return Vec::new(),
                     };
                     self.say(l.pick(said), now);
                 }
@@ -58,12 +61,21 @@ impl App {
         if self.frame.is_none() {
             return Vec::new();
         }
+        // Over the lock the keys move nothing: they are the lock's own, and
+        // only wait there for the power key's company.
+        if self.locked() {
+            return Vec::new();
+        }
         // With the volume keys turned to the volume, they turn the media
         // volume up and down and put up the panel, instead of moving the
         // light from control to control.
         if !self.state.volume_keys {
             let step = if down { -1 } else { 1 };
-            self.state.media_volume = (self.state.media_volume as i16 + step).clamp(0, 15) as u8;
+            self.state.media_volume = (self.state.media_volume as i16 + step).clamp(0, VOLUME_STEPS as i16) as u8;
+            // They are on the media volume, and the phone sounds again once
+            // they move it.
+            self.state.volume_media = true;
+            self.state.muted = false;
             self.volume_bar = Some(now + VOLUME_BAR_MS);
             self.dirty = true;
             return Vec::new();

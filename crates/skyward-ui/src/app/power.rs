@@ -246,6 +246,9 @@ impl App {
         self.chord = None;
         self.power_menu = Some(PowerMenu { chosen: 0, since: now });
         self.power_blur = None;
+        // The volume panel goes with it: the menu's ground is a blurred copy
+        // of the page, and a second card left on it would be blurred too.
+        self.volume_bar = None;
         self.dirty = true;
         self.stir(now);
         if self.state.vibrate { vec![Effect::Haptic] } else { Vec::new() }
@@ -970,5 +973,61 @@ mod tests {
         app.install(Event::Finished(Outcome::Cancelled), 20);
         assert!(!app.display_on());
         assert_eq!(app.state.install, Install::Idle);
+    }
+
+    /// The power key held on a dark panel lights it and goes on to the power
+    /// menu, the hold timed from the press that lit it.
+    #[test]
+    fn the_power_key_held_on_a_dark_panel_brings_the_menu_up() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Desktop, W, H, PPD);
+        app.frame(&f, &i);
+        app.sleep(1000);
+        assert!(!app.display_on());
+        assert!(app.key(Key::Power, 2000).is_empty());
+        assert!(app.display_on(), "the press lights the panel at once");
+        assert!(app.power_menu.is_none(), "and the menu waits for the hold");
+        app.tick(2000 + LONG_PRESS_MS);
+        assert!(app.power_menu.is_some(), "held on, the menu comes up");
+        assert!(app.key_up(Key::Power, 2600).is_empty());
+        assert!(app.display_on(), "let go after the menu, the panel stays lit");
+    }
+
+    /// With the lock up, the power key and volume up still come together for
+    /// the menu, whichever of the two goes down first; alone, the volume key
+    /// does nothing there.
+    #[test]
+    fn the_menu_comes_up_from_the_lock_on_the_power_key_and_volume_up() {
+        let (f, i) = (fonts(), info());
+        for first in [Key::Power, Key::VolumeUp] {
+            let mut app = App::new(Screen::Desktop, W, H, PPD);
+            app.state.vibrate = false;
+            app.frame(&f, &i);
+            app.lock_now();
+            assert!(app.locked());
+            assert!(app.key(first, 1000).is_empty());
+            let second = if first == Key::Power { Key::VolumeUp } else { Key::Power };
+            assert!(app.key(second, 1100).is_empty());
+            assert!(app.power_menu.is_some(), "the two together bring the menu up over the lock, {first:?} first");
+            assert_eq!(app.chord, None, "and neither waits for the other any more");
+        }
+    }
+
+    /// A volume key on the lock on its own moves nothing, even once the wait
+    /// for its partner is over.
+    #[test]
+    fn a_volume_key_alone_on_the_lock_moves_nothing() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Desktop, W, H, PPD);
+        app.state.volume_keys = false;
+        let was = app.state.media_volume;
+        app.frame(&f, &i);
+        app.lock_now();
+        assert!(app.key(Key::VolumeUp, 1000).is_empty());
+        app.tick(1000 + CHORD_MS);
+        assert_eq!(app.state.media_volume, was, "the volume is left as it was");
+        assert!(app.volume_bar.is_none(), "and no panel comes up");
+        assert!(app.key_up(Key::VolumeUp, 1200).is_empty());
+        assert_eq!(app.state.media_volume, was);
     }
 }

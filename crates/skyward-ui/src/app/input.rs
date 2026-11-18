@@ -70,6 +70,15 @@ impl App {
         if self.power_menu.is_some() {
             return self.power_menu_touch(ev, f, now);
         }
+        // The volume panel takes a finger landing on it: a track or the
+        // switch answers, and a tap on the glass elsewhere puts it away.
+        // What a finger drags along a track is its own from here on, as any
+        // slider is.
+        if let Touch::Down(x, y) = ev
+            && self.volume_bar.is_some()
+        {
+            return self.volume_panel_touch(x, y, now);
+        }
         // A finger on the charging screen sends it away for the page, and
         // does nothing else until it lifts. That screen stands over the lock,
         // so it is the one the finger reaches first.
@@ -378,6 +387,15 @@ impl App {
                     self.set_slider(&t, which, track, x);
                     self.drag = Drag::Slider(which, track);
                 }
+                // A track of the volume panel: the card stays where it is,
+                // so the track kept with the finger is the one it goes on
+                // standing on, and every move holds the panel up a while
+                // longer.
+                Drag::Panel(which, track) => {
+                    self.set_slider(&t, which, track, x);
+                    self.volume_bar = Some(now + VOLUME_BAR_MS);
+                    self.drag = Drag::Panel(which, track);
+                }
                 Drag::Confirm { which, track, grab } => {
                     let travel = (track.w - track.h).max(1.0);
                     self.state.confirm = ((x - grab - track.x) / travel).clamp(0.0, 1.0);
@@ -588,9 +606,20 @@ impl App {
         }
         // The lock takes every key but the power key, which goes on lighting
         // and darkening the panel here as it does anywhere. A charging screen
-        // over the lock is what the keys work while it shows.
+        // over the lock is what the keys work while it shows. A volume key
+        // still waits a moment for the power key to go down with it, so the
+        // two together bring the power menu up from the lock as they do from
+        // a page; alone, it does nothing there.
         if self.locked() && !self.charge_shown() && key != Key::Power {
-            return Vec::new();
+            // The power key's partner goes on down to the pair below.
+            let partner = matches!(self.chord, Some((Key::Power, at)) if now < at + CHORD_MS)
+                && matches!(key, Key::VolumeUp | Key::VolumeDown);
+            if !partner {
+                if matches!(key, Key::VolumeUp | Key::VolumeDown) && self.chord.is_none() {
+                    self.chord = Some((key, now));
+                }
+                return Vec::new();
+            }
         }
         if let Some((first, at)) = self.chord
             && now < at + CHORD_MS
@@ -605,12 +634,16 @@ impl App {
         }
         let mut fx = self.let_chord_go();
         if !self.display_on {
-            // The power key lights the dark panel, and does only that, as on
-            // the phone's own system; the other keys leave it dark. Coming
-            // back to the phone, it comes back to the lock.
+            // The power key lights the dark panel, and does only that when
+            // it is let go, as on the phone's own system; the other keys
+            // leave it dark. Coming back to the phone, it comes back to the
+            // lock. Held on, it goes further, as the key does over a lit
+            // page: the power menu, timed from the press that lit it.
             if key == Key::Power {
                 self.wake(now);
                 self.lock_now();
+                self.button = Some((key, Press::PowerWake { at: now }));
+                return fx;
             }
             self.button = Some((key, Press::Spent));
             return fx;
@@ -745,6 +778,9 @@ impl App {
                 self.sleep(now);
                 fx.push(Effect::Ticks);
             }
+            // The press that lit a dark panel only lights it: let go, it
+            // does nothing more. Held on, the power menu has taken its place.
+            Press::PowerWake { .. } => {}
             Press::Volume { .. } | Press::Spent => {}
         }
         fx

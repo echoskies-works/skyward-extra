@@ -73,6 +73,9 @@ impl App {
     /// behind it being whatever was composed last.
     pub fn lock_now(&mut self) {
         self.lock = Some(Lock::new());
+        // The volume panel belongs to the page below the lock, not to the
+        // lock: it goes as the panel comes down.
+        self.volume_bar = None;
         self.lock_sheet_gone();
     }
 

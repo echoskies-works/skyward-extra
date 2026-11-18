@@ -3,12 +3,22 @@
 
 use super::*;
 
-/// The settings' sliders.
+/// The settings' sliders, and the volume panel's two.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Slider {
     Brightness,
     /// How strongly the motor taps.
     Vibration,
+    /// The system volume, the ringtone and the sound effects, whose track
+    /// stands in the volume panel rather than on a page.
+    SystemVolume,
+    /// The media volume, the apps and the music, on the panel's other track.
+    MediaVolume,
+}
+
+/// The step a share of the volume's span comes nearest.
+fn volume_step(level: f32) -> u8 {
+    (level * VOLUME_STEPS as f32).round().clamp(0.0, VOLUME_STEPS as f32) as u8
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,6 +46,9 @@ pub enum Switch {
     ClockTicking,
     /// The ticking goes on with the clock's page left behind.
     ClockTickingBackground,
+    /// The phone is silent. Nothing sounds either way yet: the panel only
+    /// draws the media volume in its grey rather than the accent.
+    Mute,
 }
 
 /// How long the screen stays on with nothing touched, in milliseconds, in
@@ -67,21 +80,37 @@ impl App {
         match which {
             Slider::Brightness => self.state.brightness,
             Slider::Vibration => self.state.vibration,
+            Slider::SystemVolume => self.state.system_volume as f32 / VOLUME_STEPS as f32,
+            Slider::MediaVolume => self.state.media_volume as f32 / VOLUME_STEPS as f32,
         }
     }
 
     /// Set a slider to `level` of its span, the brightness no lower than
-    /// its floor, and draw the slider at `track` on the page again.
+    /// its floor. A slider that stands on a page is drawn again where it
+    /// lies; the volume panel's two are drawn with the panel, so nothing of
+    /// the page is touched for them.
     pub(super) fn set_level(&mut self, t: &Theme, which: Slider, track: Rect, level: f32) {
-        let value = match which {
-            Slider::Brightness => &mut self.state.brightness,
-            Slider::Vibration => &mut self.state.vibration,
-        };
-        *value = level.clamp(if which == Slider::Brightness { MIN_BRIGHTNESS } else { 0.0 }, 1.0);
-        let value = *value;
-        if let Some(fr) = self.frame.as_mut() {
-            fr.canvas.fill_rect(track.x, track.y, track.w, track.h, t.pal.card);
-            widgets::slider(&mut fr.canvas, t, track.x, track.y, track.w, value);
+        let level = level.clamp(0.0, 1.0);
+        match which {
+            Slider::Brightness => self.state.brightness = level.max(MIN_BRIGHTNESS),
+            Slider::Vibration => self.state.vibration = level,
+            Slider::SystemVolume => self.state.system_volume = volume_step(level),
+            Slider::MediaVolume => {
+                self.state.media_volume = volume_step(level);
+                // A finger on the media volume leaves the phone sounding.
+                self.state.muted = false;
+            }
+        }
+        if matches!(which, Slider::Brightness | Slider::Vibration) {
+            let value = self.level(which);
+            if let Some(fr) = self.frame.as_mut() {
+                fr.canvas.fill_rect(track.x, track.y, track.w, track.h, t.pal.card);
+                widgets::slider(&mut fr.canvas, t, track.x, track.y, track.w, value);
+            }
+        }
+        // The track a finger last moved is the one the panel has in hand.
+        if matches!(which, Slider::SystemVolume | Slider::MediaVolume) {
+            self.state.volume_media = which == Slider::MediaVolume;
         }
         self.layer = None;
         self.dirty = true;
