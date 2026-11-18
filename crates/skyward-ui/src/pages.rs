@@ -1016,23 +1016,34 @@ const RULER_EDGE: Rgba = Rgba::rgb(200, 205, 199);
 /// line is a shade deeper than the marks, as a pointer has to be.
 const RULER_INK: Rgba = Rgba::rgb(120, 149, 120);
 const RULER_MARK: Rgba = Rgba::rgb(76, 112, 76);
-/// The tick artwork, laid out to the phone's own ruler: 420 px hold two
-/// minutes, a stroke every 21 px — ten to the minute, one every six
-/// seconds — and every fifth stroke half again as tall, so a long mark
-/// stands on the minute and on the half minute both, the way Smartisan
-/// spaces them. The heights keep the reference's share of the bar: a long
-/// stroke 22 of its 193 px, a short one 14, and the first 13 px of the
-/// picture are the air the scale hangs below the bar's top edge. Laid end
-/// to end nothing tightens, and the last column carries no stroke so the
-/// first one of the next two minutes is never doubled. It is recoloured
-/// for dark; only its colours are ours.
+/// The tick artwork, laid out to the phone's own ruler: ten strokes to the
+/// minute, one every six seconds, and every fifth stroke half again as
+/// tall, so a long mark stands on the minute and on the half minute both,
+/// the way Smartisan spaces them. It hangs from the bar's top edge — the
+/// first row of the picture is the first row of a stroke.
+///
+/// **The picture is drawn at the size it is shown at**, which is what
+/// keeps the strokes crisp: a minute is 24 dp, so on fuxi's 420 dpi it is
+/// 63 px, and that is the scale the artwork is drawn in. Laid out at some
+/// larger size and shrunk by the phone, six columns of antialiasing are
+/// squeezed into one and a third and a stroke turns into a grey smear —
+/// which is exactly what it did at the old 210 px to the minute. The
+/// lengths are a shade over the reference's own (a long one 17 of the
+/// bar's 131 px against its 16, a short one 11 against 10), and the line
+/// 1.5 px, so a stroke still holds its weight once it lands.
 const RULER_DECO_PIC: &[u8] = include_bytes!("../../../resources/clock/rulerticks.png");
-const RULER_DECO_MINUTE_PX: f32 = 210.0;
-/// The artwork already holds the gap under the bar's top edge, so the
-/// scale starts at the picture's own first pixel.
+/// One minute of the artwork, in its own pixels. 24 dp at 420 dpi, so
+/// the picture goes down on the phone at one to one; on a denser panel
+/// it is scaled up rather than down, which keeps its strokes whole.
+const RULER_DECO_MINUTE_PX: f32 = 63.0;
+/// The artwork already starts at the bar's top edge, so the scale begins
+/// at the picture's own first pixel.
 const RULER_TICK_TOP: f32 = 0.0;
 const RULER_NUM_PX: f32 = 10.5;
-const RULER_NUM_CY: f32 = 0.42;
+/// The figures sit a little under halfway down the bar, clear of the
+/// strokes overhead: with the scale hanging from the top edge, the band
+/// from the strokes' feet to the bar's foot is where they belong.
+const RULER_NUM_CY: f32 = 0.28;
 /// In the dark the bar takes its colours from the CPU graph in Windows'
 /// Task Manager on a dark theme, which is the same problem solved: a sunken
 /// panel of deep teal, gridwork one step off it, and a bright cyan stroke
