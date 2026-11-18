@@ -263,6 +263,7 @@ mod tests {
     fn the_keys_open_a_list_of_choices_take_one_and_close_it_going_back() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
+        app.state.volume_keys = true;
         app.state.wlan = Some(Wlan { power: Power::On, networks: Vec::new(), joined: None });
         app.act(Action::Open(Screen::Wlan), 0);
         app.act(Action::AddNetwork, 0);

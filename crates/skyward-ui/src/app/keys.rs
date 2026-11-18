@@ -332,6 +332,7 @@ mod tests {
     fn the_keys_unfold_the_search_bar_to_light_it() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
+        app.state.volume_keys = true;
         let span = app.frame(&f, &i).fold.expect("the home page's search bar folds").span;
         scroll_to(&mut app, &f, span, 0);
         app.tick(3000);
@@ -352,6 +353,7 @@ mod tests {
         let f = fonts();
         let i = DeviceInfo { snapshot: SnapshotState::Snapshotted, ..info() };
         let mut app = App::new(Screen::Home, W, SNUG, PPD);
+        app.state.volume_keys = true;
         let (_, y) = spot(&mut app, &f, &i, Action::Open(Screen::Reboot));
         assert!(y > SNUG as f32, "below the screen to start with");
         light_on(&mut app, &f, &i, Stop::Hit(Action::Open(Screen::Reboot)));
@@ -380,6 +382,7 @@ mod tests {
     fn the_volume_keys_light_the_controls_down_the_page_and_up_it() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
+        app.state.volume_keys = true;
         app.frame(&f, &i);
         assert!(!app.keys, "a page opens to the touch");
         press(&mut app, Key::VolumeDown, 0);
@@ -406,6 +409,7 @@ mod tests {
     fn the_power_key_works_the_control_lit_as_it_comes_up() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
+        app.state.volume_keys = true;
         app.frame(&f, &i);
         light_on(&mut app, &f, &i, Stop::Hit(Action::Open(Screen::Settings)));
         assert!(app.key(Key::Power, 0).is_empty());
@@ -430,6 +434,7 @@ mod tests {
     fn past_the_last_control_the_keys_scroll_on_half_a_screen_a_press() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Installing, W, H, PPD);
+        app.state.volume_keys = true;
         app.state.install = Install::Finished { outcome: Outcome::Ran { wipe_cache: false }, damage: None };
         app.state.script_output = (0..300).map(|k| format!("- line {k}")).collect();
         app.frame(&f, &i);
@@ -465,6 +470,7 @@ mod tests {
     fn the_power_key_held_slides_a_swipe_control_and_confirms_it_let_go() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Reboot, W, H, PPD);
+        app.state.volume_keys = true;
         app.frame(&f, &i);
         light_on(&mut app, &f, &i, Stop::Hit(Action::Confirm(Confirm::Reboot)));
         assert!(press(&mut app, Key::Power, 0).is_empty());
@@ -493,6 +499,7 @@ mod tests {
     fn the_brightness_slider_takes_the_volume_keys_until_the_power_key_lets_it_go() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Settings, W, H, PPD);
+        app.state.volume_keys = true;
         app.frame(&f, &i);
         light_on(&mut app, &f, &i, Stop::Hit(Action::Slider(Slider::Brightness)));
         assert_eq!(app.state.brightness, SLIDER_START, "it starts a step from its left end");
@@ -515,6 +522,7 @@ mod tests {
     fn the_strength_slider_taps_the_motor_at_each_step_of_the_keys() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Settings, W, H, PPD);
+        app.state.volume_keys = true;
         app.frame(&f, &i);
         light_on(&mut app, &f, &i, Stop::Hit(Action::Slider(Slider::Vibration)));
         press(&mut app, Key::Power, 0);
@@ -534,6 +542,7 @@ mod tests {
     fn the_keys_join_a_patterns_dots_and_end_it_on_the_last_one_joined() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Decrypt, W, H, PPD);
+        app.state.volume_keys = true;
         app.data_waiting(Some((0, Keys::Pattern)));
         app.frame(&f, &i);
         press(&mut app, Key::VolumeDown, 0);
@@ -570,6 +579,7 @@ mod tests {
     fn the_keys_type_a_screen_locks_code_on_its_keypad() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Decrypt, W, H, PPD);
+        app.state.volume_keys = true;
         app.data_waiting(Some((0, Keys::Digits)));
         app.frame(&f, &i);
         for ch in ['2', '5', '8', '0'] {
@@ -585,6 +595,7 @@ mod tests {
     fn the_power_key_held_on_an_entry_opens_what_can_be_done_with_it() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Advanced, W, H, PPD);
+        app.state.volume_keys = true;
         tap(&mut app, &f, &i, Action::Open(Screen::Files));
         app.set_files("/".into(), Ok(vec![entry("vendor", folder(12)), entry("init.rc", FileKind::File)]), LISTED);
         app.frame(&f, &i);
@@ -608,6 +619,7 @@ mod tests {
     fn a_touch_puts_the_light_out_and_a_volume_key_brings_it_back() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
+        app.state.volume_keys = true;
         app.frame(&f, &i);
         light_on(&mut app, &f, &i, Stop::Hit(Action::Open(Screen::About)));
         let mut c = Canvas::new(W, H);
@@ -633,6 +645,7 @@ mod tests {
     fn a_volume_key_held_moves_the_light_on_and_on() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
+        app.state.volume_keys = true;
         app.frame(&f, &i);
         app.key(Key::VolumeDown, 0);
         assert_eq!(app.deadline(0), Some(CHORD_MS), "it waits for the power key first");

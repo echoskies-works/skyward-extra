@@ -180,6 +180,7 @@ mod tests {
     fn the_panel_waits_for_the_keys_to_be_turned_to_the_volume() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Desktop, W, H, PPD);
+        app.state.volume_keys = true;
         app.frame(&f, &i);
         app.key(Key::VolumeUp, 1000);
         app.key_up(Key::VolumeUp, 1000);

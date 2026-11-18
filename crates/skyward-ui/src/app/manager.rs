@@ -745,6 +745,7 @@ mod tests {
     fn climbing_out_of_a_folder_the_keys_come_back_to_it() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Advanced, W, H, PPD);
+        app.state.volume_keys = true;
         tap(&mut app, &f, &i, Action::Open(Screen::Files));
         let folders: Vec<FileRow> = (0..300).map(|k| entry(&format!("dir{k:03}"), folder(k))).collect();
         app.set_files("/".into(), Ok(folders.clone()), LISTED);

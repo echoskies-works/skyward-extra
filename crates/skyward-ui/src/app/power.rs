@@ -652,6 +652,7 @@ mod tests {
     fn the_power_key_and_volume_down_too_far_apart_each_do_their_own() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
+        app.state.volume_keys = true;
         app.frame(&f, &i);
         assert!(app.key(Key::VolumeDown, 0).is_empty());
         assert!(!app.keys, "volume down waits for the power key first");

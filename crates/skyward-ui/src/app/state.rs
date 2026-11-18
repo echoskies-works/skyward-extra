@@ -28,7 +28,9 @@ pub struct State {
     /// at its right.
     pub vibration: f32,
     /// The volume keys move the light from control to control when on, and
-    /// turn the volume up and down when off.
+    /// turn the volume up and down when off. Off by default: almost nobody
+    /// steers with them here, and on they keep the power menu from coming
+    /// up. Turned on in Settings by whoever wants it.
     pub volume_keys: bool,
     /// The system volume (the ringtone and the sound effects), in steps of
     /// a fifteen-step span.
@@ -253,7 +255,9 @@ impl Default for State {
             time_zone: 0,
             vibrate: true,
             vibration: SLIDER_START,
-            volume_keys: true,
+            // Off, so the volume keys work the volume and the power menu
+            // can always be held: steering the light with them is opt-in.
+            volume_keys: false,
             system_volume: 8,
             media_volume: 8,
             // The media one is the one shown in hand until a finger says
