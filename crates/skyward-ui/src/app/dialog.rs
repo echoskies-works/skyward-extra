@@ -185,12 +185,16 @@ impl Sheet {
         self.closing.is_some_and(|at| now >= at + FALL_MS)
     }
 
-    /// When the rise or the fall ends, so the panel knows to draw again.
-    pub(super) fn deadline(&self, now: u64) -> Option<u64> {
-        if let Some(at) = self.closing {
-            return (now < at + FALL_MS).then_some(at + FALL_MS);
+    /// Whether the card is on its way up or down, so the panel has to be
+    /// drawn again: its place is read from the clock, and nothing else
+    /// would ask for the frames in between. The frame it lands on counts
+    /// too — that is the one that settles it, and the card otherwise stays
+    /// over the page to take touches nothing can see.
+    pub(super) fn moving(&self, now: u64) -> bool {
+        match self.closing {
+            Some(at) => now <= at + FALL_MS,
+            None => now <= self.since + RISE_MS,
         }
-        (now < self.since + RISE_MS).then_some(self.since + RISE_MS)
     }
 
     /// The word a key answers, or none when the touch is off a key.

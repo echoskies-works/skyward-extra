@@ -193,8 +193,8 @@ impl App {
         // A sheet - the timer that has run out, and whatever else asks for
         // a word back - speaks over all of them until its key is pressed.
         self.compose_sheet(out, f, now);
-        // What the panel shows is kept for the lock to stretch behind
-        // itself, while no lock is over it.
+        // What the panel shows is kept sharp for the lock's ground when no
+        // wallpaper is set, while no lock is over it.
         if self.display_on && self.lock.is_none() {
             self.keep(out);
         }
@@ -385,7 +385,7 @@ impl App {
             }
             None => {
                 self.layer = None;
-                self.paint_page(out, &t, Some((f, info)), &view);
+                self.paint_face(out, &t, f, info, &view, now);
             }
         }
         self.shown = Some(view);
@@ -416,6 +416,34 @@ impl App {
     /// any message and the back cue, which lie over every page. Rows of its
     /// long list come into view are drawn with `fresh`; a page drawn again
     /// as it last showed has them drawn already.
+    /// The page where it stands — or, while one clock face gives way to the
+    /// other, the face coming in over the one shown: the new face drawn on a
+    /// canvas of its own, the page as it was laid down under it, and the new
+    /// one laid over that a little to the right of where it comes to rest,
+    /// fading up as it goes.
+    fn paint_face(&mut self, out: &mut Canvas, t: &Theme, f: &Fonts, info: &DeviceInfo, view: &View, now: u64) {
+        let along = match &self.face_turn {
+            Some(turn) => dialog::eased(now.saturating_sub(turn.since), FACE_MS),
+            None => 1.0,
+        };
+        if along >= 1.0 {
+            self.face_turn = None;
+            return self.paint_page(out, t, Some((f, info)), view);
+        }
+        let (w, h) = (out.w, out.h);
+        let mut page = match self.face_page.take() {
+            Some(c) if (c.w, c.h) == (w, h) => c,
+            _ => Canvas::new(w, h),
+        };
+        self.paint_page(&mut page, t, Some((f, info)), view);
+        if let Some(turn) = &self.face_turn {
+            out.put(&turn.left, 0);
+        }
+        let dx = ((1.0 - along) * t.m.dp(FACE_SLIDE_DP)).round() as i32;
+        out.lay(&page, dx, 0, along);
+        self.face_page = Some(page);
+    }
+
     pub(super) fn paint_page(&mut self, out: &mut Canvas, t: &Theme, fresh: Option<(&Fonts, &DeviceInfo)>, view: &View) {
         let m = t.m;
         let screen = self.screen();
@@ -686,6 +714,9 @@ impl App {
     /// to; its first frame shows the bar as its scroll has it.
     pub(super) fn settle_page(&mut self) {
         self.height = 0.0;
+        // A face turning belongs to the page it turned on: the next page
+        // shows its own face as it stands.
+        self.face_turn = None;
         self.fling = None;
         self.glide = None;
         self.pull = 0.0;

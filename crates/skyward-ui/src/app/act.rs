@@ -66,11 +66,16 @@ impl App {
                 self.state.tasks_face = face;
                 self.refresh();
             }
-            // The clock keeps one face at a time; the one shown takes the
-            // page from the top, as a page opened afresh does.
+            // The clock keeps one face at a time; the one coming in is drawn
+            // over the one shown, a little to the right of where it comes to
+            // rest and fading up, so the change reads as the page turning
+            // over rather than as being replaced.
             Action::ClockFace(face) => {
-                self.state.clock.face = face;
-                self.refresh();
+                if self.state.clock.face != face {
+                    self.face_turn = self.face_snapshot(now);
+                    self.state.clock.face = face;
+                    self.refresh();
+                }
             }
             // The face shown goes on counting, or stops where it is. The
             // stopwatch keeps what it counted; the timer keeps what it has

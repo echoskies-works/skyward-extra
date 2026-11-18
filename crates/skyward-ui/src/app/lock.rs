@@ -1,8 +1,8 @@
 //! The lock screen: what the panel shows when it lights again after going
-//! dark, with the page it came over kept small and soft behind it, and the
-//! swipe up that puts it away. It lies over whatever is shown rather than
-//! standing in the stack, so the page under it is never taken away and comes
-//! back as it was.
+//! dark, and the swipe up that puts it away. It lies over whatever is shown
+//! rather than standing in the stack, so the page under it is never taken
+//! away and comes back as it was — and uncovered sharp, since the lock's own
+//! wallpaper covers the screen until the finger drags it off.
 
 use super::*;
 
@@ -27,13 +27,15 @@ const LOCK_PERIOD: f32 = 0.36;
 /// How far up the lock is dragged, of the share [`LOCK_SWIPE`] names, for
 /// letting go to put it away rather than back down.
 const LOCK_KEEP: f32 = 0.4;
-/// A pixel of every this many of the page is kept for the picture the lock
-/// shows behind itself.
+/// A pixel of every this many of the page is kept for the lock's ground
+/// when no wallpaper is set, and for the soft copy the power menu stands
+/// on.
 const LOCK_STEP: u32 = 10;
 /// How many of that small copy's pixels either side of a point are averaged
-/// into the blur, three times over: the lock's picture is soft rather than
-/// the coarse mosaic of a copy kept too small. Two is about twenty pixels
-/// of the page itself — enough to read it as a picture, not as a shape.
+/// into the blur, three times over: the power menu's ground is soft rather
+/// than the coarse mosaic of a copy kept too small. Two is about twenty
+/// pixels of the page itself — enough to read it as a picture, not a shape.
+/// The lock's own ground is kept sharp; only the menu uses this.
 const LOCK_BLUR: usize = 2;
 /// The lock's ink, fixed rather than the theme's: white and a step softer
 /// over a dark wallpaper, near-black and a step softer over a light one.
@@ -56,14 +58,11 @@ pub(super) struct Lock {
     /// The lock drawn whole — the wallpaper, the veil, the clock and the
     /// words — moved up over the page as the finger drags it.
     pub(super) sheet: Option<Canvas>,
-    /// The page under the lock, blurred: shown for as long as the lock is up
-    /// and cleared toward the page itself as the lock is pulled away.
-    pub(super) blurred: Option<Canvas>,
 }
 
 impl Lock {
     fn new() -> Lock {
-        Lock { reveal: 0.0, to: 0.0, spring: None, sheet: None, blurred: None }
+        Lock { reveal: 0.0, to: 0.0, spring: None, sheet: None }
     }
 }
 
@@ -84,7 +83,6 @@ impl App {
     pub(super) fn lock_sheet_gone(&mut self) {
         if let Some(lock) = self.lock.as_mut() {
             lock.sheet = None;
-            lock.blurred = None;
         }
     }
 
@@ -101,33 +99,28 @@ impl App {
         self.h as f32 * LOCK_SWIPE
     }
 
-    /// The lock over what is shown: the page under it kept soft, and the
-    /// lock's own wallpaper, veil, clock and words over that. The lock
-    /// slides up whole as a finger drags it, and as it goes the page under
-    /// it clears — shown blurred while the lock stands, it comes back sharp
-    /// as the lock is pulled away, rather than snapping from blur to focus
-    /// at the last.
+    /// The lock over what is shown: its own wallpaper, veil, clock and words,
+    /// slid up whole as a finger drags it. What it uncovers at the foot is
+    /// the page itself, as it was left — sharp rather than blurred, which is
+    /// also a whole screen's worth of mixing saved on every frame of the
+    /// swipe.
     pub(super) fn compose_lock(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, clock: &str, today: &str) {
+        // While the panel is going dark, the page is what dims: the lock is
+        // what lighting it again shows, not something that comes up under
+        // the dark. Drawn here it flashed over the page on the way out and
+        // went black with it — the lock arriving, then the screen going,
+        // which is the wrong way round.
+        if !self.display_on {
+            return;
+        }
         if self.lock.as_ref().is_some_and(|l| l.sheet.is_none()) {
             let sheet = self.lock_sheet(f, info, clock, today);
-            // The page under the lock, kept soft while the lock stands over
-            // it: blurred once here, from what the panel shows, and shown
-            // until the lock is gone.
-            let blurred = soft_ground(out, self.w, self.h);
             if let Some(lock) = self.lock.as_mut() {
                 lock.sheet = Some(sheet);
-                lock.blurred = Some(blurred);
             }
         }
         let Some(lock) = self.lock.as_ref() else { return };
         let away = (lock.reveal * self.h as f32).round() as i32;
-        // The page under the lock stands blurred while the lock is over it,
-        // and clears toward itself as the lock is pulled away. The blur is
-        // kept for as long as the lock stands: the page is not touched while
-        // it is covered.
-        if let Some(blurred) = &lock.blurred {
-            out.lay(blurred, 0, 0, 1.0 - lock.reveal);
-        }
         let sheet = lock.sheet.as_ref().expect("the sheet made just above");
         out.put(sheet, -away);
     }
@@ -238,8 +231,9 @@ impl App {
     }
 
     /// Keep a small copy of what the panel shows, a pixel of every
-    /// [`LOCK_STEP`], softened: the picture the lock stretches behind itself
-    /// once the panel comes back on.
+    /// [`LOCK_STEP`], for the lock's ground when there is no wallpaper. It is
+    /// kept sharp: softening it left the page under the lock reading as a
+    /// blur on the way out, which is just what the lock no longer does.
     pub(super) fn keep(&mut self, out: &Canvas) {
         let (w, h) = (out.w, out.h);
         if !out.whole() || w < LOCK_STEP || h < LOCK_STEP {
@@ -258,16 +252,15 @@ impl App {
                 small.data[to..to + 4].copy_from_slice(&out.data[from..from + 4]);
             }
         }
-        soften(&mut small, LOCK_BLUR);
         self.behind = Some(small);
     }
 }
 
 /// A soft copy of `picture` at `w` by `h`: a pixel of every [`LOCK_STEP`]
-/// kept and blurred, stretched back over the screen. A lock or a menu that
-/// stands over a page wants this as its ground — the picture behind it reads
-/// as a picture, not as a shape, and blurring a tenth-scale copy costs a
-/// fraction of blurring the page whole.
+/// kept and blurred, stretched back over the screen. The power menu standing
+/// over a page wants this as its ground — the picture behind it reads as a
+/// picture, not as a shape, and blurring a tenth-scale copy costs a fraction
+/// of blurring the page whole.
 pub(super) fn soft_ground(picture: &Canvas, w: u32, h: u32) -> Canvas {
     let (sw, sh) = (w.div_ceil(LOCK_STEP), h.div_ceil(LOCK_STEP));
     let mut small = Canvas::new(sw, sh);
@@ -423,5 +416,43 @@ mod tests {
         app.touch(Touch::Up, &f, 0);
         app.tick(1_000);
         assert!(app.locked(), "let go short of the mark, the lock stays");
+    }
+
+    /// The panel going dark dims the page, and the lock stays out of sight
+    /// until it lights again: drawn under the dark it flashed up over the
+    /// page on the way out and went black with it, which read as the lock
+    /// arriving and then the screen going, the wrong way round.
+    #[test]
+    fn the_lock_keeps_out_of_sight_while_the_panel_goes_dark() {
+        let f = crate::font::bundled();
+        let i = crate::app::testing::info();
+        let mut app = App::new(Screen::Desktop, 400, 800, 2.0);
+        app.sleep(0);
+        let mut out = Canvas::new(400, 800);
+        app.compose(&mut out, &f, &i, "21:40", "11月18日 周二", 10);
+        let lock = app.lock.as_ref().expect("the lock is what waits behind the dark");
+        assert!(lock.sheet.is_none(), "and nothing of it is drawn under the dark");
+    }
+
+    /// Let go and the spring carries the lock where the swipe said, a frame
+    /// at a time. Woken only when the spring was due to land, the panel drew
+    /// the lock under the finger and then the page: the motion in between
+    /// never reached the glass.
+    #[test]
+    fn the_lock_asks_for_frames_while_its_spring_carries_it() {
+        let f = crate::font::bundled();
+        let mut app = App::new(Screen::Desktop, 400, 800, 2.0);
+        app.sleep(0);
+        app.wake(0);
+        app.lock_now();
+        app.touch(Touch::Down(200.0, 700.0), &f, 0);
+        app.touch(Touch::Move(200.0, 700.0 - 800.0 * LOCK_SWIPE * 0.6), &f, 0);
+        app.touch(Touch::Up, &f, 0);
+        assert_eq!(app.deadline(0), Some(0), "the spring is carried a frame at a time");
+        let _ = app.take_dirty();
+        app.tick(8);
+        assert!(app.take_dirty(), "and each frame of it is drawn");
+        app.tick(1_000);
+        assert!(!app.locked(), "and it lands where the swipe said");
     }
 }

@@ -407,6 +407,46 @@ mod tests {
         let _ = i;
     }
 
+    /// The card rises a frame at a time and the panel is told to draw each
+    /// of them. Asked once for the end of the rise, it went from off the
+    /// panel to where it was going between two frames, which reads as no
+    /// animation at all; asked for every frame of a rise long done, it kept
+    /// the loop turning at full speed with nothing to show.
+    #[test]
+    fn the_power_menu_moves_frame_by_frame_and_then_rests() {
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.show_power_menu(0);
+        assert_eq!(app.deadline(0), Some(0), "the card is on its way up");
+        assert_eq!(app.deadline(dialog::RISE_MS / 2), Some(0), "and still on its way");
+        assert_ne!(app.deadline(dialog::RISE_MS + 1), Some(0), "come up, it asks for nothing more");
+        let _ = app.take_dirty();
+        app.tick(dialog::RISE_MS / 2);
+        assert!(app.take_dirty(), "every frame of the rise is drawn");
+    }
+
+    /// Seen off, the card falls and the page goes black under it, a frame at
+    /// a time: woken at the end of the fall alone, the card stood still and
+    /// the black arrived whole, which is what the phone showed.
+    #[test]
+    fn the_black_out_is_drawn_frame_by_frame() {
+        let (f, _) = (fonts(), info());
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.show_power_menu(0);
+        let rows = power_rows();
+        let (x, y) = sheet_key_at(&app, &f, &rows, "", 0);
+        app.touch(Touch::Down(x, y), &f, dialog::RISE_MS);
+        let body = app.sheet.as_ref().unwrap().body.clone();
+        let rows = app.sheet.as_ref().unwrap().rows.clone();
+        let (x, y) = sheet_key_at(&app, &f, &rows, &body, 0);
+        app.touch(Touch::Down(x, y), &f, dialog::RISE_MS * 2);
+        assert!(app.power_exit.is_some(), "确定 sends the phone off");
+        let mid = dialog::RISE_MS * 2 + dialog::FALL_MS / 2;
+        let _ = app.take_dirty();
+        app.tick(mid);
+        assert!(app.take_dirty(), "the fall is drawn as it goes");
+        assert_eq!(app.deadline(mid), Some(0), "and asked for a frame at a time until it is gone");
+    }
+
     /// A confirmation's 确定 does what it says and takes the sheet with it;
     /// its 取消 only takes the sheet, leaving the page as it was. 确定 asks
     /// for nothing at once: the black-out comes first.

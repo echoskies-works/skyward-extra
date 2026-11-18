@@ -1149,6 +1149,23 @@ struct View {
     pressing: Option<Action>,
 }
 
+/// How long a clock face takes to give way to the other, and how far the
+/// one coming in starts to the right of where it comes to rest. The pages
+/// of a tab strip switch under a finger at once; these are two faces of one
+/// page, and the swap reads as a change rather than an errand, so it is
+/// short and it moves only a little.
+const FACE_MS: u64 = 180;
+const FACE_SLIDE_DP: f32 = 12.0;
+
+/// A clock face giving way to the other: the page as the face left showed
+/// it, and when the change was asked for. The face coming in is drawn over
+/// this one, a little to the right of where it ends up, fading up as it
+/// goes — the page is one page, and only what it says is changing.
+struct FaceTurn {
+    since: u64,
+    left: Canvas,
+}
+
 /// A page sliding over another as it opens or goes back, as the stock
 /// settings slide them. A page opened comes in from the right edge over
 /// the page it opens from, which shifts a quarter of the way left and
@@ -1311,8 +1328,8 @@ pub struct App {
     /// up that puts it away.
     lock: Option<lock::Lock>,
     /// The page the panel showed before it went dark, a pixel of every ten,
-    /// softened: what the lock stretches behind itself. None until a page
-    /// has been shown.
+    /// kept sharp: the lock's ground when there is no wallpaper. None until
+    /// a page has been shown.
     behind: Option<Canvas>,
     darkening: Option<f32>,
     /// The charging screen, from when a cable goes in until it has gone,
@@ -1343,6 +1360,10 @@ pub struct App {
     /// A page sliding in over the page left, or off over the page gone
     /// back to.
     turn: Option<Turn>,
+    /// A clock face giving way to the other, and the canvas the face coming
+    /// in is drawn on while it does.
+    face_turn: Option<FaceTurn>,
+    face_page: Option<Canvas>,
     /// A finger at the foot of the screen pulling, and what it pulls.
     foot: Option<Foot>,
     /// While a page slides: the page shown drawn on its own, and how it
@@ -1433,6 +1454,8 @@ impl App {
             row_art: None,
             shown: None,
             turn: None,
+            face_turn: None,
+            face_page: None,
             foot: None,
             layer: None,
             stale: Vec::new(),
@@ -1536,6 +1559,14 @@ impl App {
         if moving || (lit && (self.curtain.moving(now) || self.charging.is_some())) {
             return Some(0);
         }
+        // What is laid over the page, and a clock face turning to the
+        // other, move by their own clocks too. Without this they were woken
+        // once at the end of their run and drawn that once: the card went
+        // from off the panel to where it was going between two frames, and
+        // the phone held the panel's pace turning nothing out in between.
+        if self.overlay_moving(now) {
+            return Some(0);
+        }
         let darkens = self.row_press.map(|p| p.rise).filter(|&rise| rise > now);
         let easing = self.bright.moving(now).then_some(now + BACKLIGHT_STEP_MS);
         let held = match self.drag {
@@ -1550,19 +1581,6 @@ impl App {
         };
         let blink = self.blink_at(now).filter(|_| self.display_on).map(|(_, next)| next);
         let chord = self.chord.map(|(_, at)| at + CHORD_MS);
-        let menu = self.power_menu.as_ref().map(|m| m.since + dialog::RISE_MS);
-        // The sheet's rise and fall need their own frames, as the menu's does.
-        let sheet = self.sheet.as_ref().and_then(|s| s.deadline(now));
-        // The black-out a confirmed 关机 or 重新启动 leaves: a frame at a time
-        // until the black is whole, then one more for the beat before the
-        // phone is asked to leave.
-        let leaving = self.power_exit.as_ref().filter(|e| !e.fired).map(|e| {
-            if now < e.since + power::BLACK_MS {
-                0
-            } else {
-                e.since + power::BLACK_MS + power::BLACK_HOLD_MS
-            }
-        });
         // The clock's counts go on of their own accord, and the stopwatch
         // reads to the hundredth: the page is told to draw again a frame at
         // a time while the count on it runs, rather than waiting for the
@@ -1571,10 +1589,45 @@ impl App {
         // is not a count, so `running` does not see it.
         let busy = self.state.clock.running() || self.state.clock.ruler_sweeping(now);
         let ticking = (self.display_on && busy).then(|| now + clock::step(&self.state.clock, now));
-        [self.toast.as_ref().map(|t| t.1), self.volume_bar, easing, self.idle_due(), held, repeat, blink, darkens, chord, menu, sheet, leaving, ticking]
+        [self.toast.as_ref().map(|t| t.1), self.volume_bar, easing, self.idle_due(), held, repeat, blink, darkens, chord, ticking]
             .into_iter()
             .flatten()
             .min()
+    }
+
+    /// Whether what stands over the page is on the move: the power menu
+    /// rising, a sheet rising or falling, the lock going away or back down
+    /// as its spring carries it, the black-out a confirmed 关机 or 重新启动
+    /// leaves, and a clock face turning to the other. None of these is a
+    /// count that ticks by the clock or a scroll that follows a finger, so
+    /// each has to ask for the frames it is made of — and the panel has to
+    /// hear that it did, or the whole motion happens between two frames.
+    fn overlay_moving(&self, now: u64) -> bool {
+        self.sheet.as_ref().is_some_and(|s| s.moving(now))
+            || self.power_menu.as_ref().is_some_and(|m| now <= m.since + dialog::RISE_MS)
+            || self.power_exit.as_ref().is_some_and(|e| !e.fired)
+            || self.lock.as_ref().is_some_and(|l| l.spring.is_some())
+            || self.face_moving(now)
+    }
+
+    /// Whether a clock face is giving way to the other. The frame it lands
+    /// on counts: that is the one that puts the turn away.
+    fn face_moving(&self, now: u64) -> bool {
+        self.face_turn.as_ref().is_some_and(|t| now <= t.since + FACE_MS)
+    }
+
+    /// The page as it stands, kept for the face coming in to be drawn over.
+    /// Nothing is kept of a page that is not drawn whole on screen: the turn
+    /// is a nicety, and the face changes either way.
+    fn face_snapshot(&self, now: u64) -> Option<FaceTurn> {
+        let fr = self.frame.as_ref()?;
+        let (w, h) = (self.w, self.h);
+        let y = self.top().1.max(0.0).round() as u32;
+        let (held, cols) = (fr.canvas.held(), fr.canvas.cols());
+        if cols.start > 0 || cols.end < w || held.start > y || held.end < y + h {
+            return None;
+        }
+        Some(FaceTurn { since: now, left: fr.canvas.crop(0, y, w, h) })
     }
 
     /// Whether a text field's cursor shows at `now`, and when it next turns;
@@ -1672,6 +1725,12 @@ impl App {
             self.end_charging();
         }
         if self.curtain.moving(now) || self.charging.is_some() {
+            self.dirty = true;
+        }
+        // What stands over the page moves a frame at a time, and the panel
+        // is only drawn again when it is told something changed: asking for
+        // the frames is not enough, the drawing has to be asked for too.
+        if self.overlay_moving(now) {
             self.dirty = true;
         }
         if self.toast.as_ref().is_some_and(|m| now >= m.1) {
