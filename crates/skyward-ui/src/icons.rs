@@ -68,8 +68,8 @@ pub enum Icon {
     Battery,
     /// Two phones, the one behind showing round the one in front.
     Systems,
-    /// Two notes beamed at their stems' heads, as a music player shows
-    /// them.
+    /// A disc, as a player shows one: its face, the ring at its centre and
+    /// the two arcs across it.
     Music,
     /// A globe stood on its rings, as a browser shows one.
     Browser,
@@ -416,23 +416,27 @@ const SYSTEMS: &[Part] = &[
     cut(Shape::Line("M14.4,20.2H18", 1.3)),
 ];
 
-/// A disc: its rim, the hole at its centre, and the two short arcs a
-/// record's surface throws the light back with.
+/// A disc: its face, the ring at its centre and the two arcs its surface
+/// throws the light back with, and the dot the ring goes round.
 ///
-/// Both halves are cut with the odd-even rule: the rim and the hole are
-/// written as one outline running round twice, and so are the hole's own
-/// ring and the arcs, which only come out as rings when what lies inside
-/// twice is left out.
-const MUSIC: &[Part] = &[
-    // The rim, and the edge that turns it into a ring.
-    add(Shape::EvenOdd(
-        "M13.93,23.66c-5.55,-0.09 -9.76,-4.51 -9.59,-10.18c0.16,-4.94 4.41,-9.2 9.7,-9.14c5.43,0.06 9.71,4.47 9.61,9.86c-0.09,5.23 -4.52,9.55 -9.72,9.46zm8.52,-9.56c0.01,-4.73 -3.74,-8.57 -8.39,-8.57c-4.82,0 -8.4,3.82 -8.52,8.13c-0.14,4.8 3.57,8.77 8.43,8.77c4.97,0.01 8.46,-4.03 8.48,-8.33z",
-    )),
-    // The hole, ringed the same way, and the two arcs over the label.
-    add(Shape::EvenOdd(
-        "M14.01,16.28c-1.26,0 -2.28,-1.01 -2.29,-2.27c-0.01,-1.29 1.01,-2.3 2.3,-2.31c1.22,-0.01 2.26,1.02 2.27,2.25c0.02,1.28 -1.01,2.33 -2.28,2.33zm-1.08,-2.27c0.01,0.59 0.5,1.08 1.09,1.07c0.59,-0.01 1.07,-0.51 1.06,-1.1c-0.01,-0.58 -0.52,-1.09 -1.09,-1.07c-0.6,0 -1.07,0.5 -1.06,1.1zM20.26,14.36c-0.2,3.22 -2.74,5.72 -6,5.9c-0.53,0.03 -0.82,-0.16 -0.84,-0.55c-0.02,-0.39 0.24,-0.62 0.76,-0.66c2.51,-0.22 4.32,-1.76 4.8,-4.12c0.05,-0.26 0.06,-0.53 0.08,-0.79c0.05,-0.52 0.31,-0.81 0.68,-0.74c0.45,0.08 0.57,0.41 0.53,0.82c0,0.04 0,0.09 -0.01,0.14zM7.73,13.62C7.81,10.5 10.74,7.66 13.84,7.7c0.47,0.01 0.78,0.25 0.76,0.61c-0.03,0.44 -0.33,0.57 -0.72,0.59c-2.56,0.09 -4.54,2 -4.89,4.28c-0.03,0.21 -0.04,0.43 -0.05,0.65c-0.02,0.4 -0.14,0.74 -0.62,0.75c-0.38,0.01 -0.59,-0.26 -0.59,-0.76v-0.2z",
-    )),
-];
+/// The whole of it is cut with the odd-even rule, the user's own drawing
+/// being written that way: the arcs and the ring lie inside the face once
+/// over it and so are left out, and the dot lies inside the ring as well,
+/// so it fills back in where the ring had a hole.
+const MUSIC: &[Part] = &[add(Shape::EvenOdd(
+    "M14,5C9.043,5,5,9.043,5,14.007C5,18.965,9.043,23,14,23C18.965,23,23,18.965,23,14.007\
+     C23,9.043,18.965,5,14,5ZM9.26,14.007C9.26,14.42,8.93,14.757,8.51,14.758\
+     C8.098,14.758,7.76,14.42,7.76,14.007C7.76,10.565,10.558,7.76,14,7.76\
+     C14.412,7.76,14.75,8.098,14.75,8.51C14.75,8.922,14.412,9.26,14,9.26\
+     C11.39,9.26,9.26,11.39,9.26,14.007ZM11.622,14A2.378,2.378 0 0 1 14,11.622\
+     C15.32,11.622,16.385,12.687,16.385,14C16.385,15.313,15.32,16.385,14,16.385\
+     A2.385,2.385 0 0 1 11.622,14ZM14,20.24C13.588,20.24,13.25,19.902,13.25,19.49\
+     C13.25,19.078,13.588,18.74,14,18.74C16.617,18.74,18.748,16.618,18.748,14.007\
+     C18.748,13.587,19.078,13.258,19.497,13.258C19.91,13.258,20.247,13.588,20.248,14.007\
+     C20.248,17.443,17.442,20.24,14,20.24ZM14.885,14C14.885,13.512,14.487,13.123,14,13.123\
+     C13.52,13.123,13.123,13.512,13.123,14C13.123,14.488,13.52,14.885,14,14.885\
+     C14.488,14.885,14.885,14.487,14.885,14Z",
+))];
 
 /// A globe: its ring, a line across it and a line round it.
 ///

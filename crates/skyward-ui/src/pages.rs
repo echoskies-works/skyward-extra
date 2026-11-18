@@ -808,17 +808,18 @@ fn clock_glyph(c: &mut Canvas, glyph: Glyph, cx: f32, cy: f32, h: f32, ink: Rgba
     // The reset arrow is the one picture here that is wide rather than tall —
     // 28 units by 12.33 — so at a key's box it would stand a third of the
     // height of the pictures beside it. Its box is made as many times wider,
-    // until the arrow itself stands about seven tenths of their height across
-    // two thirds of the chip: any wider and it reaches the rim, any narrower
-    // and it reads as a smaller key rather than the same one turning back.
+    // until the arrow stands half their height and half the chip's width:
+    // the width is what the eye weighs, and a picture that turns left to
+    // right across the whole chip reads as a key of its own rather than as
+    // the same key turning back.
     let size = if matches!(glyph, Glyph::Reset) { h * RESET_BOX } else { h };
     icons::glyph(c, icon, cx, cy, size, ink);
 }
 
 /// The reset arrow's box as a share of a key's: the drawing is 2.27 times as
-/// wide as it is tall, so a box of the same shape that leaves the arrow seven
-/// tenths of a key's height is 2.27 × 0.68 of a key's box.
-const RESET_BOX: f32 = 1.55;
+/// wide as it is tall, so a box of the same shape that leaves the arrow half
+/// a key's height is 2.27 × 0.51 of a key's box.
+const RESET_BOX: f32 = 1.15;
 
 /// The ink the pictures on the stopwatch's keys are drawn in: the grey the
 /// watch's own keys carry, a shade lighter than the page's black. On a pale
