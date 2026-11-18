@@ -50,6 +50,11 @@ impl App {
 
     pub fn touch(&mut self, ev: Touch, f: &Fonts, now: u64) -> Vec<Effect> {
         self.now = now;
+        // Seen off from the power menu, the panel takes nothing: the card is
+        // already on its way back and the page under it is going black.
+        if self.power_exit.is_some() {
+            return Vec::new();
+        }
         // A finger on the dark panel lights nothing, as on the phone's own
         // system, where the power key lights it.
         if !self.display_on {
@@ -563,6 +568,11 @@ impl App {
     /// go, and then does what it does alone, as pressed when it went down.
     pub fn key(&mut self, key: Key, now: u64) -> Vec<Effect> {
         self.now = now;
+        // Seen off from the power menu, the keys take nothing either: the
+        // phone is on its way out.
+        if self.power_exit.is_some() {
+            return Vec::new();
+        }
         // Any button stops a gliding page, and brings a sliding one to rest.
         self.fling = None;
         self.end_turn();
@@ -702,6 +712,10 @@ impl App {
     /// partner in a screenshot came, the key waiting for it first does what
     /// it does alone.
     pub fn key_up(&mut self, key: Key, now: u64) -> Vec<Effect> {
+        // A key let go of while the phone is on its way out does nothing.
+        if self.power_exit.is_some() {
+            return Vec::new();
+        }
         let mut fx = match self.chord {
             Some((first, _)) if first == key => self.let_chord_go(),
             _ => Vec::new(),

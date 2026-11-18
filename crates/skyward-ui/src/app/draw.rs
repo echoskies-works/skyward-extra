@@ -187,6 +187,9 @@ impl App {
         // The power menu comes over that too: the power key answers while the
         // lock stands, so its menu must be the thing seen when it does.
         self.compose_power_menu(out, f, now);
+        // Seen off from that menu, the page under the card goes black as the
+        // card falls; the card itself is drawn after it and keeps its colour.
+        self.compose_power_exit(out, now);
         // A sheet - the timer that has run out, and whatever else asks for
         // a word back - speaks over all of them until its key is pressed.
         self.compose_sheet(out, f, now);

@@ -11,7 +11,7 @@ pub(super) const RISE_MS: u64 = 240;
 pub(super) const FALL_MS: u64 = 180;
 /// What is left of a darkened page under the card: the stock sheet darkens a
 /// white page to 179 of 255. The power menu keeps its own, softer ground.
-const DIM: f32 = 0.70;
+pub(super) const DIM: f32 = 0.70;
 
 // The stock sheet, measured on a 1080 by 2400 panel: 33 px at either side,
 // a 44 dp top corner, its contents 30 dp in and the keys 20 dp off the foot.
@@ -34,8 +34,19 @@ const BTN_BOTTOM: f32 = 20.0;
 const BTN_BETWEEN: f32 = 12.0;
 const BTN_ROW_GAP: f32 = 12.0;
 
-fn eased(ms: u64, span: u64) -> f32 {
+/// How far a motion has come at `ms` into `span`, easing out as it goes: the
+/// card's rise, and the page going black behind it on the way down.
+pub(super) fn eased(ms: u64, span: u64) -> f32 {
     1.0 - (1.0 - (ms as f32 / span as f32).min(1.0)).powi(2)
+}
+
+/// How far a thing has come down at `ms` into `span`, from rest and gathering
+/// pace as it falls. The card goes back to the foot this way rather than
+/// easing out: it stays in sight while the page behind it goes black, and
+/// only leaves the panel when the black is nearly whole.
+fn fell(ms: u64, span: u64) -> f32 {
+    let t = (ms as f32 / span as f32).min(1.0);
+    t * t
 }
 
 /// A sheet's keys, a row at a time: one key fills the row, two share it.
@@ -113,10 +124,12 @@ pub(super) fn paint_sheet(
     }
 }
 
-/// The rise of a sheet, as a share: none at the foot, all in its place.
+/// The rise of a sheet, as a share: none at the foot, all in its place. It
+/// comes up easing out and goes back down from rest, so a fall it shares
+/// with the page going black keeps the card in sight a moment longer.
 pub(super) fn shown_sheet(since: u64, closing: Option<u64>, now: u64) -> f32 {
     match closing {
-        Some(at) => 1.0 - eased(now.saturating_sub(at), FALL_MS),
+        Some(at) => 1.0 - fell(now.saturating_sub(at), FALL_MS),
         None => eased(now.saturating_sub(since), RISE_MS),
     }
 }
@@ -242,7 +255,12 @@ impl App {
         }
         let t = self.theme();
         let lang = self.state.lang;
-        out.dim(1.0 - (1.0 - DIM) * shown);
+        // While the phone is being seen off, the black-out takes the ground
+        // over from the card: the card falls as the page goes black, and the
+        // card itself keeps its colour the whole way down.
+        if self.power_exit.is_none() {
+            out.dim(1.0 - (1.0 - DIM) * shown);
+        }
         let geom = sheet_geom(&t, f, &sheet.body, &sheet.rows);
         let off = sheet_off(&t, shown);
         paint_sheet(out, &t, f, lang, sheet.title, &sheet.rows, &geom, off, None);
@@ -317,7 +335,7 @@ mod tests {
         app.touch(Touch::Down(at.0, at.1), &f, RISE_MS + 1);
         assert!(app.sheet.as_ref().unwrap().closing.is_some(), "the key sends it back down");
         assert_eq!(app.sheet.as_ref().unwrap().shown(RISE_MS + 1), 1.0, "still all the way up that frame");
-        assert!(app.sheet.as_ref().unwrap().shown(RISE_MS + 1 + FALL_MS / 2) < 0.5);
+        assert!(app.sheet.as_ref().unwrap().shown(RISE_MS + 1 + FALL_MS * 3 / 4) < 0.5);
         app.tick(RISE_MS + 1 + FALL_MS);
         assert!(app.sheet.is_none(), "and then it is gone");
         let _ = i;

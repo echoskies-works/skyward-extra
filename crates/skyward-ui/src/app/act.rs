@@ -307,6 +307,16 @@ impl App {
                 self.close_sheet(now);
                 return vec![Effect::Reboot(target)];
             }
+            // The 确定 of the power menu's own confirmations: the sheet falls
+            // and the page goes black first, and the phone is asked to leave
+            // once the black is whole — a beat later, in `tick`.
+            Action::PowerExit(target) => {
+                self.close_sheet(now);
+                self.power_exit = Some(power::PowerExit { target, since: now, fired: false });
+                self.dirty = true;
+                self.stir(now);
+                return Vec::new();
+            }
             Action::EnterRecovery => return vec![Effect::EnterRecovery],
             Action::Dismiss => {
                 self.stack = vec![(Screen::Desktop, 0.0, Focus::Unset)];

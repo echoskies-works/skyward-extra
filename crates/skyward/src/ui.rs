@@ -1750,6 +1750,9 @@ impl<'a> Pages<'a> {
                 // The power key held past its wait for volume down turns
                 // the screen off.
                 Effect::Ticks => self.ticks()?,
+                // The power menu's black-out has run its course: the card has
+                // fallen and the page is black, and the phone leaves now.
+                Effect::Reboot(target) => self.leave_to(target, now),
                 other => unreachable!("time passing asks for nothing but the motor, not {other:?}"),
             }
         }
@@ -2657,6 +2660,9 @@ impl Pages<'_> {
     fn leave_to(&mut self, target: Target, now: u64) {
         if let Err(e) = power(target) {
             let said = format!("{e:#}");
+            // The black-out the power menu left goes with it: the pages are
+            // still there and have to be read, the word about this included.
+            self.app.leave_failed();
             self.app.report(&said, now);
         }
     }

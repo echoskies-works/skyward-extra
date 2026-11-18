@@ -23,6 +23,31 @@ pub enum PowerChoice {
     Cancel,
 }
 
+/// Leaving from the power menu's own confirmations: the card falls back as
+/// the page behind it goes black, and the phone leaves only once the black
+/// is whole. Every other way out — the recovery's power page, a restart to
+/// the other slot — still leaves at once, on a screen that simply goes dark.
+pub(super) struct PowerExit {
+    pub(super) target: Target,
+    pub(super) since: u64,
+    /// Whether the phone has already been asked to leave, so the black-out
+    /// standing after it asks only once.
+    pub(super) fired: bool,
+}
+
+/// How long the page takes to go black, and the beat it stays black before
+/// the phone leaves. The black takes exactly as long as the card's own fall,
+/// so the card is out of sight just as the black is whole.
+pub(super) const BLACK_MS: u64 = dialog::FALL_MS;
+pub(super) const BLACK_HOLD_MS: u64 = 120;
+
+/// What is left of the page `ms` after the black-out began, from the dim it
+/// stood in under the card to nothing at all. The card is drawn after this,
+/// so it alone keeps its colour on the way down.
+pub(super) fn black_level(ms: u64, span: u64) -> f32 {
+    dialog::DIM * (1.0 - dialog::eased(ms, span))
+}
+
 const POWER_TITLE: Text = ["电源选项", "電源選項", "Power options"];
 const POWER_CHOICES: [(PowerChoice, Text); 4] = [
     (PowerChoice::PowerOff, ["关机", "關機", "Power off"]),
@@ -37,8 +62,9 @@ fn power_rows() -> dialog::SheetRows {
 }
 
 /// The words of the sheet a choice opens, and the keys on it. Power off and
-/// restart go on to leave the system once confirmed; suspend is not wired
-/// up, so its 确定 does no more than its 取消.
+/// restart go on to leave the system once confirmed, through the black-out
+/// `PowerExit` stands for; suspend is not wired up, so its 确定 does no more
+/// than its 取消.
 pub(super) fn power_confirm(choice: PowerChoice, lang: crate::lang::Lang) -> (Text, String, dialog::SheetRows) {
     let ok: Text = ["确定", "確定", "OK"];
     let cancel: Text = ["取消", "取消", "Cancel"];
@@ -46,15 +72,15 @@ pub(super) fn power_confirm(choice: PowerChoice, lang: crate::lang::Lang) -> (Te
         PowerChoice::PowerOff => (
             ["关机", "關機", "Power off"],
             lang.pick(["您的手机将会关机。", "您的手機將會關機。", "Your phone will power off."]).to_string(),
-            vec![vec![(ok, Action::RebootTo(Target::PowerOff)), (cancel, Action::SheetCancel)]],
+            vec![vec![(ok, Action::PowerExit(Target::PowerOff)), (cancel, Action::SheetCancel)]],
         ),
         PowerChoice::Restart => (
             ["重新启动", "重新啟動", "Restart"],
             lang.pick(["您的手机将会重新启动。", "您的手機將會重新啟動。", "Your phone will restart."]).to_string(),
             vec![
-                vec![(ok, Action::RebootTo(Target::System)), (cancel, Action::SheetCancel)],
-                vec![(["重启到Recovery", "重啟到Recovery", "Restart to recovery"], Action::RebootTo(Target::Recovery))],
-                vec![(["重启到Bootloader", "重啟到Bootloader", "Restart to bootloader"], Action::RebootTo(Target::Bootloader))],
+                vec![(ok, Action::PowerExit(Target::System)), (cancel, Action::SheetCancel)],
+                vec![(["重启到Recovery", "重啟到Recovery", "Restart to recovery"], Action::PowerExit(Target::Recovery))],
+                vec![(["重启到Bootloader", "重啟到Bootloader", "Restart to bootloader"], Action::PowerExit(Target::Bootloader))],
             ],
         ),
         PowerChoice::Suspend => (
@@ -232,6 +258,26 @@ impl App {
         self.dirty = true;
     }
 
+    /// The black-out a confirmed 关机 or 重新启动 leaves behind: the page,
+    /// the menu under the card and everything else goes black as the card
+    /// falls. It is laid down before the card is drawn, so the card alone
+    /// keeps its colour while the rest goes.
+    pub(super) fn compose_power_exit(&self, out: &mut Canvas, now: u64) {
+        if let Some(exit) = &self.power_exit {
+            out.dim(black_level(now.saturating_sub(exit.since), BLACK_MS));
+        }
+    }
+
+    /// The phone did not go after all — a property that would not take its
+    /// write: the black-out is lifted and the page stands as it was, so the
+    /// word about it can be read.
+    pub fn leave_failed(&mut self) {
+        if self.power_exit.take().is_some() {
+            self.sheet = None;
+            self.dirty = true;
+        }
+    }
+
 /// A finger on the power menu: a tap on an entry takes it, a tap beside the
 /// card puts the menu away and does nothing else. The card is the common
 /// sheet's; a finger landing while it rises finds the keys where they were.
@@ -359,7 +405,8 @@ mod tests {
     }
 
     /// A confirmation's 确定 does what it says and takes the sheet with it;
-    /// its 取消 only takes the sheet, leaving the page as it was.
+    /// its 取消 only takes the sheet, leaving the page as it was. 确定 asks
+    /// for nothing at once: the black-out comes first.
     #[test]
     fn a_confirmation_goes_on_cancel_and_leaves_on_ok() {
         let (f, i) = (fonts(), info());
@@ -375,6 +422,7 @@ mod tests {
         let (cx, cy) = sheet_key_at(&app, &f, &rows, &app.sheet.as_ref().unwrap().body, 1);
         assert!(app.touch(Touch::Down(cx, cy), &f, dialog::RISE_MS * 2).is_empty(), "cancel does nothing");
         assert!(app.sheet.as_ref().unwrap().closing.is_some(), "but the sheet goes");
+        assert!(app.power_exit.is_none(), "and nothing goes black");
         app.tick(dialog::RISE_MS * 2 + dialog::FALL_MS);
         assert_eq!(app.screen(), Screen::Home, "back to the page that was under it");
 
@@ -387,16 +435,20 @@ mod tests {
         let rows = sheet.rows.clone();
         let body = sheet.body.clone();
         let (cx, cy) = sheet_key_at(&app, &f, &rows, &body, 0);
-        assert_eq!(
-            app.touch(Touch::Down(cx, cy), &f, dialog::RISE_MS * 5),
-            vec![Effect::Reboot(Target::PowerOff)],
-            "确定 powers off"
-        );
+        let at = dialog::RISE_MS * 5;
+        assert!(app.touch(Touch::Down(cx, cy), &f, at).is_empty(), "确定 asks for no word at once");
+        let exit = app.power_exit.as_ref().expect("the black-out has begun");
+        assert_eq!(exit.target, Target::PowerOff);
+        assert_eq!(exit.since, at, "it began on the key");
+        assert!(app.tick(at + BLACK_MS + BLACK_HOLD_MS - 1).is_empty(), "black first, then the beat");
+        assert_eq!(app.tick(at + BLACK_MS + BLACK_HOLD_MS), vec![Effect::Reboot(Target::PowerOff)], "and the phone leaves");
+        assert!(app.tick(at + BLACK_MS + BLACK_HOLD_MS + 1000).is_empty(), "asked for once, not again");
         let _ = i;
     }
 
     /// The restart card carries recovery and bootloader as whole rows below
-    /// 确定 / 取消, picking either leaves for it at once.
+    /// 确定 / 取消, and either leaves through the same black-out, the card
+    /// falling as the page under it goes black.
     #[test]
     fn the_restart_card_carries_recovery_and_bootloader() {
         let (f, i) = (fonts(), info());
@@ -407,16 +459,65 @@ mod tests {
         assert_eq!(sheet.body, "您的手机将会重新启动。");
         let rows = sheet.rows.clone();
         assert_eq!(rows.len(), 3, "确定/取消, then two whole rows");
-        assert_eq!(rows[1][0].1, Action::RebootTo(Target::Recovery));
-        assert_eq!(rows[2][0].1, Action::RebootTo(Target::Bootloader));
+        assert_eq!(rows[1][0].1, Action::PowerExit(Target::Recovery));
+        assert_eq!(rows[2][0].1, Action::PowerExit(Target::Bootloader));
         let body = sheet.body.clone();
         // Keys flatten as 确定, 取消, Recovery, Bootloader.
         let (x, y) = sheet_key_at(&app, &f, &rows, &body, 2);
-        assert_eq!(
-            app.touch(Touch::Down(x, y), &f, dialog::RISE_MS),
-            vec![Effect::Reboot(Target::Recovery)]
-        );
+        let at = dialog::RISE_MS;
+        assert!(app.touch(Touch::Down(x, y), &f, at).is_empty());
+        assert_eq!(app.power_exit.as_ref().map(|e| e.target), Some(Target::Recovery));
+        assert_eq!(app.tick(at + BLACK_MS + BLACK_HOLD_MS), vec![Effect::Reboot(Target::Recovery)]);
         let _ = i;
+    }
+
+    /// The black-out is a ground under the card, not over it: the page
+    /// darkens all the way to black while the card keeps the colour it had.
+    #[test]
+    fn the_page_goes_black_while_the_card_keeps_its_colour() {
+        let (f, i) = (fonts(), info());
+        let t = crate::Theme::light(W, H, PPD);
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.act(Action::PowerMenuChoice(PowerChoice::PowerOff), 0);
+        let sheet = app.sheet.as_ref().unwrap();
+        let (rows, body) = (sheet.rows.clone(), sheet.body.clone());
+        let (x, y) = sheet_key_at(&app, &f, &rows, &body, 0);
+        let at = dialog::RISE_MS;
+        app.touch(Touch::Down(x, y), &f, at);
+
+        // The card's place on its way down — early enough that it is still on
+        // the panel, which the fall clears in its first few frames — and the
+        // page's own corner, clear of it.
+        let geom = dialog::sheet_geom(&t, &f, &body, &rows);
+        let early = at + 40;
+        let off = dialog::sheet_off(&t, dialog::shown_sheet(at, Some(at), early));
+        let (card_x, card_y) = (geom.card.x + geom.card.w / 2.0, geom.card.y + off + t.m.dp(10.0));
+        let ink = |app: &mut App, now| {
+            let mut c = Canvas::new(W, H);
+            app.compose(&mut c, &f, &i, "12:00", "11月18日 周二", now);
+            (grey_at(&c, 8.0, 8.0), grey_at(&c, card_x, card_y))
+        };
+        let (page_before, card_before) = ink(&mut app, at);
+        let (page_early, card_early) = ink(&mut app, early);
+        assert!(page_early < page_before, "the page is going black: {page_early} of {page_before}");
+        assert_eq!(card_early, card_before, "the card keeps its colour on the way down");
+        let (page_black, _) = ink(&mut app, at + BLACK_MS + 1);
+        assert_eq!(page_black, 0, "and the page is black once it has gone");
+    }
+
+    /// Only the power menu's own confirmations are seen off this way: a
+    /// page's plain 重启到系统 still leaves at once, as it always has.
+    #[test]
+    fn a_plain_reboot_leaves_at_once_without_the_black_out() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        assert_eq!(
+            app.act(Action::RebootTo(Target::System), 0),
+            vec![Effect::Reboot(Target::System)],
+            "no black-out, no wait"
+        );
+        assert!(app.power_exit.is_none());
+        let _ = (f, i);
     }
 
     /// Suspend is not wired up, so both of its keys close the card and leave

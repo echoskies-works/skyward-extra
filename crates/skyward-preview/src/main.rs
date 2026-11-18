@@ -1410,7 +1410,7 @@ fn main() -> Result<()> {
     }
 
     // The panel mid-gesture, to set beside recordings of the same moves.
-    let moments: [Moment; 40] = [
+    let moments: [Moment; 42] = [
         // A page pulled off the screen by its foot, the desktop come in
         // under it: four frames of the one move, the page gone up by about a
         // quarter, a half, three quarters and all but its last strip. The
@@ -1486,6 +1486,23 @@ fn main() -> Result<()> {
             let _ = app.key(Key::VolumeDown, 1260);
             let _ = app.key(Key::Power, 1360);
             1860
+        }),
+        // 确定 on the power-off card: the card falls and the page under it
+        // goes black, the card keeping its own colour the whole way down.
+        // Then the black stands alone for the beat before the phone leaves.
+        ("00-07-power-off-going-black-light", Screen::Desktop, false, &|app, _| {
+            let _ = app.key(Key::Power, 1000);
+            let _ = app.key(Key::VolumeUp, 1100);
+            let _ = app.key(Key::Power, 1200);
+            let _ = app.key(Key::Power, 1300);
+            1356
+        }),
+        ("00-07-power-off-black-light", Screen::Desktop, false, &|app, _| {
+            let _ = app.key(Key::Power, 1000);
+            let _ = app.key(Key::VolumeUp, 1100);
+            let _ = app.key(Key::Power, 1200);
+            let _ = app.key(Key::Power, 1300);
+            1676
         }),
         ("08-about-light", Screen::About, false, &|_, _| 2000),
         ("08-about-dark", Screen::About, true, &|_, _| 2000),

@@ -296,6 +296,10 @@ pub enum Action {
     FlashSlots(Pick),
     /// Leave the recovery for this target at once.
     RebootTo(Target),
+    /// Leave for this target from the power menu's confirmation: the card
+    /// falls back and the page under it goes black first, and the phone is
+    /// asked to leave once the black is whole.
+    PowerExit(Target),
     /// Stop fastboot and bring the recovery's own pages up, without
     /// restarting.
     EnterRecovery,
@@ -1283,6 +1287,9 @@ pub struct App {
     /// The page the power menu came over, softened: its ground, kept for as
     /// long as the menu stands, so blurring the page once is enough.
     power_blur: Option<Canvas>,
+    /// The phone being seen off from the power menu's confirmation: the page
+    /// going black under the falling card, and where it is going.
+    power_exit: Option<power::PowerExit>,
     /// The sheet over the page: one card at the foot, its ground only
     /// darkened, and the key that puts it away. What the timer ended with
     /// is written into its words, so no page holds a notice of its own.
@@ -1365,6 +1372,7 @@ impl App {
             chord: None,
             power_menu: None,
             power_blur: None,
+            power_exit: None,
             sheet: None,
             lock: None,
             behind: None,
@@ -1533,6 +1541,16 @@ impl App {
         let menu = self.power_menu.as_ref().map(|m| m.since + dialog::RISE_MS);
         // The sheet's rise and fall need their own frames, as the menu's does.
         let sheet = self.sheet.as_ref().and_then(|s| s.deadline(now));
+        // The black-out a confirmed 关机 or 重新启动 leaves: a frame at a time
+        // until the black is whole, then one more for the beat before the
+        // phone is asked to leave.
+        let leaving = self.power_exit.as_ref().filter(|e| !e.fired).map(|e| {
+            if now < e.since + power::BLACK_MS {
+                0
+            } else {
+                e.since + power::BLACK_MS + power::BLACK_HOLD_MS
+            }
+        });
         // The clock's counts go on of their own accord, and the stopwatch
         // reads to the hundredth: the page is told to draw again a frame at
         // a time while the count on it runs, rather than waiting for the
@@ -1541,7 +1559,7 @@ impl App {
         // is not a count, so `running` does not see it.
         let busy = self.state.clock.running() || self.state.clock.ruler_sweeping(now);
         let ticking = (self.display_on && busy).then(|| now + clock::step(&self.state.clock, now));
-        [self.toast.as_ref().map(|t| t.1), self.volume_bar, easing, self.idle_due(), held, repeat, blink, darkens, chord, menu, sheet, ticking]
+        [self.toast.as_ref().map(|t| t.1), self.volume_bar, easing, self.idle_due(), held, repeat, blink, darkens, chord, menu, sheet, leaving, ticking]
             .into_iter()
             .flatten()
             .min()
@@ -1575,6 +1593,16 @@ impl App {
         // A sheet whose key was pressed leaves once it has fallen to the
         // foot, letting the page brighten behind it.
         self.settle_sheet(now);
+        // The card has fallen and the page under it is black: the phone is
+        // asked to leave now, not the moment the key was pressed. The
+        // black-out stands while it goes, so the screen never comes back.
+        if let Some(exit) = self.power_exit.as_mut()
+            && !exit.fired
+            && now >= exit.since + power::BLACK_MS + power::BLACK_HOLD_MS
+        {
+            exit.fired = true;
+            fx.push(Effect::Reboot(exit.target));
+        }
         // The key waiting for its partner in a screenshot, left alone long
         // enough, does what it does alone.
         if self.chord.is_some_and(|(_, at)| now >= at + CHORD_MS) {
