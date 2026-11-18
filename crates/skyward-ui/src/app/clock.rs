@@ -2,10 +2,7 @@
 //! watch keeps, and how often the page has to be told to draw again while
 //! either count runs. The page that shows it is in `pages`.
 
-use super::{Action, App, Effect, Key, Touch};
-use crate::canvas::Canvas;
-use crate::font::Fonts;
-use crate::geom::Rect;
+use super::{Action, App};
 use crate::lang::Text;
 use crate::tr;
 
@@ -391,95 +388,22 @@ impl Clock {
     }
 }
 
-/// The timer-end notice: the whole minutes the timer had been set for.
-pub(super) struct TimerDone {
-    pub(super) minutes: u64,
-}
-
 const TIMER_DONE_TITLE: Text = ["计时结束", "計時結束", "Timer done"];
 const TIMER_DONE_OK: Text = ["确定", "確定", "OK"];
-/// How much of the page shows through the soft ground behind the notice,
-/// the same share the restart menu leaves.
-const TIMER_DONE_DIM: f32 = 0.45;
-
-/// The notice card and its one key, centred on the screen.
-fn timer_done_layout(t: &crate::theme::Theme) -> (Rect, Rect) {
-    let m = &t.m;
-    let (w, h) = (m.dp(300.0), m.dp(210.0));
-    let (x, y) = ((m.w as f32 - w) / 2.0, (m.h as f32 - h) / 2.0);
-    let bw = m.dp(128.0);
-    let button = Rect::new(x + (w - bw) / 2.0, y + m.dp(142.0), bw, m.dp(48.0));
-    (Rect::new(x, y, w, h), button)
-}
 
 impl App {
-    /// The timer ran out: put its notice over the page and keep the panel
-    /// awake so the notice can be read. The caller starts the long motor
-    /// note; it is stopped only by 确定.
+    /// The timer ran out: write what finished into the common sheet and
+    /// raise it over the page. The caller starts the long motor note; the
+    /// sheet's one key, in [`App::act`], is what stops it.
     pub(super) fn show_timer_done(&mut self, minutes: u64, now: u64) {
-        self.timer_done = Some(TimerDone { minutes });
-        self.timer_blur = None;
-        self.dirty = true;
-        self.stir(now);
-    }
-
-    /// Put the notice away without touching the timer: the confirming key
-    /// does that in [`App::act`].
-    pub(super) fn hide_timer_done(&mut self) {
-        self.timer_done = None;
-        self.timer_blur = None;
-        self.dirty = true;
-    }
-
-    /// The finger reaches the notice before any page under it. Only its
-    /// key answers; a touch beside the card leaves the motor noting.
-    pub(super) fn timer_done_touch(&mut self, ev: Touch, now: u64) -> Vec<Effect> {
-        let Touch::Down(x, y) = ev else { return Vec::new() };
-        let t = self.theme();
-        let (_, button) = timer_done_layout(&t);
-        if button.contains(x, y) {
-            return self.act(Action::TimerDoneOk, now);
-        }
-        Vec::new()
-    }
-
-    /// Back and power are the two keys that put the notice away, as they
-    /// put the restart menu away. The motor stops with it.
-    pub(super) fn timer_done_key(&mut self, key: Key, now: u64) -> Vec<Effect> {
-        match key {
-            Key::Back | Key::Power => self.act(Action::TimerDoneOk, now),
-            _ => Vec::new(),
-        }
-    }
-
-    /// The notice over the page: the page stands blurred and dimmed under
-    /// one card, with the minutes that finished said plainly and one key
-    /// to put it away. The blur is made once, as the restart menu's is.
-    pub(super) fn compose_timer_done(&mut self, out: &mut Canvas, f: &Fonts) {
-        let Some(done) = self.timer_done.as_ref() else { return };
-        let t = self.theme();
-        let m = &t.m;
         let lang = self.state.lang;
-        if self.timer_blur.is_none() {
-            self.timer_blur = Some(super::lock::soft_ground(out, m.w, m.h));
-        }
-        *out = self.timer_blur.as_ref().expect("made just above").clone();
-        out.dim(1.0 - TIMER_DONE_DIM);
-        let (card, button) = timer_done_layout(&t);
-        let radius = m.dp(26.0);
-        out.shadow_round_rect(card.x, card.y, card.w, card.h, radius, m.dp(16.0), t.pal.shadow);
-        out.fill_round_rect(card.x, card.y, card.w, card.h, radius, t.pal.card);
-        out.text_center(&f.heading, lang.pick(TIMER_DONE_TITLE), card.x + card.w / 2.0, card.y + m.dp(52.0), m.dp(24.0), t.pal.text);
-        let minutes = done.minutes;
         let said = tr!(
             lang,
             "时长为{minutes}分钟的计时已结束",
             "時長為{minutes}分鐘的計時已結束",
             "The {minutes}-minute timer has ended"
         );
-        out.text_center(&f.label, &said, card.x + card.w / 2.0, card.y + m.dp(98.0), m.dp(15.0), t.pal.value);
-        out.fill_round_rect(button.x, button.y, button.w, button.h, m.dp(20.0), t.pal.track);
-        out.text_center(&f.label, lang.pick(TIMER_DONE_OK), button.x + button.w / 2.0, button.y + button.h / 2.0, m.row_title_px, t.pal.text);
+        self.show_sheet(TIMER_DONE_TITLE, said, vec![(TIMER_DONE_OK, Action::TimerDoneOk)], now);
     }
 }
 
@@ -487,7 +411,7 @@ impl App {
 mod tests {
     use super::*;
     use crate::app::testing::*;
-    use crate::app::{App, Ctx, Frame, Screen, Switch, DEFAULT_TIMER_SOUND};
+    use crate::app::{App, Ctx, Effect, Frame, Screen, Switch, Touch, DEFAULT_TIMER_SOUND};
     use crate::canvas::Canvas;
     use crate::font::Fonts;
     use crate::theme::Theme;
@@ -723,12 +647,13 @@ mod tests {
         app.frame(&f, &i);
         let fx = app.tick(1);
         assert!(fx.contains(&Effect::TimerAlarm { on: true }), "the long note starts with the notice");
-        let notice = app.timer_done.as_ref().expect("the notice shows");
-        assert_eq!(notice.minutes, 1);
+        let sheet = app.sheet.as_ref().expect("the notice shows");
+        assert_eq!(sheet.body, "时长为1分钟的计时已结束");
+        assert_eq!(sheet.buttons.len(), 1, "one 确定 key");
 
         let fx = app.act(Action::TimerDoneOk, 2);
         assert_eq!(fx, vec![Effect::TimerAlarm { on: false }], "the note stops at 确定");
-        assert!(app.timer_done.is_none());
+        assert!(app.sheet.as_ref().unwrap().closing.is_some(), "the sheet falls back after the note stops");
         let clock = &app.state.clock;
         assert_eq!((clock.ruler, clock.span, clock.left), (0, 0, 0));
         assert!(clock.left_since.is_none());

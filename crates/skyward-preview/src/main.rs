@@ -385,7 +385,9 @@ fn main() -> Result<()> {
             ClockShot::TimerFour => app.tick(4_000),
             ClockShot::TimerFortyOne => app.tick(3_000),
             ClockShot::TimerEnd | ClockShot::TimerEndDark => app.tick(4_000),
-            ClockShot::TimerDone => app.tick(1),
+            // The timer ends on the first tick, then the sheet is given
+            // time to finish rising before the still is taken.
+            ClockShot::TimerDone => { app.tick(1); app.tick(400) },
             ClockShot::Idle | ClockShot::Paused | ClockShot::TimerIdle | ClockShot::TimerPaused => Vec::new(),
         };
         let path = out.join(format!("{name}.png"));

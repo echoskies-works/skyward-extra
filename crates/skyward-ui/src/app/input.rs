@@ -55,10 +55,10 @@ impl App {
         if !self.display_on {
             return Vec::new();
         }
-        // The timer's notice takes the finger while it stands: its key puts
-        // it away, stops the long motor note and clears the timer.
-        if self.timer_done.is_some() {
-            return self.timer_done_touch(ev, now);
+        // A sheet takes the finger while it stands: only its own keys
+        // answer, and the page under it is left alone.
+        if self.sheet.is_some() {
+            return self.sheet_touch(ev, f, now);
         }
         // The power menu takes the finger while it shows, over everything
         // else on the panel.
@@ -566,10 +566,10 @@ impl App {
         // Any button stops a gliding page, and brings a sliding one to rest.
         self.fling = None;
         self.end_turn();
-        // The timer's notice takes back and power while it stands, and
-        // stops the motor with it.
-        if self.timer_done.is_some() {
-            return self.timer_done_key(key, now);
+        // A sheet takes back and power while it stands; its first key
+        // answers for them, as the timer's 确定 does.
+        if self.sheet.is_some() {
+            return self.sheet_key(key, now);
         }
         // The power menu takes every key while it shows: the volume keys
         // move the light, the power key takes what is lit, back puts it away.

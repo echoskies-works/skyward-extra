@@ -138,7 +138,7 @@ impl App {
             // The timer's notice is put away by its own key: the long motor
             // note stops, and the timer goes back to nothing on its ruler.
             Action::TimerDoneOk => {
-                self.hide_timer_done();
+                self.close_sheet(now);
                 let clock = &mut self.state.clock;
                 clock.sweep_ruler(now);
                 clock.span = 0;

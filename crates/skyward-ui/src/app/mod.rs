@@ -38,6 +38,7 @@ mod backup;
 mod calc;
 mod clock;
 mod decrypt;
+mod dialog;
 mod draw;
 mod desktop;
 mod entry;
@@ -1276,10 +1277,10 @@ pub struct App {
     /// The page the power menu came over, softened: its ground, kept for as
     /// long as the menu stands, so blurring the page once is enough.
     power_blur: Option<Canvas>,
-    /// The timer-end notice over the page, with the length that finished.
-    timer_done: Option<clock::TimerDone>,
-    /// The page the timer notice came over, softened once for its ground.
-    timer_blur: Option<Canvas>,
+    /// The sheet over the page: one card at the foot, its ground only
+    /// darkened, and the key that puts it away. What the timer ended with
+    /// is written into its words, so no page holds a notice of its own.
+    sheet: Option<dialog::Sheet>,
     /// The lock screen, over whatever the panel shows from the moment it
     /// goes dark: the page it came over kept soft behind it, and the swipe
     /// up that puts it away.
@@ -1358,8 +1359,7 @@ impl App {
             chord: None,
             power_menu: None,
             power_blur: None,
-            timer_done: None,
-            timer_blur: None,
+            sheet: None,
             lock: None,
             behind: None,
             seek: None,
@@ -1525,6 +1525,8 @@ impl App {
         let blink = self.blink_at(now).filter(|_| self.display_on).map(|(_, next)| next);
         let chord = self.chord.map(|(_, at)| at + CHORD_MS);
         let menu = self.power_menu.as_ref().map(|m| m.since + power::POWER_MENU_MS);
+        // The sheet's rise and fall need their own frames, as the menu's does.
+        let sheet = self.sheet.as_ref().and_then(|s| s.deadline(now));
         // The clock's counts go on of their own accord, and the stopwatch
         // reads to the hundredth: the page is told to draw again a frame at
         // a time while the count on it runs, rather than waiting for the
@@ -1533,7 +1535,7 @@ impl App {
         // is not a count, so `running` does not see it.
         let busy = self.state.clock.running() || self.state.clock.ruler_sweeping(now);
         let ticking = (self.display_on && busy).then(|| now + clock::step(&self.state.clock, now));
-        [self.toast.as_ref().map(|t| t.1), self.volume_bar, easing, self.idle_due(), held, repeat, blink, darkens, chord, menu, ticking]
+        [self.toast.as_ref().map(|t| t.1), self.volume_bar, easing, self.idle_due(), held, repeat, blink, darkens, chord, menu, sheet, ticking]
             .into_iter()
             .flatten()
             .min()
@@ -1564,6 +1566,9 @@ impl App {
     pub fn tick(&mut self, now: u64) -> Vec<Effect> {
         let mut fx = Vec::new();
         self.now = now;
+        // A sheet whose key was pressed leaves once it has fallen to the
+        // foot, letting the page brighten behind it.
+        self.settle_sheet(now);
         // The key waiting for its partner in a screenshot, left alone long
         // enough, does what it does alone.
         if self.chord.is_some_and(|(_, at)| now >= at + CHORD_MS) {
