@@ -1016,15 +1016,22 @@ const RULER_EDGE: Rgba = Rgba::rgb(200, 205, 199);
 /// line is a shade deeper than the marks, as a pointer has to be.
 const RULER_INK: Rgba = Rgba::rgb(120, 149, 120);
 const RULER_MARK: Rgba = Rgba::rgb(76, 112, 76);
-/// Smartisan's own tick artwork: 70 px hold two minutes, a stroke every
-/// 7 px, the minute ones twice as tall as the eight between. The last six
-/// columns are empty on purpose — they are the gap that follows the final
-/// stroke, so laid end to end the spacing never tightens. It is recoloured
-/// for dark, but its spacing and stroke shape are the reference's.
-const RULER_DECO_PIC: &[u8] = include_bytes!("../../../resources/clock/rulerdeco.png");
-const RULER_DECO_MINUTE_PX: f32 = 35.0;
+/// The tick artwork, laid out to the phone's own ruler: 420 px hold two
+/// minutes, a stroke every 21 px — ten to the minute, one every six
+/// seconds — and every fifth stroke half again as tall, so a long mark
+/// stands on the minute and on the half minute both, the way Smartisan
+/// spaces them. The heights keep the reference's share of the bar: a long
+/// stroke 22 of its 193 px, a short one 14, and the first 13 px of the
+/// picture are the air the scale hangs below the bar's top edge. Laid end
+/// to end nothing tightens, and the last column carries no stroke so the
+/// first one of the next two minutes is never doubled. It is recoloured
+/// for dark; only its colours are ours.
+const RULER_DECO_PIC: &[u8] = include_bytes!("../../../resources/clock/rulerticks.png");
+const RULER_DECO_MINUTE_PX: f32 = 210.0;
+/// The artwork already holds the gap under the bar's top edge, so the
+/// scale starts at the picture's own first pixel.
 const RULER_TICK_TOP: f32 = 0.0;
-const RULER_NUM_PX: f32 = 11.5;
+const RULER_NUM_PX: f32 = 10.5;
 const RULER_NUM_CY: f32 = 0.42;
 /// In the dark the bar takes its colours from the CPU graph in Windows'
 /// Task Manager on a dark theme, which is the same problem solved: a sunken
@@ -1051,8 +1058,8 @@ const RULER_DARK_PATCH: Rgba = Rgba::rgb(38, 38, 38);
 /// theme's ruler ink, transparent ones included: bilinear scaling samples
 /// their RGB at a stroke's edge, and leaving them black gives the ticks a
 /// black fringe. The alpha stays as it was, and the picture is kept whole
-/// so the six empty columns that end it go on separating one pair of
-/// minutes from the next.
+/// so the empty stretch that ends it keeps one pair of minutes off the
+/// next.
 fn ruler_ticks(dark: bool) -> &'static Canvas {
     static LIGHT: std::sync::OnceLock<Canvas> = std::sync::OnceLock::new();
     static DARK: std::sync::OnceLock<Canvas> = std::sync::OnceLock::new();
