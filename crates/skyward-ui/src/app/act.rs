@@ -61,6 +61,11 @@ impl App {
                 self.state.music_filter = filter;
                 self.refresh();
             }
+            // The tasks page keeps one face at a time the same way.
+            Action::TasksFace(face) => {
+                self.state.tasks_face = face;
+                self.refresh();
+            }
             // The clock keeps one face at a time; the one shown takes the
             // page from the top, as a page opened afresh does.
             Action::ClockFace(face) => {
@@ -1047,9 +1052,10 @@ mod tests {
         // The two icons standing in for apps that are not built yet answer
         // with the one code for both and their own word: the code says what
         // kind of stop it was, the word says which app. Tapping one must not
-        // open anything first — there is nothing to open. The player used to
-        // answer this way too and now stands a page of its own.
-        for (tag, name) in [("browser", "浏览器"), ("tasks", "任务管理器"), ("weather", "天气")] {
+        // open anything first — there is nothing to open. The player and the
+        // tasks page used to answer this way too and now stand pages of
+        // their own.
+        for (tag, name) in [("browser", "浏览器"), ("weather", "天气")] {
             let fx = tap(&mut app, &f, &i, Action::NotReady(tag));
             assert!(
                 matches!(fx.as_slice(), [Effect::Stop { code: NOT_READY, reason: Some(said) }] if *said == tag),
@@ -1066,6 +1072,6 @@ mod tests {
         // crash screen, which is the one place it is needed.
         let mut tags = crate::pages::not_built();
         tags.sort();
-        assert_eq!(tags, ["browser", "tasks", "weather"]);
+        assert_eq!(tags, ["browser", "weather"]);
     }
 }

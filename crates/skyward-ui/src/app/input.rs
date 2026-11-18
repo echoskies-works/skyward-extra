@@ -37,6 +37,16 @@ impl App {
         self.refresh();
     }
 
+    /// Turn the tasks page to the face beside the one shown: the processes
+    /// first, the performance to their right, as its two words say.
+    pub(super) fn turn_tasks_face(&mut self, onward: bool) {
+        self.state.tasks_face = match (self.state.tasks_face, onward) {
+            (TasksFace::Process, true) => TasksFace::Performance,
+            _ => TasksFace::Process,
+        };
+        self.refresh();
+    }
+
     pub fn touch(&mut self, ev: Touch, f: &Fonts, now: u64) -> Vec<Effect> {
         self.now = now;
         // A finger on the dark panel lights nothing, as on the phone's own
@@ -252,6 +262,12 @@ impl App {
                             // the songs first, the one being played to their
                             // right.
                             self.turn_music_face(dx < 0.0);
+                            Drag::Face
+                        }
+                        _ if self.screen() == Screen::Tasks && dx.abs() > slop && dx.abs() > dy.abs() => {
+                            // And the tasks page's: the processes first, the
+                            // performance to their right.
+                            self.turn_tasks_face(dx < 0.0);
                             Drag::Face
                         }
                         _ if dy < -slop && dy.abs() > dx.abs() && y0 > m.h as f32 - m.dp(FOOT_DP) && !self.working() => {

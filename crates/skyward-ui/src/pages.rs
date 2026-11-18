@@ -4,7 +4,7 @@ use crate::app::{
     EraseStop, Field, FileKind,
     FileOp, FileTask, Fold, Folder, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, MusicFace, MusicFilter, Pick, Place, Rows,
     Screen,
-    SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, Switch, SystemsWork, Target, UsbDrive, UsbLink, Wipe, ADDABLE,
+    SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, Switch, SystemsWork, Target, TasksFace, UsbDrive, UsbLink, Wipe, ADDABLE,
     BACKUP_PARTS, CLOCK_MOST, DATA_ERASED, DATA_PARTITION, DEFAULT_TIMER_SOUND, DOWNLOADS, FASTBOOT_CHOICES, RULER_MINUTE_DP, SCREEN_OFF, TARGETS, TIME_ZONES,
     USB_DRIVE_UNREADABLE, USB_DRIVE_WANTED, WIPES, installs, starting,
 };
@@ -77,6 +77,7 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::ClockSettings => clock_settings(cx),
         Screen::ClockSound => clock_sounds(cx),
         Screen::Music => music(cx),
+        Screen::Tasks => tasks(cx),
         Screen::Home => home(cx),
         Screen::Settings => settings(cx),
         Screen::Personalization => personalization(cx),
@@ -280,13 +281,13 @@ const DESKTOP_APPS: [DeskApp; 8] = [
         color: Rgba::rgb(0x67, 0x6e, 0x7a),
         opens: Opens::Page(Screen::Calculator),
     },
-    // The player stands a page of its own, empty for now: it opens rather
-    // than stopping the system, so the way in is settled before there is
-    // anything to hear. The browser, the tasks page and the weather page
-    // are still nothing but their icons, and a touch on any of them stops
-    // the system with the code for an app that is not built, so the icon
-    // answers rather than doing nothing — the panel that catches the stop
-    // says which it was, in words.
+    // The player and the tasks page stand pages of their own, empty for now:
+    // they open rather than stopping the system, so the way in is settled
+    // before there is anything to hear or to read. The browser and the
+    // weather page are still nothing but their icons, and a touch on either
+    // stops the system with the code for an app that is not built, so the
+    // icon answers rather than doing nothing — the panel that catches the
+    // stop says which it was, in words.
     DeskApp {
         name: ["音乐", "音樂", "Music"],
         icon: Icon::Music,
@@ -303,7 +304,7 @@ const DESKTOP_APPS: [DeskApp; 8] = [
         name: ["任务管理器", "工作管理員", "Tasks"],
         icon: Icon::Tasks,
         color: Rgba::rgb(0x7a, 0x5c, 0xf0),
-        opens: Opens::NotYet("tasks"),
+        opens: Opens::Page(Screen::Tasks),
     },
     // The weather page is the same kind of nothing for now, and answers the
     // same way, so that a tap on it is never silence.
@@ -630,6 +631,51 @@ fn music_play(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang) {
     let (art, ox, oy) = widgets::chip_at(t, mid, cy, r);
     c.lay(&art, ox, oy, 1.0);
     icons::glyph(c, Icon::Play, mid, cy, r * 0.84, t.pal.chevron);
+}
+
+/// The tasks page's two faces, in the order it names them across its top:
+/// the processes the machine runs, and the performance it runs them at.
+const TASKS_FACES: [(TasksFace, Text); 2] =
+    [(TasksFace::Process, ["进程", "進程", "Processes"]), (TasksFace::Performance, ["性能", "效能", "Performance"])];
+
+/// The tasks page the desktop opens: the processes as a list, and the
+/// performance with the figures it will draw. Neither face has anything
+/// behind it yet — nothing is read off the phone — so each says where it
+/// stands rather than standing empty, as the player's list does.
+///
+/// It keeps the shape the clock, the calculator and the player take: the two
+/// words across the top, no `<` and no large title, the gear at the top right
+/// and a finger dragged level across the page turning to the face beside the
+/// one shown.
+pub fn tasks(cx: &Ctx) -> Frame {
+    let (t, f, l) = (cx.t, cx.f, cx.state.lang);
+    let m = &t.m;
+    let mut c = page(cx);
+    let mut out = Vec::new();
+
+    // The two words, the face shown in the page's ink and the other quiet,
+    // centred over what that face puts below them.
+    out.extend(face_tabs(&mut c, t, f, l, &TASKS_FACES, cx.state.tasks_face, Action::TasksFace));
+
+    let said = match cx.state.tasks_face {
+        TasksFace::Process => l.pick(["还没有读取进程", "還沒有讀取進程", "Processes are not read yet"]),
+        TasksFace::Performance => l.pick(["还没有读数", "還沒有讀數", "Nothing is measured yet"]),
+    };
+    c.text_center(&f.body, said, m.w as f32 / 2.0, m.h as f32 / 2.0, m.sub_px, t.pal.subtitle);
+
+    // No `<` and no large title: an app opened from the desktop leaves it the
+    // way the desktop's own apps do, and the two words across the top name
+    // it. The button at the right end is the clock's own gear, so the four
+    // apps carry one band of controls; this page has no settings behind it
+    // yet, so it answers a touch with nothing.
+    Frame {
+        back: false,
+        header: false,
+        bg: t.pal.bg,
+        button: Some((widgets::Glyph::Gear, Action::Idle)),
+        button_still: true,
+        ..Frame::new(t, c, out, "", m.content_top)
+    }
 }
 
 /// How many keys a calculator's row holds, and how many rows it holds.

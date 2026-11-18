@@ -59,6 +59,7 @@ mod scroll;
 mod skyward;
 mod state;
 mod systems;
+mod tasks;
 mod terminal;
 #[cfg(test)]
 mod testing;
@@ -84,6 +85,7 @@ pub use relabel::*;
 pub use skyward::*;
 pub use state::*;
 pub use systems::*;
+pub use tasks::*;
 pub use terminal::*;
 pub use update::*;
 pub use wipe::*;
@@ -109,6 +111,10 @@ pub enum Screen {
     /// The player the desktop opens: a page standing empty while nothing
     /// comes out of it yet, rather than an app that stops the system.
     Music,
+    /// The tasks page the desktop opens: the processes the machine runs and
+    /// the performance it runs them at, one face at a time. Neither is read
+    /// off the phone yet, so both say where they stand.
+    Tasks,
     Home,
     Settings,
     /// Sound, ring and wallpaper picked the way the user likes them: a
@@ -336,6 +342,8 @@ pub enum Action {
     /// Show this shelf of the player's list: all the songs, or the albums,
     /// the artists or the folders they are kept by.
     MusicFilter(MusicFilter),
+    /// Show this face of the tasks page: the processes, or the performance.
+    TasksFace(TasksFace),
     /// Show this face of the clock: the stopwatch, or the timer.
     ClockFace(ClockFace),
     /// Start the face shown counting, or stop it where it is.

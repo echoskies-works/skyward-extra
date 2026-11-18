@@ -73,8 +73,7 @@ pub enum Icon {
     Music,
     /// A globe stood on its rings, as a browser shows one.
     Browser,
-    /// Three bars of a graph standing on their line, as a tasks page shows
-    /// them.
+    /// A monitor on its foot, as a tasks page shows one.
     Tasks,
     /// A sun behind a cloud: what a weather page shows.
     Weather,
@@ -451,15 +450,24 @@ const BROWSER: &[Part] = &[
     add(Shape::Line("M14,5.2A4.4,8.8 0 0 1 14,22.8A4.4,8.8 0 0 1 14,5.2", 1.7)),
 ];
 
-/// Three bars of a graph standing on their line: what a tasks page shows.
-const TASKS: &[Part] = &[
-    // The bars, tallest last.
-    add(Shape::Fill("M8.2,21.0V14.4A1.4,1.4 0 0 1 11.0,14.4V21.0Z")),
-    add(Shape::Fill("M12.6,21.0V10.9A1.4,1.4 0 0 1 15.4,10.9V21.0Z")),
-    add(Shape::Fill("M17.0,21.0V7.2A1.4,1.4 0 0 1 19.8,7.2V21.0Z")),
-    // The line they stand on.
-    add(Shape::Fill("M6,21.0H22V22.2H6Z")),
-];
+/// A monitor on its foot: the screen, the neck under it and the stand, the
+/// screen's glass cut out of the frame. The drawing is the user's own
+/// `taskmgr.svg`, laid in this box at 19 units across: the drawing fills its
+/// own box edge to edge, so it is set a little smaller than the glyphs that
+/// keep a margin and reach the same size on a tile.
+///
+/// Both of its subpaths are written as one outline cut by the odd-even rule:
+/// the frame and the screen inside it are one path each, and where the two
+/// go round together the screen is left out.
+const TASKS: &[Part] = &[add(Shape::EvenOdd(
+    "M20.909,5.364L7.091,5.364A2.591,2.591 0 0 0 4.5,7.955L4.5,16.591\
+     A2.591,2.591 0 0 0 7.091,19.182L13.136,19.182L13.136,20.909L10.545,20.909\
+     A0.864,0.864 0 0 0 10.545,22.636L17.455,22.636A0.864,0.864 0 0 0 17.455,20.909L14.864,20.909\
+     L14.864,19.182L20.909,19.182A2.591,2.591 0 0 0 23.5,16.591L23.5,7.955\
+     A2.591,2.591 0 0 0 20.909,5.364ZM21.773,16.591A0.864,0.864 0 0 1 20.909,17.455L7.091,17.455\
+     A0.864,0.864 0 0 1 6.227,16.591L6.227,7.955A0.864,0.864 0 0 1 7.091,7.091L20.909,7.091\
+     A0.864,0.864 0 0 1 21.773,7.955L21.773,16.591Z",
+))];
 
 /// A sun behind a cloud: what a weather page shows. Drawn the stock way
 /// rather than copied, since the stock Settings has no weather of its own:

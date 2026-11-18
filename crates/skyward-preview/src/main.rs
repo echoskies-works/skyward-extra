@@ -18,7 +18,7 @@ use skyward_ui::app::{
     Lap,
     MountFailure, MountRow, MusicFace, MusicFilter, Part, PartKind, PartStop, Pick, Place, Screen, SkywardEnd, SkywardJob, SkywardStage, Source,
     SystemChoice,
-    SystemsWork, TermEnd, Touch, UsbDrive, UsbLink, SCREEN_OFF,
+    SystemsWork, TasksFace, TermEnd, Touch, UsbDrive, UsbLink, SCREEN_OFF,
 };
 use skyward_ui::widgets::{self, Bar, Bolt, Cap, Layer};
 use skyward_ui::{editor, fmt, pages, Canvas, Ctx, Fonts, Lang, Theme};
@@ -460,6 +460,26 @@ fn main() -> Result<()> {
     let path = out.join("00-02-calculator-convert-light.png");
     write_png(&path, &c)?;
     println!("wrote {}", path.display());
+
+    // The tasks page's two faces, neither with anything read off the phone
+    // yet: the processes as a list that holds none, and the performance with
+    // the figures it will draw.
+    let tasks: [(&str, TasksFace, bool); 3] = [
+        ("00-10-tasks-process-light", TasksFace::Process, false),
+        ("00-10-tasks-performance-light", TasksFace::Performance, false),
+        ("00-10-tasks-process-dark", TasksFace::Process, true),
+    ];
+    for (name, face, dark) in tasks {
+        let mut app = opened(Screen::Tasks, w, h, ppd);
+        app.state.tasks_face = face;
+        app.state.dark = dark;
+        let _ = app.tick(0);
+        let mut c = Canvas::new(w, h);
+        app.compose(&mut c, &fonts, &info, "21:40", "11月16日 周一", 200);
+        let path = out.join(format!("{name}.png"));
+        write_png(&path, &c)?;
+        println!("wrote {}", path.display());
+    }
 
     // The lock screen, the page under it kept soft: over a page of the
     // recovery, in both themes, since the veil lightens a light page and
