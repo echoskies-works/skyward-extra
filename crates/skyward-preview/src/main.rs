@@ -1671,6 +1671,57 @@ fn main() -> Result<()> {
         eprintln!("{} of the moments were not drawn: {}", missed.len(), missed.join(", "));
     }
 
+    // A page growing out of the desktop icon it was tapped on, and folding
+    // back into it on the way home. Both run on the same spring, so each is
+    // caught four times: about a fifth, a half, three quarters and nine
+    // tenths of the way. Going back is the same tree read the other way
+    // round — the page whole, then three quarters, a half and a fifth of
+    // it, the desktop showing through the rest.
+    for (name, ms, back) in [
+        ("00-11-launch-1-light", 40u64, false),
+        ("00-11-launch-2-light", 80, false),
+        ("00-11-launch-3-light", 130, false),
+        ("00-11-launch-4-light", 190, false),
+        ("00-11-back-1-light", 40, true),
+        ("00-11-back-2-light", 80, true),
+        ("00-11-back-3-light", 130, true),
+        ("00-11-back-4-light", 190, true),
+    ] {
+        let mut app = on_wallpaper(Screen::Desktop, App::new(Screen::Desktop, w, h, ppd));
+        app.state.lang = lang;
+        app.state.data = Data::Open;
+        app.set_screen_corners(cfg.display.corner_radius as f32);
+        let mut c = Canvas::new(w, h);
+        // The desktop has to have been on screen before a page can leave
+        // it: a page leaves whatever was last drawn.
+        app.compose(&mut c, &fonts, &info, CLOCK, "11月16日 周一", 0);
+        let tile = {
+            let fr = app.frame(&fonts, &info);
+            fr.launches.iter().find(|(s, _)| *s == Screen::Clock).map(|(_, r)| *r).expect("the clock is on the desktop")
+        };
+        let (x, y) = tile.centre();
+        app.touch(Touch::Down(x, y), &fonts, 1000);
+        app.touch(Touch::Up, &fonts, 1000);
+        // The first frame of the move sets its spring going.
+        app.compose(&mut c, &fonts, &info, CLOCK, "11月16日 周一", 1000);
+        let now = if back {
+            // Let it open all the way, then go home by the key.
+            app.compose(&mut c, &fonts, &info, CLOCK, "11月16日 周一", 3000);
+            app.frame(&fonts, &info);
+            app.key(Key::Back, 4000);
+            app.key_up(Key::Back, 4000);
+            app.compose(&mut c, &fonts, &info, CLOCK, "11月16日 周一", 4000);
+            4000 + ms
+        } else {
+            1000 + ms
+        };
+        let mut shot = Canvas::new(w, h);
+        app.compose(&mut shot, &fonts, &info, CLOCK, "11月16日 周一", now);
+        let path = out.join(format!("{name}.png"));
+        write_png(&path, &shot)?;
+        println!("wrote {}", path.display());
+    }
+
     // The home page's card with each notice it gives: a battery too low to
     // install on, an update waiting to merge, and a restart into the other
     // slot; the data partition still shut.
