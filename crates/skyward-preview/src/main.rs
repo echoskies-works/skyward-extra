@@ -1743,6 +1743,38 @@ fn main() -> Result<()> {
         println!("wrote {}", path.display());
     }
 
+    // The battery running down, said on a card: one for each of the three
+    // steps — twenty per cent, ten, three — over the desktop, the card
+    // where a finger finds it once it has risen. The reading is fed in the
+    // way the phone feeds it, and the bar above carries the same number the
+    // card does, so the two agree as they would on a phone.
+    let lows: [(&str, u8); 3] = [
+        ("00-15-battery-20-light", 20),
+        ("00-15-battery-10-light", 10),
+        ("00-15-battery-3-light", 3),
+    ];
+    for (name, level) in lows {
+        let mut app = on_wallpaper(Screen::Desktop, App::new(Screen::Desktop, w, h, ppd));
+        app.state.lang = lang;
+        app.state.data = Data::Open;
+        let charge = info.battery.clone().expect("the phone's battery");
+        let down = DeviceInfo {
+            battery: Some(Battery { level, charge: Charge::Discharging, plugged: false, ..charge }),
+            ..info.clone()
+        };
+        // The panel is ticked first, so the card's rise starts from the
+        // moment the phone would have said it, then ticked again to the
+        // moment it stands still.
+        let _ = app.tick(0);
+        app.battery(down.battery.as_ref());
+        let _ = app.tick(800);
+        let mut shot = Canvas::new(w, h);
+        app.compose(&mut shot, &fonts, &down, "21:40", "11月16日 周一", 800);
+        let path = out.join(format!("{name}.png"));
+        write_png(&path, &shot)?;
+        println!("wrote {}", path.display());
+    }
+
     // A page growing out of the desktop icon it was tapped on, and folding
     // back into it on the way home. Both run on the same spring, so each is
     // caught four times: about a fifth, a half, three quarters and nine
