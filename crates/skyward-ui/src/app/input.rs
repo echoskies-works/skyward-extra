@@ -150,7 +150,7 @@ impl App {
             self.tracker.add(now, y);
             self.stir(now);
             self.shade_down();
-            self.drag = Drag::Shade { from: y };
+            self.drag = Drag::Shade { from: y, last: y };
             return Vec::new();
         }
         let scroll = self.top().1;
@@ -442,11 +442,11 @@ impl App {
                 // A finger on the panel, which is moved by its own path in
                 // `shade_touch`; here only for a pull that began on the bar
                 // and has not yet shown the panel at all.
-                Drag::Shade { from } => {
+                Drag::Shade { from, .. } => {
                     let open = (y - from) / self.shade_geom().panel_h().max(1.0);
                     self.shade_pull(open);
                     self.tracker.add(now, y);
-                    self.drag = Drag::Shade { from };
+                    self.drag = Drag::Shade { from, last: y };
                 }
                 Drag::Idle => {}
             },

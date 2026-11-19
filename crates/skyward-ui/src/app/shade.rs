@@ -250,6 +250,38 @@ impl App {
         self.dirty = true;
     }
 
+    /// How far the notices are scrolled down the panel.
+    pub(super) fn shade_scrolled(&self) -> f32 {
+        self.shade.as_ref().map_or(0.0, |s| s.scroll)
+    }
+
+    /// Scroll the notices by `delta` pixels, as far as they go. The panel's
+    /// own key stays where it is: only the notices move under it.
+    fn shade_scroll_by(&mut self, delta: f32) {
+        let max = self.shade_max_scroll();
+        let Some(shade) = self.shade.as_mut() else { return };
+        let next = (shade.scroll + delta).clamp(0.0, max);
+        if (next - shade.scroll).abs() < 0.5 {
+            return;
+        }
+        shade.scroll = next;
+        // The notices are drawn with their scroll in them: drawn again
+        // rather than moved, since the cards come and go at the edges.
+        shade.body = None;
+        self.dirty = true;
+    }
+
+    /// How far the notices may be scrolled: all of them, less the room the
+    /// panel has for them.
+    fn shade_max_scroll(&self) -> f32 {
+        let geom = self.shade_geom();
+        let m = &self.theme().m;
+        let pitch = m.dp(CARD_H_DP) + m.dp(CARD_GAP_DP);
+        let content =
+            m.dp(BODY_TOP_DP) + self.notifier.len() as f32 * pitch + m.dp(CLEAR_H_DP) + m.dp(CLEAR_GAP_DP);
+        (content - geom.body_h).max(0.0)
+    }
+
     /// Let go: take it out or send it back, by how far it came and how
     /// quickly, and settle it there.
     pub(super) fn shade_release(&mut self, now: u64, velocity: f32) {
@@ -485,7 +517,7 @@ impl App {
                 // The bar the panel comes from still begins a pull with the
                 // panel out: a finger there drags it on down or back up.
                 if y < geom.top {
-                    self.drag = Drag::Shade { from: y };
+                    self.drag = Drag::Shade { from: y, last: y };
                     return fx;
                 }
                 if let Some(i) = geom.tiles.iter().position(|(r, _)| r.contains(x, y)) {
@@ -508,14 +540,22 @@ impl App {
                     fx.extend(self.act(action, now));
                     return fx;
                 }
-                self.drag = Drag::Shade { from: y };
+                self.drag = Drag::Shade { from: y, last: y };
             }
             Touch::Move(x, y) => match std::mem::replace(&mut self.drag, Drag::Idle) {
-                Drag::Shade { from } => {
-                    let open = (y - from) / geom.panel_h().max(1.0);
-                    self.shade_pull(open);
+                Drag::Shade { from, last } => {
+                    // Out whole, the panel is a list: a finger on it scrolls
+                    // what it holds, and only a pull down on a list already
+                    // at its top takes the panel away.
+                    let whole = self.shade_open(now) >= 1.0;
+                    if whole && (y < last || self.shade_scrolled() > 0.0) {
+                        self.shade_scroll_by(last - y);
+                    } else {
+                        let open = (y - from) / geom.panel_h().max(1.0);
+                        self.shade_pull(open);
+                    }
                     self.tracker.add(now, y);
-                    self.drag = Drag::Shade { from };
+                    self.drag = Drag::Shade { from, last: y };
                 }
                 Drag::Slider(which, track) => {
                     self.set_slider(&t, which, track, x);
@@ -526,7 +566,14 @@ impl App {
             Touch::Up => {
                 if let Drag::Shade { .. } = std::mem::replace(&mut self.drag, Drag::Idle) {
                     let speed = self.tracker.velocity(now);
-                    self.shade_release(now, speed);
+                    // A finger lifted off a list it has scrolled leaves the
+                    // panel out: a flick up there is meant for the list, not
+                    // for putting the panel away.
+                    if self.shade_open(now) >= 1.0 && self.shade_scrolled() > 0.0 {
+                        self.shade_pull(1.0);
+                    } else {
+                        self.shade_release(now, speed);
+                    }
                 }
             }
         }
@@ -856,5 +903,27 @@ mod tests {
         app.notify(Notification::event(Origin::System, "battery", "电量偏低", "剩 15%"));
         assert!(app.banner.is_none(), "the locked phone keeps it to the list");
         assert_eq!(app.notifier.len(), 1);
+    }
+
+    /// A finger on a panel already out scrolls the notices rather than
+    /// putting the panel away, and the panel stays out when it lifts.
+    #[test]
+    fn a_finger_on_a_full_panel_scrolls_its_notices() {
+        let f = crate::font::bundled();
+        let mut app = App::new(Screen::Desktop, 400, 800, 2.0);
+        for i in 0..12u32 {
+            let mut notice = Notification::event(Origin::System, "row", "标题", "正文");
+            notice.id = i;
+            app.notifier.post(notice);
+        }
+        pulled(&mut app, &f);
+        assert!(app.shade_max_scroll() > 0.0, "there is more than the panel holds");
+        let before = app.shade_scrolled();
+        app.touch(Touch::Down(200.0, 700.0), &f, 1_100);
+        app.touch(Touch::Move(200.0, 600.0), &f, 1_150);
+        assert!(app.shade_scrolled() > before, "the notices moved up the panel");
+        app.touch(Touch::Up, &f, 1_200);
+        app.tick(2_000);
+        assert_eq!(app.shade_open(2_000), 1.0, "and the panel is still out");
     }
 }

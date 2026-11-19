@@ -745,8 +745,10 @@ enum Drag {
     /// `from`: past the mark it goes away, short of it, back down.
     Lock { from: f32 },
     /// A finger on the status bar, or on the panel it has out, pulling it
-    /// down or back up from where it came down at `from`.
-    Shade { from: f32 },
+    /// down or back up from where it came down at `from`. `last` is where
+    /// it was on the move before, so a pull on a list already out scrolls
+    /// the list rather than moving the panel.
+    Shade { from: f32, last: f32 },
 }
 
 /// Where the keys are on a page.
