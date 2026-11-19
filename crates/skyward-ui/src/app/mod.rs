@@ -35,6 +35,7 @@ use skyward_vab::{BootSlots, Hold, Slot, SnapshotState, Standing};
 
 mod act;
 mod backup;
+mod battery;
 mod calc;
 mod clock;
 mod decrypt;
@@ -1426,6 +1427,16 @@ pub struct App {
     /// left behind: no notice put, one standing, or one a finger took away.
     clock_stopwatch: notify::Shown,
     clock_timer: notify::Shown,
+    /// How far the battery has been told to be running down: none, or the
+    /// step of `battery::BATTERY_LEVELS` it last said. It only climbs, so a
+    /// battery sitting at a level is told once, and it climbs back to none
+    /// only once the charger has taken it above `battery::RECOVERED`.
+    battery_told: u8,
+    /// What the battery has left to say and has not yet: the level it ran
+    /// down to while the panel was busy — a card already up, the phone on
+    /// the lock, work under way — and the card waits for the way to clear
+    /// rather than covering what is on the panel.
+    battery_pending: Option<u8>,
     /// The page the panel showed before it went dark, a pixel of every ten,
     /// kept sharp: the lock's ground when there is no wallpaper. None until
     /// a page has been shown.
@@ -1519,6 +1530,8 @@ impl App {
             notifier: Notifier::default(),
             clock_stopwatch: notify::Shown::No,
             clock_timer: notify::Shown::No,
+            battery_told: 0,
+            battery_pending: None,
             behind: None,
             seek: None,
             knob: None,
@@ -1961,6 +1974,9 @@ impl App {
         // the counts have been advanced, so a timer that has just ended puts
         // its notice away in the same frame the notice of its end goes up.
         self.sync_clock_notices();
+        // A battery that ran down while the panel had something else to say
+        // says it as soon as the way is clear.
+        self.say_battery(now);
         // A pull at the foot of the screen, let go, carries on to where it
         // leads or back where it came from.
         fx.extend(self.settle_foot(now));

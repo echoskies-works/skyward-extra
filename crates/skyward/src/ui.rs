@@ -1203,6 +1203,11 @@ struct Pages<'a> {
     dump: Option<&'a Path>,
     app: App,
     info: skyward_info::DeviceInfo,
+    /// Whether the pages have been told a battery at all. The first read is
+    /// told them whatever it says, even where it is what they came up
+    /// holding: a phone started on a nearly empty battery must say so before
+    /// the level changes.
+    battery_said: bool,
     unread: Untaken,
     fonts: Fonts,
     surface: KmsSurface,
@@ -1487,6 +1492,7 @@ impl<'a> Pages<'a> {
             dump,
             app,
             info,
+            battery_said: false,
             unread,
             fonts,
             surface,
@@ -1810,9 +1816,11 @@ impl<'a> Pages<'a> {
                     }
                     untaken(&mut self.unread.battery, "the battery", battery.as_ref().err())?;
                     if let Ok(battery) = battery
-                        && battery != self.info.battery
+                        && (!self.battery_said || battery != self.info.battery)
                     {
                         plug(&mut self.app, &self.info.battery, &battery, now)?;
+                        self.app.battery(battery.as_ref());
+                        self.battery_said = battery.is_some();
                         self.info.battery = battery;
                         self.app.refresh();
                     }
@@ -1827,6 +1835,7 @@ impl<'a> Pages<'a> {
                         && all != self.info
                     {
                         plug(&mut self.app, &self.info.battery, &all.battery, now)?;
+                        self.app.battery(all.battery.as_ref());
                         self.info = all;
                         self.app.refresh();
                     }
