@@ -1721,6 +1721,28 @@ fn main() -> Result<()> {
         println!("wrote {}", path.display());
     }
 
+    // The clock's two counts running with its page left behind: the first
+    // notices the panel is told of by the phone's own state rather than by
+    // a stand-in — one row for each, and a tap on either goes back to the
+    // clock. The panel is out whole, as a finger would have left it.
+    {
+        let mut app = on_wallpaper(Screen::Desktop, App::new(Screen::Desktop, w, h, ppd));
+        app.state.lang = lang;
+        app.state.data = Data::Open;
+        app.state.clock.stop_since = Some(0);
+        app.state.clock.span = 60_000;
+        app.state.clock.left = 60_000;
+        app.state.clock.left_since = Some(0);
+        app.tick(1_000);
+        app.shade_down();
+        app.shade_pull(1.0);
+        let mut shot = Canvas::new(w, h);
+        app.compose(&mut shot, &fonts, &info, "21:40", "11月16日 周一", 1_000);
+        let path = out.join("00-14-clock-away-light.png");
+        write_png(&path, &shot)?;
+        println!("wrote {}", path.display());
+    }
+
     // A page growing out of the desktop icon it was tapped on, and folding
     // back into it on the way home. Both run on the same spring, so each is
     // caught four times: about a fifth, a half, three quarters and nine
