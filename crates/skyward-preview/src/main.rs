@@ -523,6 +523,12 @@ fn main() -> Result<()> {
         app.state.data = Data::Open;
         app.state.dark = dark;
         if notices {
+            // Stand-in notices, not a report of anything that happened: the
+            // app posts nothing of its own yet, so a shot of the panel would
+            // hold an empty list and show nothing of how a card reads. One of
+            // each shape — work under way, an event, a reading of the phone,
+            // work that did not go — and they are kept for the sharing
+            // pictures until the real sources are wired in.
             app.notify(Notification::progress(Origin::System, "flash", "正在刷入 system", "skyward-extra-fuxi.img", 42, 100));
             app.notify(Notification::event(Origin::App("clock"), "timer", "计时结束", "10 分钟到了"));
             app.notify(Notification::event(Origin::System, "battery", "电量偏低", "剩 15%，充电至 15% 以上才能安装"));
@@ -1701,7 +1707,8 @@ fn main() -> Result<()> {
     }
 
     // A notice that has just come, standing under the status bar over the
-    // page: caught as it slips down, and again where it holds.
+    // page: caught as it slips down, and again where it holds. The notice is
+    // a stand-in like the ones in the panel above, for the same reason.
     for (name, ms) in [("00-13-banner-in-light", 90u64), ("00-13-banner-light", 400)] {
         let mut app = on_wallpaper(Screen::Desktop, App::new(Screen::Desktop, w, h, ppd));
         app.state.lang = lang;
