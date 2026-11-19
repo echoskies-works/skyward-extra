@@ -703,6 +703,31 @@ pub fn tile_graded(c: &mut Canvas, x: f32, y: f32, size: f32, top: Rgba, bottom:
     }
 }
 
+/// Darken the tile at `x`, `y`, `size` by `alpha`, inside the very outline
+/// [`tile_graded`] fills: the corner's curve comes from the same coverage,
+/// so what darkens is the tile and nothing of the wallpaper around it. The
+/// glyph and the name under the tile are left alone.
+pub fn tile_dim(c: &mut Canvas, x: f32, y: f32, size: f32, alpha: f32) {
+    let (left, up) = (x.round() as i32, y.round() as i32);
+    let side = size.ceil() as i32;
+    let (rows, cols) = (c.held(), c.cols());
+    let (y0, y1) = (up.max(rows.start as i32), (up + side).min(rows.end as i32));
+    let (x0, x1) = (left.max(cols.start as i32), (left + side).min(cols.end as i32));
+    if y0 >= y1 || x0 >= x1 {
+        return;
+    }
+    let cover = coverage(Art::Tile, size);
+    let ink = Rgba::rgb(0, 0, 0);
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let a = cover.alpha[((y - up) as u32 * cover.side + (x - left) as u32) as usize];
+            if a > 0 {
+                c.blend(x, y, ink, a as f32 / 255.0 * alpha);
+            }
+        }
+    }
+}
+
 /// What is drawn from outlines: a tile, or a glyph.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Art {

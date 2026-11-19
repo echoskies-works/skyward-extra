@@ -1775,6 +1775,27 @@ fn main() -> Result<()> {
         println!("wrote {}", path.display());
     }
 
+    // A desktop icon under a finger: a moment after it lands the tile
+    // darkens inside its own square, the glyph and the name under it left
+    // as they are. One shot only — the desktop is black whichever theme is
+    // on, so a dark one would say the same.
+    {
+        let mut app = on_wallpaper(Screen::Desktop, App::new(Screen::Desktop, w, h, ppd));
+        app.state.lang = lang;
+        app.state.data = Data::Open;
+        let tile = {
+            let fr = app.frame(&fonts, &info);
+            fr.tiles.iter().find(|(a, _)| *a == Action::Open(Screen::Clock)).expect("the clock's tile").1
+        };
+        let (x, y) = tile.centre();
+        app.touch(Touch::Down(x, y), &fonts, 0);
+        let mut shot = Canvas::new(w, h);
+        app.compose(&mut shot, &fonts, &info, "21:40", "11月16日 周一", 600);
+        let path = out.join("00-16-icon-hold-light.png");
+        write_png(&path, &shot)?;
+        println!("wrote {}", path.display());
+    }
+
     // A page growing out of the desktop icon it was tapped on, and folding
     // back into it on the way home. Both run on the same spring, so each is
     // caught four times: about a fifth, a half, three quarters and nine

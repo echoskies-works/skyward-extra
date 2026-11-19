@@ -290,7 +290,7 @@ impl App {
             // page sliding in from the right has yet to reach. A page rising
             // is drawn across whole, since it comes up rather than in.
             let wide = match (slide, &self.turn) {
-                (Motion::Move { at, .. }, Some(turn)) if !turn.back && !turn.rise && self.row_press.is_none() => {
+                (Motion::Move { at, .. }, Some(turn)) if !turn.back && self.row_press.is_none() => {
                     (self.w - at.clamp(0, self.w as i32) as u32).max(self.cols + self.w / 4)
                 }
                 _ => self.w,
@@ -618,6 +618,15 @@ impl App {
                 self.spare.clear();
             }
             press_row(out);
+            // The desktop's icon under the finger darkens where it stands,
+            // inside its own square: nothing on the page moves with it, and
+            // the glyph and the name under it are left as they are.
+            if let Some(press) = self.icon_press.filter(|_| screen == Screen::Desktop) {
+                let level = press.level(self.now);
+                if level > 0.0 {
+                    icons::tile_dim(out, press.rect.x, press.rect.y - offset, press.rect.w, ICON_PRESS_DIM * level);
+                }
+            }
             if let Some(fold) = &frame.fold {
                 let (_, words) = self.search_words.as_ref().expect("a folding search bar's words are made with its page");
                 fold.draw(out, t, words, offset);
@@ -708,6 +717,17 @@ impl App {
         Rect::new(icon.x, top, icon.w, h)
     }
 
+    /// The rect a page starts from when there is no icon to come out of, or
+    /// to go back into: a square a tile's width at the middle of the
+    /// screen, its height following the screen's shape as one out of an
+    /// icon does, so the page never changes shape while it grows or folds.
+    fn zoom_start_middle(&self) -> Rect {
+        let (w, h) = (self.w as f32, self.h as f32);
+        let side = self.theme().m.dp(pages::DESKTOP_TILE_DP);
+        let height = side * (h / w);
+        Rect::new((w - side) / 2.0, (h - height) / 2.0, side, height)
+    }
+
     /// Where a page sliding in over the page left, or the page left
     /// sliding off, stands at `now`: across the screen, up it, or growing
     /// out of a desktop icon. Nothing once the move is over. See [`Turn`].
@@ -715,17 +735,21 @@ impl App {
         if self.turn.is_none() {
             return Motion::None;
         }
-        let zoom = self.turn.as_ref().and_then(|t| t.icon);
+        // The move goes up and down — a page opened from the desktop, and
+        // one going back to it — or across the screen between pages.
+        let up = self.turn.as_ref().is_some_and(|t| t.rise);
         let back = self.turn.as_ref().is_some_and(|t| t.back);
         if self.turn.as_ref().is_some_and(|t| t.spring.is_none()) {
-            let made = match zoom {
+            let made = if up {
                 // Both ways run from 1000 down to 0. Opening reads it as
                 // how much of the page shows (0→1, growing out of the
                 // icon); going back as how much is left (1→0, the page
                 // shrinking into the icon while the desktop shows through).
-                Some(_) => Spring::new(now, 1000.0, 0.0, ZOOM_PERIOD),
-                None if back => Spring::new(now, -1000.0, 0.0, BACK_PERIOD),
-                None => Spring::new(now, 1000.0, -OPEN_SPEED * 1000.0, OPEN_PERIOD),
+                Spring::new(now, 1000.0, 0.0, ZOOM_PERIOD)
+            } else if back {
+                Spring::new(now, -1000.0, 0.0, BACK_PERIOD)
+            } else {
+                Spring::new(now, 1000.0, -OPEN_SPEED * 1000.0, OPEN_PERIOD)
             };
             self.turn.as_mut().expect("turn above").spring = Some(made);
         }
@@ -735,8 +759,7 @@ impl App {
             self.backdrop = self.turn.take().map(|t| t.left);
             return Motion::None;
         }
-        let back = self.turn.as_ref().is_some_and(|t| t.back);
-        if let Some(icon) = zoom {
+        if up {
             // How much of the page shows, 0 at the icon and 1 at the whole
             // screen. Opening goes 0→1 as the spring falls 1000→0; going
             // back the spring falls the same way, so read it 1→0 and the
@@ -744,7 +767,14 @@ impl App {
             // the rect and the fade use this one measure.
             let q = if back { x / 1000.0 } else { (1000.0 - x) / 1000.0 };
             let q = q.clamp(0.0, 1.0);
-            let start = self.zoom_start(icon);
+            // The icon it came out of, or a square at the middle of the
+            // screen where there is none: a page opened some other way has
+            // no icon to come from, and going back, the desktop may no
+            // longer stand where it did.
+            let start = match self.turn.as_ref().and_then(|t| t.icon) {
+                Some(icon) => self.zoom_start(icon),
+                None => self.zoom_start_middle(),
+            };
             let (sw, sh) = (self.w as f32, self.h as f32);
             let lerp = |from: f32, to: f32| from + (to - from) * q;
             let rect = Rect::new(lerp(start.x, 0.0), lerp(start.y, 0.0), lerp(start.w, sw), lerp(start.h, sh));
@@ -753,13 +783,6 @@ impl App {
         // Where the page in front stands, in screen widths from the left
         // edge.
         let along = if back { 1.0 + x / 1000.0 } else { x / 1000.0 };
-        if self.turn.as_ref().is_some_and(|t| t.rise) {
-            // Up and down: the row of the screen the page's top edge stands
-            // on, from the foot of the screen to the head of it as it comes
-            // in, and back down again as it goes.
-            let h = self.h as f32;
-            return Motion::Move { at: (along * h).round() as i32, shift: 0, dim: BEHIND_DIM * (1.0 - along) };
-        }
         let w = self.w as f32;
         Motion::Move { at: (along * w).round() as i32, shift: (BEHIND_SHIFT * w * (1.0 - along)).round() as i32, dim: BEHIND_DIM * (1.0 - along) }
     }

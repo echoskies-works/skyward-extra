@@ -13,6 +13,7 @@ use crate::focus::{self, Group, Spot, Stop};
 use crate::font::Fonts;
 use crate::geom::Rect;
 use crate::glow::{self, GlowClock};
+use crate::icons;
 use crate::lang::{Lang, Text};
 use crate::motion::{self, Spring};
 use crate::pages::{self, Band, Ctx};
@@ -824,6 +825,10 @@ const ROW_PRESS_PERIOD: f32 = 0.18;
 /// A row let go before it showed pressed shows pressed from the lift this
 /// long, as Android shows a quick tap.
 const QUICK_TAP_MS: u64 = 64;
+/// How dark a desktop icon goes under a finger, at full: deeper than a
+/// row's own darkening, which lies under words on a card, because an icon
+/// is a lit tile with nothing over it and reads faint at the row's depth.
+const ICON_PRESS_DIM: f32 = 0.22;
 /// A page opening slides in on a critically damped spring of this period,
 /// set off already moving this fast, in screen widths a second; a page
 /// going back slides off on a spring of this period, from rest. Both fitted
@@ -1102,18 +1107,19 @@ impl Morph {
     }
 }
 
-/// A row of the page under a finger, darkening behind its words and icon:
-/// where it lies on the page, when it starts darkening, and when it starts
-/// fading back.
+/// A control under a finger, darkening behind it a moment after the finger
+/// lands: a row of the page behind its words and icon, or one of the
+/// desktop's icons in the square it is drawn on. Where it lies on the
+/// screen, when it starts darkening, and when it starts fading back.
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct RowPress {
+struct Darken {
     rect: Rect,
     rise: u64,
     fall: Option<u64>,
 }
 
-impl RowPress {
-    /// How dark the row is at `now`, from 0 to 1.
+impl Darken {
+    /// How dark it is at `now`, from 0 to 1.
     fn level(&self, now: u64) -> f32 {
         if now < self.rise {
             return 0.0;
@@ -1462,8 +1468,11 @@ pub struct App {
     morph: Option<Morph>,
     /// The row a finger holds down, or let go of while it fades back, and
     /// the part of the page it lies on as drawn and as drawn held down.
-    row_press: Option<RowPress>,
+    row_press: Option<Darken>,
     row_art: Option<(Canvas, Canvas)>,
+    /// The desktop's icon a finger holds down, or let go of while it fades
+    /// back: the square it is drawn on, darkened where it stands.
+    icon_press: Option<Darken>,
     /// How the page showed on the last frame, while it can be drawn so
     /// again: until it is rendered anew.
     shown: Option<View>,
@@ -1576,6 +1585,7 @@ impl App {
             morph: None,
             row_press: None,
             row_art: None,
+            icon_press: None,
             shown: None,
             turn: None,
             desk_icon: None,
@@ -1678,6 +1688,7 @@ impl App {
                 || self.turn.is_some()
                 || self.foot.as_ref().is_some_and(|f| f.spring.is_some())
                 || self.row_press.is_some_and(|p| p.changing(now) || p.gone(now))
+                || self.icon_press.is_some_and(|p| p.changing(now) || p.gone(now))
                 || self.glowing());
         // The content going dark or coming up, and the charging screen's
         // tide, move a frame at a time while the panel is lit.

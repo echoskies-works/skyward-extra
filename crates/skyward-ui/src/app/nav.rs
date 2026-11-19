@@ -48,7 +48,11 @@ impl App {
         self.end_turn();
         let Some(view) = self.shown.take() else { return };
         let mut left = self.backdrop.take().unwrap_or_else(|| Canvas::new(self.w, self.h));
-        // The `<` comes up with the finger, before its page goes.
+        // The `<` comes up with the finger, before its page goes; an icon
+        // held lets go too, since the desktop is drawn here once and kept as
+        // the picture the page moves over, and anything still darkening
+        // would be kept dark for good.
+        self.icon_press = None;
         let view = View { pressing: None, ..view };
         let t = self.theme();
         self.paint_page(&mut left, &t, None, &view);

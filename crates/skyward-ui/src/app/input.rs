@@ -242,6 +242,9 @@ impl App {
                     .filter(|&(a, r)| self.frame.as_ref().is_some_and(|fr| fr.hits.contains(&Hit { rect: r, action: a })))
                     .filter(|&(a, r)| row_wide(&t, r) && !matches!(a, Action::Open(Screen::Search) | Action::Confirm(_) | Action::TypeInto(_)))
                     .map(|(_, r)| r);
+                // A desktop icon darkens in its own square the same way,
+                // whether it opens a page or has nothing behind it yet.
+                let icon = hit.and_then(|(a, _)| self.frame.as_ref().and_then(|fr| fr.tiles.iter().find(|(t, _)| *t == a).map(|(_, r)| *r)));
                 self.drag = match hit {
                     Some((Action::Slider(which), track)) => {
                         self.set_slider(&t, which, track, x);
@@ -257,8 +260,11 @@ impl App {
                         Drag::Pattern
                     }
                     _ => {
+                        if let Some(rect) = icon {
+                            self.icon_press = Some(Darken { rect, rise: now + ROW_PRESS_DELAY_MS, fall: None });
+                        }
                         if let Some(rect) = row {
-                            self.row_press = Some(RowPress { rect, rise: now + ROW_PRESS_DELAY_MS, fall: None });
+                            self.row_press = Some(Darken { rect, rise: now + ROW_PRESS_DELAY_MS, fall: None });
                             self.row_art = None;
                         }
                         Drag::Press { x, y, action, edge: at_edge, at: now }
@@ -336,7 +342,7 @@ impl App {
                         _ => Drag::Press { x: x0, y: y0, action, edge: at_edge, at },
                     };
                     if !matches!(self.drag, Drag::Press { .. }) {
-                        self.let_row_go(now);
+                        self.let_press_go(now);
                     }
                 }
                 Drag::Scroll { last } => {
@@ -461,6 +467,11 @@ impl App {
                     if let Some(p) = &mut self.row_press {
                         p.lift(now);
                     }
+                    // An icon let go is clean at once: the page grows out of
+                    // its square, and a darkening still fading would be drawn
+                    // into the desktop painted behind that page, where it
+                    // could never fade.
+                    self.icon_press = None;
                     fx.extend(self.act(a, now));
                 }
                 Drag::Press { x, y, action: None, .. } if self.screen() == Screen::Editor => self.place_caret(f, x, y + scroll),
@@ -602,17 +613,24 @@ impl App {
         }
     }
 
-    /// The finger left the row it held, scrolling the page or swiping: a
-    /// row not darkening yet never does, and one darkening fades back.
-    fn let_row_go(&mut self, now: u64) {
-        let Some(p) = self.row_press else { return };
-        if now < p.rise {
-            self.row_press = None;
-            self.row_art = None;
-        } else if p.fall.is_none() {
-            self.row_press = Some(RowPress { fall: Some(now), ..p });
+    /// The finger left the control it held, scrolling the page or swiping:
+    /// a row or an icon not darkening yet never does, and one darkening
+    /// fades back. An icon goes at once instead, because the desktop may be
+    /// turning under the finger: the tiles come along with it, and a
+    /// darkening square left fading would soon stand off its tile.
+    fn let_press_go(&mut self, now: u64) {
+        if let Some(p) = self.row_press {
+            if now < p.rise {
+                self.row_press = None;
+                self.row_art = None;
+            } else if p.fall.is_none() {
+                self.row_press = Some(Darken { fall: Some(now), ..p });
+            }
+            self.dirty = true;
         }
-        self.dirty = true;
+        if self.icon_press.take().is_some() {
+            self.dirty = true;
+        }
     }
 
     /// No touchscreen answers: the keys work the pages, their light shown
@@ -1146,5 +1164,93 @@ mod tests {
         app.touch(Touch::Move(40.0, 2100.0), &f, 32);
         app.touch(Touch::Up, &f, 40);
         assert_eq!(app.cue.as_ref().map(|c| c.1), Some(at), "it sinks back where it was");
+    }
+
+    /// A desktop icon darkens in the square it is drawn on, a moment after
+    /// the finger lands, and is gone the moment the finger moves on: the
+    /// tiles come along with a turning desktop, and a square left fading
+    /// would soon stand off its tile.
+    #[test]
+    fn a_desktop_icon_darkens_in_its_own_square_while_held() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Desktop, W, H, PPD);
+        let mut c = Canvas::new(W, H);
+        let tile = app.frame(&f, &i).tiles.iter().find(|(a, _)| *a == Action::Open(Screen::Clock)).expect("the clock's tile").1;
+        let (x, y) = tile.centre();
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 0);
+        let plain = grey_at(&c, x, y);
+
+        app.touch(Touch::Down(x, y), &f, 1000);
+        assert!(app.icon_press.is_some(), "the square is kept from the moment the finger lands");
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 1000 + ROW_PRESS_DELAY_MS);
+        assert_eq!(grey_at(&c, x, y), plain, "nothing of it darkens yet");
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 2000);
+        let held = grey_at(&c, x, y);
+        assert!(held < plain, "held down: {held} of {plain}");
+        assert_ne!(app.deadline(2000), Some(0), "held still, nothing moves");
+
+        app.touch(Touch::Move(x, y - 120.0), &f, 2100);
+        assert!(app.icon_press.is_none(), "gone as the finger moves, not fading in place");
+        assert_eq!(app.screen(), Screen::Desktop, "a scroll opens nothing");
+    }
+
+    /// A tile with nothing behind it answers the finger the same way: it
+    /// darkens, and letting it go opens nothing.
+    #[test]
+    fn a_tile_with_nothing_behind_it_darkens_too() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Desktop, W, H, PPD);
+        let tile = app.frame(&f, &i).tiles.iter().find(|(a, _)| *a == Action::NotReady("weather")).expect("the weather's tile").1;
+        let (x, y) = tile.centre();
+        app.touch(Touch::Down(x, y), &f, 1000);
+        assert!(app.icon_press.is_some(), "a tile with nothing behind it still answers");
+        app.touch(Touch::Up, &f, 1100);
+        assert!(app.icon_press.is_none(), "and is clean the moment it is let go");
+        assert_eq!(app.screen(), Screen::Desktop, "opening nothing in its place");
+    }
+
+    /// A page opened from the desktop with no icon to come from grows out of
+    /// a square at the middle of the screen, the way one out of an icon
+    /// grows out of that icon, and covers the screen in the end.
+    #[test]
+    fn a_page_opened_without_an_icon_grows_out_of_the_middle() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Desktop, W, H, PPD);
+        let mut c = Canvas::new(W, H);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 0);
+        // No icon on the desktop opens this page.
+        app.open(Screen::Logs);
+        // The first frame sets the spring going, the page still a nothing at
+        // the middle; a moment later it has grown out of it.
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 0);
+        assert_eq!(grey_at(&c, 4.0, 4.0), 0, "nothing of it at the corner yet");
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 150);
+        assert_ne!(grey_at(&c, W as f32 / 2.0, H as f32 / 2.0), 0, "the page shows at the middle");
+        assert_eq!(grey_at(&c, 4.0, 4.0), 0, "and has not reached the corner");
+
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 3000);
+        assert_ne!(grey_at(&c, 4.0, 4.0), 0, "grown whole, it covers the screen");
+    }
+
+    /// Going back to the desktop with no icon to fold into shrinks to the
+    /// middle of the screen, the desktop showing round it.
+    #[test]
+    fn a_page_going_back_without_an_icon_folds_to_the_middle() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Desktop, W, H, PPD);
+        let mut c = Canvas::new(W, H);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 0);
+        app.open(Screen::Logs);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 3000);
+
+        let _ = app.back(3000);
+        // The frame the spring is set going on stands whole; a moment later
+        // the page has folded in towards the middle.
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 3000);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 3150);
+        assert_eq!(grey_at(&c, 4.0, 4.0), 0, "the desktop shows at the corner");
+        assert_ne!(grey_at(&c, W as f32 / 2.0, H as f32 / 2.0), 0, "the page still stands at the middle");
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 6000);
+        assert!(app.turn.is_none(), "come to rest, the desktop is left alone");
     }
 }

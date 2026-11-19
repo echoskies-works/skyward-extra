@@ -64,6 +64,11 @@ pub struct Frame {
     /// On the desktop, where each app's icon stands, so a page opened from
     /// one grows out of that square and goes back into it.
     pub launches: Vec<(Screen, Rect)>,
+    /// On the desktop, the square each icon is drawn in, whatever touching
+    /// it does: the ones that open a page and the ones that have nothing
+    /// behind them yet alike. A finger on the bar answers from here, so an
+    /// icon darkens where it stands rather than over its whole cell.
+    pub tiles: Vec<(Action, Rect)>,
 }
 
 /// A strip held at the bottom of the screen over the page, such as the
@@ -229,6 +234,7 @@ impl Frame {
             live: None,
             clock_ruler: None,
             launches: Vec::new(),
+            tiles: Vec::new(),
         }
     }
 

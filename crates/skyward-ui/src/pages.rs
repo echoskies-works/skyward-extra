@@ -327,6 +327,14 @@ const DESKTOP_ROWS: usize = 6;
 /// How many icons one page of the desktop holds.
 const DESKTOP_PER_PAGE: usize = DESKTOP_COLS * DESKTOP_ROWS;
 
+/// How wide a tile is, in dp, and the space kept between two of them. The
+/// tile is the square an app's icon is drawn on, and the square a page
+/// opened from it grows out of; a page with no icon to come from — the
+/// desktop's own pages opened some other way — starts from a square of the
+/// same width at the middle of the screen.
+pub const DESKTOP_TILE_DP: f32 = 62.5;
+const DESKTOP_GAP_DP: f32 = 34.2;
+
 /// How many pages of icons the desktop has, never fewer than the one that
 /// is always showing.
 pub fn desk_pages() -> usize {
@@ -382,6 +390,9 @@ pub fn desktop(cx: &Ctx) -> Frame {
     // that square and go back into it. The square is the tile's own top and
     // sides, not the whole cell the touch answers.
     let mut launches = Vec::new();
+    // Every tile, and what touching it does, whether it opens a page or has
+    // nothing behind it yet: a finger on the bar darkens the one it holds.
+    let mut tiles = Vec::new();
 
     // The grid, measured off a phone's own desktop at 1080 wide: a tile
     // 164 px square with 90 px between tiles, so four tiles and their gaps
@@ -389,8 +400,8 @@ pub fn desktop(cx: &Ctx) -> Frame {
     // tile and name together, so the gap between one row's name and the
     // next row's tile is what a phone leaves rather than the tile's own
     // height carried down.
-    let tile = m.dp(62.5);
-    let gap = m.dp(34.2);
+    let tile = m.dp(DESKTOP_TILE_DP);
+    let gap = m.dp(DESKTOP_GAP_DP);
     let row_w = tile * DESKTOP_COLS as f32 + gap * (DESKTOP_COLS - 1) as f32;
     let margin_x = (m.w as f32 - row_w) / 2.0;
     let row_h = m.dp(104.8);
@@ -430,13 +441,15 @@ pub fn desktop(cx: &Ctx) -> Frame {
         // The whole cell answers a touch, as a phone's desktop icon does —
         // including the ones with nothing behind them, which answer by
         // stopping rather than by opening.
+        let square = Rect::new(x0, y0, tile, tile);
         let action = match app.opens {
             Opens::Page(screen) => {
-                launches.push((screen, Rect::new(x0, y0, tile, tile)));
+                launches.push((screen, square));
                 Action::Open(screen)
             }
             Opens::NotYet(tag) => Action::NotReady(tag),
         };
+        tiles.push((action, square));
         out.push(Hit { rect: Rect::new(x - (tile + gap) / 2.0, y, tile + gap, row_h), action });
     }
 
@@ -456,6 +469,7 @@ pub fn desktop(cx: &Ctx) -> Frame {
 
     let mut frame = Frame { back: false, header: false, bg: DESKTOP_BG, ..Frame::new(t, c, out, l.pick(DESKTOP_TITLE), 0.0) };
     frame.launches = launches;
+    frame.tiles = tiles;
     frame
 }
 
