@@ -16,7 +16,7 @@ use skyward_ui::app::{
     DownloadEnd,
     DownloadJob, EraseStop, Field, FileKind, FileOp, FileRow, FileTask, FsAction, FsRow, Have, Held, Install, ItemEnd, JobEnd, Key, Keys,
     Lap,
-    MountFailure, MountRow, MusicFace, MusicFilter, Part, PartKind, PartStop, Pick, Place, Screen, SkywardEnd, SkywardJob, SkywardStage, Source,
+    MountFailure, MountRow, MusicFace, MusicFilter, Notification, Origin, Part, PartKind, PartStop, Pick, Place, Screen, SkywardEnd, SkywardJob, SkywardStage, Source,
     SystemChoice,
     SystemsWork, TasksFace, TermEnd, Touch, UsbDrive, UsbLink, SCREEN_OFF,
 };
@@ -503,6 +503,35 @@ fn main() -> Result<()> {
         app.lock_now();
         let mut shot = Canvas::new(w, h);
         app.compose(&mut shot, &fonts, &info, "21:40", "11月16日 周一", 0);
+        let path = out.join(format!("{name}.png"));
+        write_png(&path, &shot)?;
+        println!("wrote {}", path.display());
+    }
+
+    // The panel pulled down from the status bar: caught half way, out whole
+    // with notices, out whole with none, and out whole in the dark. The bar
+    // stands whole over its top edge in every one of them.
+    let shades: [(&str, f32, bool, bool); 4] = [
+        ("00-12-shade-half-light", 0.35, true, false),
+        ("00-12-shade-out-light", 1.0, true, false),
+        ("00-12-shade-empty-light", 1.0, false, false),
+        ("00-12-shade-out-dark", 1.0, true, true),
+    ];
+    for (name, open, notices, dark) in shades {
+        let mut app = on_wallpaper(Screen::Desktop, App::new(Screen::Desktop, w, h, ppd));
+        app.state.lang = lang;
+        app.state.data = Data::Open;
+        app.state.dark = dark;
+        if notices {
+            app.notify(Notification::progress(Origin::System, "flash", "正在刷入 system", "skyward-extra-fuxi.img", 42, 100));
+            app.notify(Notification::event(Origin::App("clock"), "timer", "计时结束", "10 分钟到了"));
+            app.notify(Notification::event(Origin::System, "battery", "电量偏低", "剩 15%，充电至 15% 以上才能安装"));
+            app.notify(Notification::failure(Origin::App("weather"), "weather", "天气没能更新", "没有网络连接"));
+        }
+        app.shade_down();
+        app.shade_pull(open);
+        let mut shot = Canvas::new(w, h);
+        app.compose(&mut shot, &fonts, &info, "21:40", "11月16日 周一", 1000);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &shot)?;
         println!("wrote {}", path.display());
@@ -1669,6 +1698,20 @@ fn main() -> Result<()> {
     }
     if !missed.is_empty() {
         eprintln!("{} of the moments were not drawn: {}", missed.len(), missed.join(", "));
+    }
+
+    // A notice that has just come, standing under the status bar over the
+    // page: caught as it slips down, and again where it holds.
+    for (name, ms) in [("00-13-banner-in-light", 90u64), ("00-13-banner-light", 400)] {
+        let mut app = on_wallpaper(Screen::Desktop, App::new(Screen::Desktop, w, h, ppd));
+        app.state.lang = lang;
+        app.state.data = Data::Open;
+        app.notify(Notification::progress(Origin::System, "flash", "正在刷入 system", "skyward-extra-fuxi.img", 42, 100));
+        let mut shot = Canvas::new(w, h);
+        app.compose(&mut shot, &fonts, &info, "21:40", "11月16日 周一", ms);
+        let path = out.join(format!("{name}.png"));
+        write_png(&path, &shot)?;
+        println!("wrote {}", path.display());
     }
 
     // A page growing out of the desktop icon it was tapped on, and folding

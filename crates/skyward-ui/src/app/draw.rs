@@ -174,6 +174,13 @@ impl App {
         // over a page they stand where the pull left them and the page goes
         // on standing above them.
         self.compose_tasks(out, f);
+        // The notice that has just come stands over the page, under the
+        // panel: with the panel out the list is the better place to read it.
+        self.compose_banner(out, f, now);
+        // The panel pulled down from the status bar comes over the page and
+        // the tasks, and under the lock: with the phone locked it is not out
+        // at all, so a finger cannot reach what it would not see.
+        self.compose_shade(out, f, now);
         // The lock comes over the page, the charging screen and the tasks:
         // nothing any of them puts over another comes over the lock, and the
         // page under it is left as it was.

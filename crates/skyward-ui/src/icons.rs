@@ -93,6 +93,17 @@ pub enum Icon {
     /// A toothed wheel with a round hole: the gear the clock's settings
     /// button carries, where the nut above would read as a nut.
     Settings,
+    /// A disc with rays: the control centre's brightness.
+    Sun,
+    /// A crescent: the control centre's light and dark theme.
+    Moon,
+    /// A bell: the control centre's silence.
+    Bell,
+    /// A frame's four corners round a square: the control centre's
+    /// screenshot.
+    Screenshot,
+    /// Two strokes crossed: putting a notice away, and clearing the list.
+    Close,
 }
 
 /// The stock icons' box: every outline here is laid out in it.
@@ -563,6 +574,49 @@ const MINUS: &[Part] = &[add(Shape::Line("M5,14H23", 6.0))];
 
 const PLUS: &[Part] = &[add(Shape::Line("M5,14H23M14,5V23", 6.0))];
 
+/// The disc with its eight rays, drawn as the sun the stock Settings shows
+/// beside brightness: the rays as heavy as the disc is wide.
+const SUN: &[Part] = &[
+    add(Shape::Fill("M14,10.2A3.8,3.8 0 1 1 14,17.8A3.8,3.8 0 1 1 14,10.2Z")),
+    add(Shape::Line("M14,4.6V7.4", 1.7)),
+    add(Shape::Line("M14,20.6V23.4", 1.7)),
+    add(Shape::Line("M4.6,14H7.4", 1.7)),
+    add(Shape::Line("M20.6,14H23.4", 1.7)),
+    add(Shape::Line("M7.4,7.4L9.4,9.4", 1.7)),
+    add(Shape::Line("M18.6,18.6L20.6,20.6", 1.7)),
+    add(Shape::Line("M20.6,7.4L18.6,9.4", 1.7)),
+    add(Shape::Line("M9.4,18.6L7.4,20.6", 1.7)),
+];
+
+/// A crescent, its hollow turned up and to the left: light and dark read
+/// off this better than off a half-filled disc, which the control centre's
+/// other tiles would swallow.
+const MOON: &[Part] = &[add(Shape::Fill(
+    "M19.4,17.8A8.4,8.4 0 1 1 11.6,5.4A6.6,6.6 0 0 0 19.4,17.8Z",
+))];
+
+/// A bell on its crown, its mouth a line across the bottom: silence.
+const BELL: &[Part] = &[
+    add(Shape::Fill(
+        "M14,5.2C11.2,5.2 9.4,7.6 9.4,10.6V14.2L7.6,17.4C7.4,17.8 7.7,18.2 8.1,18.2H19.9C20.3,18.2 20.6,17.8 20.4,17.4L18.6,14.2V10.6C18.6,7.6 16.8,5.2 14,5.2Z",
+    )),
+    add(Shape::Fill("M14,3.2A1.4,1.4 0 1 1 14,6A1.4,1.4 0 1 1 14,3.2Z")),
+    add(Shape::Line("M11.8,19.6A2.2,2.2 0 0 0 16.2,19.6", 1.6)),
+];
+
+/// Four corners round a small square: a picture taken of what shows.
+const SCREENSHOT: &[Part] = &[
+    add(Shape::Line("M10,6H6V10", 1.8)),
+    add(Shape::Line("M18,6H22V10", 1.8)),
+    add(Shape::Line("M6,18V22H10", 1.8)),
+    add(Shape::Line("M22,18V22H18", 1.8)),
+    add(Shape::Fill("M11.6,11.6H16.4V16.4H11.6Z")),
+];
+
+/// Two strokes crossed, as heavy as the timer's keys are wide: putting one
+/// notice away and clearing them all.
+const CLOSE: &[Part] = &[add(Shape::Line("M8.6,8.6L19.4,19.4M19.4,8.6L8.6,19.4", 2.4))];
+
 /// What `icon`'s glyph is drawn from, and at what share of its size.
 fn outline(icon: Icon) -> (&'static [Part], f32) {
     match icon {
@@ -600,6 +654,11 @@ fn outline(icon: Icon) -> (&'static [Part], f32) {
         Icon::Minus => (MINUS, 1.0),
         Icon::Plus => (PLUS, 1.0),
         Icon::Settings => (SETTINGS, 1.0),
+        Icon::Sun => (SUN, 1.0),
+        Icon::Moon => (MOON, 1.0),
+        Icon::Bell => (BELL, 1.0),
+        Icon::Screenshot => (SCREENSHOT, 1.0),
+        Icon::Close => (CLOSE, 1.0),
     }
 }
 

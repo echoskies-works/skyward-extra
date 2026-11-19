@@ -228,6 +228,10 @@ impl App {
         self.row_press = None;
         self.row_art = None;
         self.foot = None;
+        // The panel pulled down goes with the light, whole: it is not out
+        // under the lock, and nothing of it is kept for when it lights.
+        self.shade = None;
+        self.banner = None;
         self.end_turn();
     }
 

@@ -52,7 +52,9 @@ mod manager;
 mod mount;
 mod music;
 mod nav;
+mod notify;
 mod power;
+mod shade;
 mod prefs;
 mod reboot;
 mod relabel;
@@ -81,7 +83,9 @@ pub use install::*;
 pub use manager::*;
 pub use mount::*;
 pub use music::*;
+pub use notify::*;
 pub use prefs::*;
+pub use shade::*;
 pub use reboot::*;
 pub use relabel::*;
 pub use skyward::*;
@@ -740,6 +744,9 @@ enum Drag {
     /// A finger on the lock, pulling it up from where it came down at
     /// `from`: past the mark it goes away, short of it, back down.
     Lock { from: f32 },
+    /// A finger on the status bar, or on the panel it has out, pulling it
+    /// down or back up from where it came down at `from`.
+    Shade { from: f32 },
 }
 
 /// Where the keys are on a page.
@@ -1401,6 +1408,18 @@ pub struct App {
     /// goes dark: the page it came over kept soft behind it, and the swipe
     /// up that puts it away.
     lock: Option<lock::Lock>,
+    /// The panel pulled down from the status bar: the control centre and the
+    /// notices, standing over the page without taking it away. About only
+    /// while a finger has it out or it is settling, so it costs nothing the
+    /// rest of the time.
+    shade: Option<shade::Shade>,
+    /// A notice that has just come, standing over the page for a few
+    /// seconds before it slips back into the panel's list.
+    banner: Option<shade::Banner>,
+    /// The notices the pages and the system have put, held for the panel.
+    /// They belong to the panel, not to whoever put them: a page going away
+    /// does not take them with it, and nothing runs out on its own.
+    notifier: Notifier,
     /// The page the panel showed before it went dark, a pixel of every ten,
     /// kept sharp: the lock's ground when there is no wallpaper. None until
     /// a page has been shown.
@@ -1489,6 +1508,9 @@ impl App {
             power_exit: None,
             sheet: None,
             lock: None,
+            shade: None,
+            banner: None,
+            notifier: Notifier::default(),
             behind: None,
             seek: None,
             knob: None,
@@ -1694,6 +1716,10 @@ impl App {
             || self.power_menu.as_ref().is_some_and(|m| now <= m.since + dialog::RISE_MS)
             || self.power_exit.as_ref().is_some_and(|e| !e.fired)
             || self.lock.as_ref().is_some_and(|l| l.spring.is_some())
+            || self.shade_moving(now)
+            // A card standing over the page shows, holds and goes by its own
+            // clock: it is drawn frame after frame until it has gone.
+            || self.banner.is_some()
             || self.face_moving(now)
     }
 
@@ -1794,6 +1820,15 @@ impl App {
         // A sheet whose key was pressed leaves once it has fallen to the
         // foot, letting the page brighten behind it.
         self.settle_sheet(now);
+        // The panel pulled down stays where it was let go, or goes back
+        // whole and is let go itself.
+        self.settle_shade(now);
+        // A card that has stood its few seconds is let go; the notice it
+        // spoke for is still in the list.
+        if self.banner.as_ref().is_some_and(|b| b.gone(now)) {
+            self.banner = None;
+            self.dirty = true;
+        }
         self.settle_face_swipe(now);
         // The card has fallen and the page under it is black: the phone is
         // asked to leave now, not the moment the key was pressed. The

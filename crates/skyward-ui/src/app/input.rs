@@ -134,6 +134,25 @@ impl App {
         let t = self.theme();
         let m = t.m;
         let (slop, edge) = (m.dp(8.0), m.dp(20.0));
+        // The panel pulled down takes the finger while it stands: its keys,
+        // its brightness and its notices answer, and a pull on it moves it
+        // rather than the page under it.
+        if self.shade_shows(now) {
+            return self.shade_touch(ev, now);
+        }
+        // A finger landing on the status bar pulls the panel down from it.
+        // The bar itself is the grab, whole, rather than a strip drawn for
+        // the purpose: a finger that finds an icon has found it.
+        if let Touch::Down(_, y) = ev
+            && y < m.status_cy * 2.0
+        {
+            self.tracker.clear();
+            self.tracker.add(now, y);
+            self.stir(now);
+            self.shade_down();
+            self.drag = Drag::Shade { from: y };
+            return Vec::new();
+        }
         let scroll = self.top().1;
         let mut fx = Vec::new();
         let pressing = self.pressing();
@@ -420,9 +439,24 @@ impl App {
                 // A finger on the lock, which is swiped by its own path in
                 // `lock_touch` and never reaches here.
                 Drag::Lock { from } => self.drag = Drag::Lock { from },
+                // A finger on the panel, which is moved by its own path in
+                // `shade_touch`; here only for a pull that began on the bar
+                // and has not yet shown the panel at all.
+                Drag::Shade { from } => {
+                    let open = (y - from) / self.shade_geom().panel_h().max(1.0);
+                    self.shade_pull(open);
+                    self.tracker.add(now, y);
+                    self.drag = Drag::Shade { from };
+                }
                 Drag::Idle => {}
             },
             Touch::Up => match std::mem::replace(&mut self.drag, Drag::Idle) {
+                // A pull on the panel let go: it stays out or goes back, by
+                // how far it came and how quickly.
+                Drag::Shade { .. } => {
+                    let speed = self.tracker.velocity(now);
+                    self.shade_release(now, speed);
+                }
                 Drag::Press { action: Some(a), .. } => {
                     if let Some(p) = &mut self.row_press {
                         p.lift(now);
