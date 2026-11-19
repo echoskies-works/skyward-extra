@@ -690,6 +690,11 @@ fn notice_card(out: &mut Canvas, t: &Theme, f: &Fonts, notice: &Notification, x:
 /// The mark a notice carries, and the ink it is drawn in: an event in the
 /// accent, work under way in it too, and what did not go in the danger ink.
 fn notice_mark(notice: &Notification, pal: &Palette) -> (Icon, Rgba) {
+    // The clock's notices name the app they come from, whatever shape they
+    // take: a count still running wears the clock's own mark.
+    if notice.source == Origin::App(CLOCK_APP) {
+        return (Icon::Clock, pal.accent);
+    }
     match notice.kind {
         Kind::Event => (Icon::Bell, pal.accent),
         Kind::Progress => (Icon::Install, pal.accent),

@@ -1422,6 +1422,10 @@ pub struct App {
     /// They belong to the panel, not to whoever put them: a page going away
     /// does not take them with it, and nothing runs out on its own.
     notifier: Notifier,
+    /// Where the clock's two counts stand with the panel while its page is
+    /// left behind: no notice put, one standing, or one a finger took away.
+    clock_stopwatch: notify::Shown,
+    clock_timer: notify::Shown,
     /// The page the panel showed before it went dark, a pixel of every ten,
     /// kept sharp: the lock's ground when there is no wallpaper. None until
     /// a page has been shown.
@@ -1513,6 +1517,8 @@ impl App {
             shade: None,
             banner: None,
             notifier: Notifier::default(),
+            clock_stopwatch: notify::Shown::No,
+            clock_timer: notify::Shown::No,
             behind: None,
             seek: None,
             knob: None,
@@ -1950,6 +1956,11 @@ impl App {
                 fx.push(Effect::TimerAlarm { on: true });
             }
         }
+        // A count that goes on with the clock's page left behind says so in
+        // the panel until the page is back or the count stops. Read after
+        // the counts have been advanced, so a timer that has just ended puts
+        // its notice away in the same frame the notice of its end goes up.
+        self.sync_clock_notices();
         // A pull at the foot of the screen, let go, carries on to where it
         // leads or back where it came from.
         fx.extend(self.settle_foot(now));
