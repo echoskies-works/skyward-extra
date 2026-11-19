@@ -158,10 +158,11 @@ impl App {
         // The status bar the lock carries of its own, in the lock's ink over
         // the wallpaper rather than the theme's over a page.
         widgets::status_bar(&mut sheet, &t, f, &self.bar(clock, info), ink, dark);
-        // The clock is the lock's one piece of lettering done large, so it is
-        // set in the brand's own typeface rather than the UI's: the same face
-        // the wordmark on the About page is cut from.
-        sheet.text_center(&f.display, clock, w / 2.0, h * LOCK_CLOCK_AT, m.dp(LOCK_CLOCK_PX), ink);
+        // The clock is the lock's one piece of lettering done large, and it
+        // is set in the UI's own typeface as the stock lock's is: the brand
+        // face is kept for the wordmark, where it is lettering rather than
+        // a page's text.
+        sheet.text_center(&f.title, clock, w / 2.0, h * LOCK_CLOCK_AT, m.dp(LOCK_CLOCK_PX), ink);
         // The day under the clock, on the line the battery's level used to
         // take. The level is in the status bar already, and the day is what
         // the lock's own system puts under the time.
