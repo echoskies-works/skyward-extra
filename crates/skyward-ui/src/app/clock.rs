@@ -411,7 +411,7 @@ impl App {
 mod tests {
     use super::*;
     use crate::app::testing::*;
-    use crate::app::{App, Ctx, Effect, Frame, Screen, Switch, Touch, DEFAULT_TIMER_SOUND};
+    use crate::app::{App, Ctx, Effect, Frame, Key, Screen, Switch, Touch, DEFAULT_TIMER_SOUND};
     use crate::canvas::Canvas;
     use crate::font::Fonts;
     use crate::theme::Theme;
@@ -785,5 +785,69 @@ mod tests {
         assert_eq!(app.screen(), Screen::ClockSound, "the page stays with its tick moved");
         tap(&mut app, &f, &i, Action::ClockSound(1));
         assert_eq!(app.state.timer_sound, DEFAULT_TIMER_SOUND, "and the one it started with is there to go back to");
+    }
+
+    /// A timer that has run out and had its notice put away is a new timer
+    /// again: the note stops at the key, and the page says once more how a
+    /// length is set, so the next count starts from the same place the
+    /// first one did.
+    #[test]
+    fn putting_the_notice_away_leaves_the_timer_as_a_new_one() {
+        let (f, i) = (fonts(), info());
+        let (w, h, ppd) = (1080, 2400, 2.625);
+        let mut app = App::new(Screen::Clock, w, h, ppd);
+        app.state.clock.face = ClockFace::Timer;
+        app.state.clock.ruler = 1_000;
+        app.state.clock.span = 60_000;
+        app.state.clock.left = 0;
+        app.state.clock.left_since = Some(0);
+        // The middle of a row `cy` dp down the page.
+        let at = |app: &App, cy: f32| {
+            let fr = anew(app, &f, &i, 0);
+            let m = Theme::light(w, h, ppd).m;
+            let k = (m.dp(cy).round() as usize * w as usize + w as usize / 2) * 4;
+            [fr.canvas.data[k], fr.canvas.data[k + 1], fr.canvas.data[k + 2]]
+        };
+        let t = app.theme();
+        let rule = [t.pal.hairline.r, t.pal.hairline.g, t.pal.hairline.b];
+        let page = [t.pal.bg.r, t.pal.bg.g, t.pal.bg.b];
+        app.frame(&f, &i);
+        app.tick(1);
+        assert!(app.sheet.is_some(), "the notice stands");
+        assert_eq!(at(&app, crate::pages::RULE_CY), page, "a length on the ruler keeps the rule away");
+
+        let fx = app.act(Action::TimerDoneOk, 2);
+        assert_eq!(fx, vec![Effect::TimerAlarm { on: false }], "the note stops with the notice");
+        // The card falls and is let go, and the ruler is carried home.
+        app.tick(1_000);
+        app.tick(2_000);
+        assert!(app.sheet.is_none(), "the notice is gone");
+        assert!(!app.state.clock.timer_set(), "no length is chosen");
+        assert_eq!(app.state.clock.ruler, 0, "the ruler is home");
+        assert_eq!(at(&app, crate::pages::RULE_CY), rule, "and the page says again how it is set");
+    }
+
+    /// The notice is put away by back as by its own key: the note stops and
+    /// the timer comes back to nothing, a finger that never found 确定.
+    #[test]
+    fn the_back_key_puts_the_notice_away_as_its_key_does() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Clock, W, H, PPD);
+        app.state.clock.face = ClockFace::Timer;
+        app.state.clock.ruler = 1_000;
+        app.state.clock.span = 60_000;
+        app.state.clock.left = 0;
+        app.state.clock.left_since = Some(0);
+        app.frame(&f, &i);
+        app.tick(1);
+        assert!(app.sheet.is_some(), "the notice stands");
+
+        let fx = app.key(Key::Back, 2);
+        assert_eq!(fx, vec![Effect::TimerAlarm { on: false }], "the note stops at back");
+        let clock = &app.state.clock;
+        assert_eq!((clock.span, clock.left), (0, 0), "and the timer comes back to nothing");
+        assert!(clock.left_since.is_none());
+        assert!(!clock.timer_set());
+        assert!(app.sheet.as_ref().is_some_and(|s| s.closing.is_some()), "the notice falls back");
     }
 }
