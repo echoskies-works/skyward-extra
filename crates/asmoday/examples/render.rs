@@ -1,14 +1,14 @@
 //! Puts one view of the menu on stdout as a PPM, for looking at on a desk.
 //!
 //! ```text
-//! cargo run -p skyward-asmoday --example render -- 1080 2400 confirm zh > menu.ppm
+//! cargo run -p asmoday --example render -- 1080 2400 confirm zh > menu.ppm
 //! ```
 //!
 //! Views: `list`, `confirm`, `yes`, `fail` (never started), `crash` (died
 //! while running), `stop` (stopped on purpose, for an app not built yet).
 //! Languages: `zh` (the default), `en`.
 
-use skyward_asmoday::{render, Action, Crash, Lang, Reason, View};
+use asmoday::{render, Action, Crash, Lang, Reason, View};
 use std::io::Write;
 
 fn main() {

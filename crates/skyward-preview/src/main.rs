@@ -8,7 +8,7 @@ use skyward_net::reach::Reach;
 use skyward_net::release::{Release, Unanswered};
 use skyward_net::supplicant::Security;
 use skyward_net::wlan::{Bands, Joined, Link, Network, Power, Stage as Joining, Traffic, Wlan};
-use skyward_asmoday::{Action as AsmodayAction, Crash as AsmodayCrash, Lang as AsmodayLang, Reason as AsmodayReason, View as AsmodayView};
+use asmoday::{Action as AsmodayAction, Crash as AsmodayCrash, Lang as AsmodayLang, Reason as AsmodayReason, View as AsmodayView};
 use skyward_systems::{Named, Other, Overview, Who};
 use skyward_ui::app::{
     Action, Adding, App, Asked, BackupAt, BackupEnd, BackupEntry, BackupJob, BackupRefusal, CalcFace, Choice, Clip, ClockFace, Damage,
@@ -632,7 +632,7 @@ fn main() -> Result<()> {
     for (name, view) in startup {
         for (suffix, panel_lang) in [("zh", AsmodayLang::Zh), ("en", AsmodayLang::En)] {
             let mut canvas = Canvas::new(w, h);
-            canvas.data.copy_from_slice(&skyward_asmoday::render(w, h, view, panel_lang));
+            canvas.data.copy_from_slice(&asmoday::render(w, h, view, panel_lang));
             let path = outside.join(format!("{name}-{suffix}.png"));
             write_png(&path, &canvas)?;
             println!("wrote {}", path.display());
