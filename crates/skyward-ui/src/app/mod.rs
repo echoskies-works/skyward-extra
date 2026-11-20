@@ -16,7 +16,7 @@ use crate::glow::{self, GlowClock};
 use crate::icons;
 use crate::lang::{Lang, Text};
 use crate::motion::{self, Spring};
-use crate::pages::{self, Band, Ctx};
+use crate::pages::{self, Band, Ctx, PersonalPick};
 use crate::sprite::{Blurs, Sprite};
 use crate::search;
 use crate::settings::Settings;
@@ -128,6 +128,10 @@ pub enum Screen {
     /// Sound, ring and wallpaper picked the way the user likes them: a
     /// temporary page while each of those is not built yet.
     Personalization,
+    /// The names one of the personalization page's four things can be set
+    /// to, the one in use ticked. None of them can be set yet, so the page
+    /// only lists what there is.
+    Personal(PersonalPick),
     Reboot,
     Wipe,
     /// Mounting and unmounting the slot's partitions.

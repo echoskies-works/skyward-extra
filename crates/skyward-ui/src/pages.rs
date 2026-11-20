@@ -81,6 +81,7 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::Home => home(cx),
         Screen::Settings => settings(cx),
         Screen::Personalization => personalization(cx),
+        Screen::Personal(pick) => personal_pick(cx, pick),
         Screen::Reboot => reboot(cx),
         Screen::Wipe => wipe(cx),
         Screen::Mount => mount(cx),
@@ -198,6 +199,15 @@ const PERSONALIZATION: Text = ["个性化选项", "個人化選項", "Personaliz
 const RINGTONE: Text = ["铃声", "鈴聲", "Ringtone"];
 const SOUND_EFFECTS: Text = ["通知声音", "通知聲音", "Notification sounds"];
 const WALLPAPER_TITLE: Text = ["壁纸", "桌布", "Wallpaper"];
+const DESK_WALLPAPER: Text = ["桌面壁纸", "桌面桌布", "Desktop wallpaper"];
+const LOCK_WALLPAPER: Text = ["锁屏壁纸", "鎖定畫面桌布", "Lock screen wallpaper"];
+/// What a list of names says under it: the rows only tell what there is and
+/// which of it is in use, since none of them can be set yet.
+const PICK_NOTE: Text = [
+    "还不能更换，这里只列出可以选的名字，正在使用的已打勾。",
+    "還不能更換，這裡只列出可以選的名字，正在使用的已打勾。",
+    "Neither can be changed yet; this only lists the names there are, the one in use ticked.",
+];
 const LICENSE: Text = ["开源许可", "開放原始碼授權", "Open source licenses"];
 const FONTS: Text = ["界面字体", "介面字型", "UI fonts"];
 const DUAL_BOOT: Text = ["双系统", "雙系統", "Dual boot"];
@@ -5211,18 +5221,46 @@ pub fn time_zone(cx: &Ctx) -> Frame {
     Frame::new(t, fit(c, t, bottom), out, l.pick(TIME_ZONE), top)
 }
 
+/// The file a ramdisk path ends in, without its extension: the key the names
+/// file goes by.
+fn file_key(path: &str) -> String {
+    Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or(path).to_string()
+}
+
+/// What the names file calls a wallpaper, or the file's own name where it
+/// says nothing.
+fn wallpaper_name_of(l: Lang, name: &skyward_config::WallpaperName, key: &str) -> String {
+    let picked = if l == Lang::En { &name.en } else { &name.zh };
+    if picked.is_empty() { key.to_string() } else { picked.clone() }
+}
+
 /// The name of the wallpaper `path` points to, as the names file says it in
 /// the language the pages speak; where it says nothing, the file's own name.
 fn wallpaper_name(l: Lang, names: &skyward_config::WallpaperNames, kind: WallpaperKind, path: &str) -> String {
-    let file = Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or(path);
+    let file = file_key(path);
     let named = match kind {
-        WallpaperKind::Desk => names.desk.get(file),
-        WallpaperKind::Lock => names.lock.get(file),
+        WallpaperKind::Desk => names.desk.get(&file),
+        WallpaperKind::Lock => names.lock.get(&file),
     };
     match named {
         Some(n) if l == Lang::En => n.en.clone(),
         Some(n) => n.zh.clone(),
-        None => file.to_string(),
+        None => file,
+    }
+}
+
+/// The name of the sound `path` points to, as the names file says it in the
+/// language the pages speak; where it says nothing, the file's own name.
+fn sound_name(l: Lang, names: &skyward_config::SoundNames, kind: SoundKind, path: &str) -> String {
+    let file = file_key(path);
+    let named = match kind {
+        SoundKind::Ring => names.ring.get(&file),
+        SoundKind::Notf => names.notf.get(&file),
+    };
+    match named {
+        Some(n) if l == Lang::En => n.en.clone(),
+        Some(n) => n.zh.clone(),
+        None => file,
     }
 }
 
@@ -5234,21 +5272,6 @@ enum WallpaperKind {
     Lock,
 }
 
-/// The name of the sound `path` points to, as the names file says it in the
-/// language the pages speak; where it says nothing, the file's own name.
-fn sound_name(l: Lang, names: &skyward_config::SoundNames, kind: SoundKind, path: &str) -> String {
-    let file = Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or(path);
-    let named = match kind {
-        SoundKind::Ring => names.ring.get(file),
-        SoundKind::Notf => names.notf.get(file),
-    };
-    match named {
-        Some(n) if l == Lang::En => n.en.clone(),
-        Some(n) => n.zh.clone(),
-        None => file.to_string(),
-    }
-}
-
 /// Which of the two sounds a name is for: the ring the phone rings with or
 /// the sound a notification makes.
 #[derive(Clone, Copy)]
@@ -5257,16 +5280,101 @@ enum SoundKind {
     Notf,
 }
 
+/// One of the four things the personalization page sets: the two sounds and
+/// the two wallpapers. Each opens a page listing the names the ramdisk
+/// carries for it, as the page of timer sounds lists its own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PersonalPick {
+    Ring,
+    Notf,
+    Desk,
+    Lock,
+}
+
+impl PersonalPick {
+    /// The words over the page that lists this one's names.
+    fn title(self) -> Text {
+        match self {
+            PersonalPick::Ring => RINGTONE,
+            PersonalPick::Notf => SOUND_EFFECTS,
+            PersonalPick::Desk => DESK_WALLPAPER,
+            PersonalPick::Lock => LOCK_WALLPAPER,
+        }
+    }
+
+    /// The file the phone is set to now: what the list marks as in use.
+    fn in_use(self) -> &'static str {
+        match self {
+            PersonalPick::Ring => skyward_config::ramdisk::RINGTONE,
+            PersonalPick::Notf => skyward_config::ramdisk::NOTIFICATION,
+            PersonalPick::Desk => skyward_config::ramdisk::WALLPAPER,
+            PersonalPick::Lock => skyward_config::ramdisk::WALLPAPER_LOCK,
+        }
+    }
+
+    /// What the names file calls `key` in `l`, or the key itself where the
+    /// file says nothing.
+    fn name(self, l: Lang, s: &State, key: &str) -> String {
+        match self {
+            PersonalPick::Ring => s.sound_names.ring.get(key).map(|n| sound_name_of(l, n, key)),
+            PersonalPick::Notf => s.sound_names.notf.get(key).map(|n| sound_name_of(l, n, key)),
+            PersonalPick::Desk => s.wallpaper_names.desk.get(key).map(|n| wallpaper_name_of(l, n, key)),
+            PersonalPick::Lock => s.wallpaper_names.lock.get(key).map(|n| wallpaper_name_of(l, n, key)),
+        }
+        .unwrap_or_else(|| key.to_string())
+    }
+}
+
+/// The names `pick` can be set to, each with whether it is the one in use:
+/// what the names file holds, in order, and the one in use alone where the
+/// file holds nothing, so the page is never blank.
+fn picks(l: Lang, s: &State, pick: PersonalPick) -> Vec<(String, bool)> {
+    let mut keys: Vec<String> = match pick {
+        PersonalPick::Ring => s.sound_names.ring.keys().cloned().collect(),
+        PersonalPick::Notf => s.sound_names.notf.keys().cloned().collect(),
+        PersonalPick::Desk => s.wallpaper_names.desk.keys().cloned().collect(),
+        PersonalPick::Lock => s.wallpaper_names.lock.keys().cloned().collect(),
+    };
+    keys.sort();
+    let now = file_key(pick.in_use());
+    if keys.is_empty() {
+        keys.push(now.clone());
+    }
+    keys.into_iter().map(|key| {
+        let name = pick.name(l, s, &key);
+        (name, key == now)
+    }).collect()
+}
+
+/// What one of the personalization page's four rows opens: the names that
+/// thing can be set to, the one in use ticked. Nothing is set from it yet —
+/// the sound layer does not exist and the wallpaper cannot be swapped — so
+/// no row answers a touch.
+pub fn personal_pick(cx: &Ctx, pick: PersonalPick) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = page(cx);
+    let top = t.m.content_top;
+    let picked = picks(l, s, pick);
+    let rows: Vec<Row> = picked
+        .iter()
+        .map(|(name, now)| Row::new(name.as_str()).trail(Trail::Check(*now)))
+        .collect();
+    let list = widgets::list(&mut c, t, f, top, &rows);
+    let bottom = widgets::footnote(&mut c, t, f, list.bottom, l.pick(PICK_NOTE));
+    Frame::new(t, fit(c, t, bottom), Vec::new(), l.pick(pick.title()), top)
+}
+
 /// Sound, ring and wallpaper picked the way the user likes them: a place
-/// the three gather while each of them is not built yet. The ring and the
-/// notification show their names but nothing plays, and the wallpaper shows
-/// its name but does not yet change.
+/// the four gather while each of them is not built yet. Each row opens the
+/// names its thing can be set to, and none of those names can be set.
 pub fn personalization(cx: &Ctx) -> Frame {
     let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
     let mut c = long_page(cx);
+    let mut out = Vec::new();
     let top = t.m.content_top;
-    // The ring and the notification name the sound each is set to; nothing
-    // plays yet, so neither row opens anything.
+    // The ring and the notification name the sound each is set to, and the
+    // two wallpapers theirs; a touch on any of them opens the list of names
+    // it can be set to.
     let y = widgets::section_first(&mut c, t, f, top, l.pick(["声音", "聲音", "Sound"]));
     let ring = sound_name(l, &s.sound_names, SoundKind::Ring, skyward_config::ramdisk::RINGTONE);
     let notf = sound_name(l, &s.sound_names, SoundKind::Notf, skyward_config::ramdisk::NOTIFICATION);
@@ -5274,21 +5382,22 @@ pub fn personalization(cx: &Ctx) -> Frame {
         Row::new(l.pick(RINGTONE)).icon(BLUE, Icon::Music).trail(Trail::Value(ring.as_str())),
         Row::new(l.pick(SOUND_EFFECTS)).icon(GREEN, Icon::Music).trail(Trail::Value(notf.as_str())),
     ]);
-    // The rows tell where things stand but do not open anything yet.
+    out.extend(hits(&sound.rows, &[Action::Open(Screen::Personal(PersonalPick::Ring)), Action::Open(Screen::Personal(PersonalPick::Notf))]));
     let y = widgets::section(&mut c, t, f, sound.bottom, l.pick(WALLPAPER_TITLE));
     let desk = wallpaper_name(l, &s.wallpaper_names, WallpaperKind::Desk, skyward_config::ramdisk::WALLPAPER);
     let lock = wallpaper_name(l, &s.wallpaper_names, WallpaperKind::Lock, skyward_config::ramdisk::WALLPAPER_LOCK);
     let wallpapers = widgets::list(&mut c, t, f, y, &[
-        Row::new(l.pick(["桌面壁纸", "桌面桌布", "Desktop wallpaper"])).icon(PURPLE, Icon::Phone).trail(Trail::Value(desk.as_str())),
-        Row::new(l.pick(["锁屏壁纸", "鎖定畫面桌布", "Lock screen wallpaper"])).icon(ORANGE, Icon::Lock).trail(Trail::Value(lock.as_str())),
+        Row::new(l.pick(DESK_WALLPAPER)).icon(PURPLE, Icon::Phone).trail(Trail::Value(desk.as_str())),
+        Row::new(l.pick(LOCK_WALLPAPER)).icon(ORANGE, Icon::Lock).trail(Trail::Value(lock.as_str())),
     ]);
+    out.extend(hits(&wallpapers.rows, &[Action::Open(Screen::Personal(PersonalPick::Desk)), Action::Open(Screen::Personal(PersonalPick::Lock))]));
     let note = l.pick([
-        "声音还不能播放，壁纸也还不能更换，这里只显示当前使用的名称。",
-        "聲音還不能播放，桌布也還不能更換，這裡只顯示目前使用的名稱。",
-        "Sound cannot play yet and the wallpaper cannot be changed; this only shows the names in use.",
+        "声音还不能播放，壁纸也还不能更换；点开只能看到有哪些可选。",
+        "聲音還不能播放，桌布也還不能更換；點開只能看到有哪些可選。",
+        "Sound cannot play yet and the wallpaper cannot be changed; opening a row only shows what there is to choose from.",
     ]);
     let bottom = widgets::footnote(&mut c, t, f, wallpapers.bottom, note);
-    Frame::new(t, fit(c, t, bottom), Vec::new(), l.pick(PERSONALIZATION), top)
+    Frame::new(t, fit(c, t, bottom), out, l.pick(PERSONALIZATION), top)
 }
 
 /// Saving the logs, as a bug report asks for them.

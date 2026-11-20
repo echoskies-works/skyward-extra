@@ -21,6 +21,7 @@ use skyward_ui::app::{
     SystemsWork, TasksFace, TermEnd, Touch, UsbDrive, UsbLink, SCREEN_OFF,
 };
 use skyward_ui::widgets::{self, Bar, Bolt, Cap, Layer};
+use skyward_ui::pages::PersonalPick;
 use skyward_ui::{editor, fmt, pages, Canvas, Ctx, Fonts, Lang, Theme};
 use skyward_vab::{BootSlots, FailureCode, Hold, Slot, SnapshotState, Standing};
 use std::fs::File;
@@ -229,7 +230,7 @@ fn main() -> Result<()> {
     let pattern = Data::Locked { user: 0, keys: Keys::Pattern, checking: false };
     // Whole pages, the way a long screenshot shows them. The About page's
     // field is drawn only on screen, so it appears among the moments below.
-    let shots: [Shot; 17] = [
+    let shots: [Shot; 21] = [
         ("00-01-desktop-light", Screen::Desktop, false, &info, Data::Open, &[]),
         ("00-01-desktop-dark", Screen::Desktop, true, &info, Data::Open, &[]),
         ("00-02-calculator-light", Screen::Calculator, false, &info, Data::Open, &[]),
@@ -239,6 +240,10 @@ fn main() -> Result<()> {
         ("03-home-dark-update-pending", Screen::Home, true, &pending, Data::Open, &[]),
         ("04-settings-light", Screen::Settings, false, &info, Data::Open, &[]),
         ("04b-personalization-light", Screen::Personalization, false, &info, Data::Open, &[]),
+        ("04c-personalization-ring-light", Screen::Personal(PersonalPick::Ring), false, &info, Data::Open, &[]),
+        ("04d-personalization-notf-light", Screen::Personal(PersonalPick::Notf), false, &info, Data::Open, &[]),
+        ("04e-personalization-desk-light", Screen::Personal(PersonalPick::Desk), false, &info, Data::Open, &[]),
+        ("04f-personalization-lock-light", Screen::Personal(PersonalPick::Lock), false, &info, Data::Open, &[]),
         ("05-settings-dark", Screen::Settings, true, &info, Data::Open, &[]),
         ("06-reboot-dark", Screen::Reboot, true, &info, Data::Open, &[]),
         ("07-wipe-light", Screen::Wipe, false, &info, Data::Open, &[]),
