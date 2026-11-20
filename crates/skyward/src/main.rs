@@ -247,13 +247,13 @@ enum Cmd {
 /// is no less able to fall over than one started by init.
 #[cfg(target_os = "android")]
 fn startup_menu() -> Result<()> {
-    match skyward_startup::run()? {
-        skyward_startup::Choice::System => supervise::run(),
-        skyward_startup::Choice::PowerOff => skyward_sys::power(Power::Off),
+    match skyward_asmoday::run()? {
+        skyward_asmoday::Choice::System => supervise::run(),
+        skyward_asmoday::Choice::PowerOff => skyward_sys::power(Power::Off),
         // The bootloader's own fastboot, not the recovery's userspace one:
         // this is the mode that can write an image when nothing on the phone
         // will start, which is the whole reason the line is on the menu.
-        skyward_startup::Choice::Fastboot => skyward_sys::power(Power::Bootloader),
+        skyward_asmoday::Choice::Fastboot => skyward_sys::power(Power::Bootloader),
     }
 }
 

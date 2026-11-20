@@ -8,7 +8,7 @@ use skyward_net::reach::Reach;
 use skyward_net::release::{Release, Unanswered};
 use skyward_net::supplicant::Security;
 use skyward_net::wlan::{Bands, Joined, Link, Network, Power, Stage as Joining, Traffic, Wlan};
-use skyward_startup::{Action as StartupAction, Crash as StartupCrash, Lang as StartupLang, Reason as StartupReason, View as StartupView};
+use skyward_asmoday::{Action as AsmodayAction, Crash as AsmodayCrash, Lang as AsmodayLang, Reason as AsmodayReason, View as AsmodayView};
 use skyward_systems::{Named, Other, Overview, Who};
 use skyward_ui::app::{
     Action, Adding, App, Asked, BackupAt, BackupEnd, BackupEntry, BackupJob, BackupRefusal, CalcFace, Choice, Clip, ClockFace, Damage,
@@ -612,16 +612,16 @@ fn main() -> Result<()> {
     // alongside the pages: nothing here shares a number with `out`, so
     // `startup/01-menu` cannot be mistaken for the first page of the
     // preview.
-    let startup: [(&str, StartupView); 5] = [
-        ("01-menu", StartupView::List { sel: 0 }),
-        ("02-confirm-reset", StartupView::Confirm { action: StartupAction::Reset, yes: false }),
+    let startup: [(&str, AsmodayView); 5] = [
+        ("01-menu", AsmodayView::List { sel: 0 }),
+        ("02-confirm-reset", AsmodayView::Confirm { action: AsmodayAction::Reset, yes: false }),
         // What a system that fell over leaves: no reason, because a phone
         // that fell over has nothing to say.
-        ("03-failed", StartupView::Failure { crash: StartupCrash::Startup, code: 139, reason: None }),
-        ("04-crashed", StartupView::Failure { crash: StartupCrash::Runtime, code: 139, reason: None }),
+        ("03-failed", AsmodayView::Failure { crash: AsmodayCrash::Startup, code: 139, reason: None }),
+        ("04-crashed", AsmodayView::Failure { crash: AsmodayCrash::Runtime, code: 139, reason: None }),
         // And one that stopped on purpose: 67 is the code for an app on the
         // desktop that is not built, and the line under it says which.
-        ("05-stopped", StartupView::Failure { crash: StartupCrash::Runtime, code: 67, reason: Some(StartupReason::Music) }),
+        ("05-stopped", AsmodayView::Failure { crash: AsmodayCrash::Runtime, code: 67, reason: Some(AsmodayReason::Music) }),
     ];
     let outside = out.join("startup");
     std::fs::create_dir_all(&outside)?;
@@ -630,9 +630,9 @@ fn main() -> Result<()> {
     // glyph width and a line that fits in English can still run off the edge
     // in Chinese.
     for (name, view) in startup {
-        for (suffix, panel_lang) in [("zh", StartupLang::Zh), ("en", StartupLang::En)] {
+        for (suffix, panel_lang) in [("zh", AsmodayLang::Zh), ("en", AsmodayLang::En)] {
             let mut canvas = Canvas::new(w, h);
-            canvas.data.copy_from_slice(&skyward_startup::render(w, h, view, panel_lang));
+            canvas.data.copy_from_slice(&skyward_asmoday::render(w, h, view, panel_lang));
             let path = outside.join(format!("{name}-{suffix}.png"));
             write_png(&path, &canvas)?;
             println!("wrote {}", path.display());

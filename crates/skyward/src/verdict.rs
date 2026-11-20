@@ -8,7 +8,7 @@
 //! that process only exists on a phone, and a rule nobody can run is a rule
 //! nobody knows.
 
-use skyward_startup::{Crash, Reason};
+use skyward_asmoday::{Crash, Reason};
 use std::time::Duration;
 
 /// How long the system may go without saying it is still there.

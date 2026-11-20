@@ -12,7 +12,7 @@ members = [
     "crates/skyward-programs",
     "crates/skyward-ui",
     "crates/skyward-kms",
-    "crates/skyward-startup",
+    "crates/skyward-asmoday",
     "crates/skyward-crypto",
     "crates/skyward-files",
     "crates/skyward-info",

@@ -2384,7 +2384,7 @@ dependencies = [
  "skyward-net",
  "skyward-omapi",
  "skyward-programs",
- "skyward-startup",
+ "skyward-asmoday",
  "skyward-sys",
  "skyward-systems",
  "skyward-ui",
@@ -2621,7 +2621,7 @@ dependencies = [
  "skyward-info",
  "skyward-install",
  "skyward-net",
- "skyward-startup",
+ "skyward-asmoday",
  "skyward-systems",
  "skyward-ui",
  "skyward-vab",
@@ -2640,7 +2640,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "skyward-startup"
+name = "skyward-asmoday"
 version = "0.3.1"
 dependencies = [
  "anyhow",

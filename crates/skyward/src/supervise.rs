@@ -27,7 +27,7 @@ use crate::input::monotonic_ms;
 use crate::ui::Backlight;
 use crate::verdict::{self, End, KILLED};
 use anyhow::{anyhow, Result};
-use skyward_startup::{Choice, Crash};
+use skyward_asmoday::{Choice, Crash};
 use skyward_sys::Power;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -114,13 +114,13 @@ pub fn run() -> Result<()> {
         // that key is pressed. A screen that will not come up is worth a line,
         // not the end: the menu below is still worth trying, and leaving would
         // only hand a black panel to whatever restarts this.
-        if let Err(e) = skyward_startup::show_crash(crash, code, reason) {
+        if let Err(e) = skyward_asmoday::show_crash(crash, code, reason) {
             eprintln!("supervise: the failure screen would not come up: {e:#}");
             let _ = skyward_sys::kmsg(&format!("the failure screen would not come up: {e:#}"));
         }
 
         light_panel(&mut light);
-        match skyward_startup::run() {
+        match skyward_asmoday::run() {
             // Back into the system: the loop starts it again.
             Ok(Choice::System) => {}
             Ok(Choice::PowerOff) => return skyward_sys::power(Power::Off),
