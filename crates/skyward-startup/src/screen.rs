@@ -48,6 +48,11 @@ pub const LINE_H: u32 = CELL_H + LEADING * SCALE;
 pub const LIT: [u8; 3] = [0xff, 0xff, 0xff];
 /// What sits on the white: the line the keys point at, reversed out.
 pub const INK: [u8; 3] = [0x00, 0x00, 0x00];
+/// Amber: the one shade the panel allows itself beyond black and white, for
+/// a hint that says something is not known rather than something that has
+/// been checked. Amber rather than pure yellow because a full-brightness
+/// yellow bleeds into the stems beside it on the panel this runs on.
+pub const AMBER: [u8; 3] = [0xff, 0xd8, 0x00];
 
 /// A panel-sized buffer of tightly packed RGBA rows.
 pub struct Screen {

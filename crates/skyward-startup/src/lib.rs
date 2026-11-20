@@ -301,6 +301,7 @@ mod tests {
         for lang in BOTH {
             lines.push(lang.pick(paint::TITLE).to_string());
             lines.extend(paint::HINT.iter().map(|line| lang.pick(*line).to_string()));
+            lines.extend(paint::hints(lang).into_iter().map(|hint| hint.text));
             lines.extend(paint::EXIT.iter().map(|line| lang.pick(*line).to_string()));
             lines.extend(menu::ITEMS.iter().map(|item| item.label(lang).to_string()));
             // The code is the only part of a line that is not fixed, so the

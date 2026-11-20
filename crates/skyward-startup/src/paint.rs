@@ -10,7 +10,7 @@
 
 use crate::lang::Lang;
 use super::menu::{Action, Crash, Reason, View, ITEMS};
-use super::screen::{Screen, CELL_H, INK, LINE_H, LIT, SCALE};
+use super::screen::{AMBER, Screen, CELL_H, INK, LINE_H, LIT, SCALE};
 
 /// What the panel says at the top.
 pub(crate) const TITLE: [&str; 2] = ["Skyward-Extra Startup Menu", "Skyward-Extra 启动菜单"];
@@ -44,6 +44,41 @@ pub(crate) enum Ink {
     Plain,
     /// Black on a white band: the line the keys are pointing at.
     Reversed,
+    /// Amber on black: a state the panel is reporting, not a choice. Amber
+    /// rather than the white of the menu proper keeps a reading from being
+    /// mistaken for one of the lines the keys can move through.
+    Amber,
+}
+
+/// A state the panel reports under the key legend.
+///
+/// A value and an ink rather than a string drawn by the caller: the colour
+/// belongs with what is said, so a warning says so wherever it is produced.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub(crate) struct Hint {
+    /// What it says, already in the language the panel is using.
+    pub(crate) text: String,
+    pub(crate) ink: Ink,
+}
+
+impl Hint {
+    pub(crate) fn amber(text: impl Into<String>) -> Self {
+        Hint { text: text.into(), ink: Ink::Amber }
+    }
+}
+
+/// What the panel says under the key legend, in the order it is read.
+///
+/// This is the one place the menu's running commentary is gathered. It is a
+/// list, not a single line: more readings are coming — a low battery among
+/// them — and a reading that stops being true has to be able to go away.
+/// Nothing here is carved into the drawing, so an empty list leaves the
+/// panel exactly as it was before any of this existed.
+pub(crate) fn hints(lang: Lang) -> Vec<Hint> {
+    vec![Hint::amber(lang.pick([
+        "Secure Boot status unknown",
+        "安全启动状态未知",
+    ]))]
 }
 
 /// One line of the panel.
@@ -135,6 +170,11 @@ pub fn draw(screen: &mut Screen, view: View, lang: Lang, typed: usize) {
                 let shown: String = text.chars().take(left).collect();
                 screen.fill_rect(0, y, screen.w, CELL_H, LIT);
                 screen.draw_left(y, &shown, INK);
+                left -= shown.chars().count();
+            }
+            Line::Words(text, Ink::Amber) => {
+                let shown: String = text.chars().take(left).collect();
+                screen.draw_left(y, &shown, AMBER);
                 left -= shown.chars().count();
             }
             Line::Rule => {
@@ -281,13 +321,27 @@ fn header(lang: Lang) -> Vec<Line> {
     vec![Line::plain(lang.pick(TITLE)), Line::plain(""), Line::Rule]
 }
 
-/// A rule, a blank, and the key legend.
+/// A rule, a blank, the key legend, and whatever the panel has to report.
 ///
 /// The blank is the mirror of the header's: the legend is the panel's
 /// footing, not a sixth item, so it stands one row clear of the rule over it.
+/// The readings come after the legend, a row of air between them, so they
+/// read as a note under the menu rather than as another thing to press.
 fn footer(lang: Lang) -> Vec<Line> {
+    footer_with(lang, &hints(lang))
+}
+
+/// The same footing, given the readings rather than gathering them.
+///
+/// Split out so the tests can draw a panel with nothing to report and check
+/// it falls back to the legend alone, the way it did before readings existed.
+fn footer_with(lang: Lang, hints: &[Hint]) -> Vec<Line> {
     let mut lines = vec![Line::Rule, Line::plain("")];
     lines.extend(HINT.iter().map(|hint| Line::plain(lang.pick(*hint))));
+    if !hints.is_empty() {
+        lines.push(Line::plain(""));
+        lines.extend(hints.iter().map(|hint| Line::Words(hint.text.clone(), hint.ink)));
+    }
     lines
 }
 
@@ -324,9 +378,10 @@ mod tests {
             assert_eq!(lines[1].text(), "", "{lang:?}: air under the title");
             assert!(matches!(lines[2], Line::Rule), "{lang:?}: a rule, not words");
             // Both rules are the same line, at the same place: one under the
-            // title's blank and one over the legend's blank.
+            // title's blank and one over the legend's blank. The second sits
+            // a whole footer's length from the end, readings and all.
             let rules: Vec<usize> = lines.iter().enumerate().filter(|(_, l)| matches!(l, Line::Rule)).map(|(i, _)| i).collect();
-            assert_eq!(rules, vec![2, lines.len() - HINT.len() - 2], "{lang:?}");
+            assert_eq!(rules, vec![2, lines.len() - footer(lang).len()], "{lang:?}");
         }
     }
 
@@ -408,12 +463,15 @@ mod tests {
     }
 
     #[test]
-    fn the_legend_spells_the_keys_out_and_ends_both_views() {
+    fn the_legend_spells_the_keys_out_and_the_readings_follow_it() {
         for lang in BOTH {
             for lines in [list(0, lang), confirm(Action::Reset, false, lang)] {
                 let n = lines.len();
+                // The readings come last, so count back from the end past
+                // them and their blank to find where the key legend sits.
+                let tail = hints(lang).len() + 1;
                 for (i, hint) in HINT.iter().enumerate() {
-                    assert_eq!(lines[n - HINT.len() + i].text(), lang.pick(*hint), "{lang:?}: the legend ends the panel, in order");
+                    assert_eq!(lines[n - tail - HINT.len() + i].text(), lang.pick(*hint), "{lang:?}: the legend is in order");
                 }
                 assert!(HINT.iter().all(|h| !h.iter().any(|text| text.contains("V+") || text.contains("V-"))), "no abbreviations");
             }
@@ -421,16 +479,47 @@ mod tests {
     }
 
     #[test]
-    fn the_panel_only_ever_shows_black_and_white() {
+    fn an_empty_reading_leaves_the_legend_at_the_end() {
+        // When there is nothing to report — before a reading is taken, or
+        // after it stops being true — the panel is what it was: the key
+        // legend is the last line, with no blank and no amber note after it.
+        for lang in BOTH {
+            let with_none = footer_with(lang, &[]);
+            let with_one = footer(lang);
+            assert_eq!(with_none.len() + 2, with_one.len(), "{lang:?}: one blank and one line for a reading");
+            for (i, hint) in HINT.iter().enumerate() {
+                assert_eq!(with_none[with_none.len() - HINT.len() + i].text(), lang.pick(*hint), "{lang:?}: the legend ends it");
+            }
+        }
+    }
+
+    #[test]
+    fn a_reading_is_the_last_line_in_amber() {
+        for lang in BOTH {
+            let lines = list(0, lang);
+            let last = lines.last().expect("a footer");
+            let reported = hints(lang);
+            assert_eq!(reported.len(), 1, "{lang:?}: one reading for now");
+            assert_eq!(last.text(), reported[0].text, "{lang:?}: the reading is the last line");
+            assert_eq!(reported[0].ink, Ink::Amber, "{lang:?}: reported, not offered");
+            let expected = lang.pick(["Secure Boot status unknown", "安全启动状态未知"]);
+            assert_eq!(last.text(), expected, "{lang:?}: the words are the ones asked for");
+        }
+    }
+
+    #[test]
+    fn the_readings_are_amber_and_the_rest_is_black_and_white() {
         let (w, h) = (1200u32, 2608u32);
+        let amber = [AMBER[0], AMBER[1], AMBER[2], 0xff];
         for lang in BOTH {
             let mut screen = Screen::new(w, h);
             draw(&mut screen, View::List { sel: 1 }, lang, ALL);
-            // No greys and no theme: one colour on black, with the cursor as
-            // the same colour reversed rather than a dimmer shade of it.
+            // No greys and no theme: black, white, and one amber for the
+            // readings. The cursor is the same white reversed, not a shade.
             let pixels = screen.data.as_chunks::<4>().0;
-            assert!(pixels.iter().all(|px| *px == [0, 0, 0, 0xff] || *px == [0xff; 4]), "{lang:?}: a pixel that is neither");
+            assert!(pixels.iter().all(|px| *px == [0, 0, 0, 0xff] || *px == [0xff; 4] || *px == amber), "{lang:?}: a pixel that is neither black, white nor amber");
             assert!(pixels.contains(&[0xff; 4]), "{lang:?}: and something is lit");
+            assert!(pixels.contains(&amber), "{lang:?}: the reading is in amber");
         }
     }
 
