@@ -542,7 +542,8 @@ impl App {
                     // back. Over the desktop there is nowhere further than
                     // the tasks, so nothing there goes off.
                     let speed = -self.tracker.velocity(now);
-                    let (h, tasks_h, fling) = (self.h as f32, m.dp(TASKS_DP), m.dp(FOOT_FLING_DP));
+                    let h = self.h as f32;
+                    let (tasks_h, fling) = (m.dp(TASKS_DP), h * FOOT_FLING);
                     if let Some(foot) = self.foot.as_mut() {
                         let to = if !foot.tasks && speed > fling {
                             h
@@ -552,7 +553,12 @@ impl App {
                             0.0
                         };
                         foot.to = to;
-                        foot.spring = Some(Spring::new(now, foot.pull - to, speed, FOOT_PERIOD));
+                        // Going off the screen takes the lock's own time;
+                        // coming to rest — back down, or at the tasks — takes
+                        // its quicker one. A page and the lock leave and come
+                        // back at one pace.
+                        let period = if to >= h - 0.5 { FOOT_AWAY } else { FOOT_BACK };
+                        foot.spring = Some(Spring::new(now, foot.pull - to, speed, period));
                         self.dirty = true;
                     }
                 }

@@ -23,10 +23,19 @@ pub(super) const TASKS_DIM: f32 = 0.42;
 /// The ink of what the tasks' strip says, taken from the dark theme's light
 /// set: the desktop under it never turns light, so neither does this.
 const TASKS_INK: Rgba = Rgba::rgb(150, 150, 150);
-/// How far a pull let go carries on, in dp a second, to what it leads to.
-pub(super) const FOOT_FLING_DP: f32 = 600.0;
-/// How long a pull let go takes to settle, in seconds.
-pub(super) const FOOT_PERIOD: f32 = 0.32;
+/// How far a pull let go carries on, in screen heights a second, to what it
+/// leads to. The same measure the lock uses for its flick, so the same push
+/// does the same thing whether the screen is locked or not.
+pub(super) const FOOT_FLING: f32 = 1.2;
+/// How long a pull let go takes to carry the page off the screen. The lock's
+/// own going away, to the second: a page leaving and the lock leaving are
+/// the same motion, and should not run at two paces.
+pub(super) const FOOT_AWAY: f32 = 0.52;
+/// How long a pull takes to come back when it went nowhere, or to come to
+/// rest at the tasks' height. The lock's own coming back, and quicker than
+/// going away: coming back reads as undoing a move, not as a move of its
+/// own.
+pub(super) const FOOT_BACK: f32 = 0.34;
 
 /// A finger at the foot of the screen, pulling: on a page, the page up
 /// off the screen so the desktop comes in under it; on the desktop, the
@@ -137,7 +146,7 @@ impl App {
         if let Some(foot) = self.foot.as_mut() {
             foot.to = 0.0;
             foot.armed = false;
-            foot.spring = Some(Spring::new(now, foot.pull, 0.0, FOOT_PERIOD));
+            foot.spring = Some(Spring::new(now, foot.pull, 0.0, FOOT_BACK));
         }
         self.dirty = true;
     }
@@ -154,7 +163,10 @@ impl App {
         let cap = if foot.tasks { tasks_h } else { h };
         foot.pull = (foot.to + off).clamp(0.0, cap);
         self.dirty = true;
-        if !settled {
+        // Held at the end, a spring that overshot has nothing left to show,
+        // even while it reads as unsettled by a fraction of a pixel: a page
+        // never quite gone is a page that never quite lets a finger through.
+        if !settled && (foot.pull - foot.to).abs() >= 0.5 {
             return fx;
         }
         let to = foot.to;

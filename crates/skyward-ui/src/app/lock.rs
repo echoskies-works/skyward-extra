@@ -200,7 +200,11 @@ impl App {
         let reach = self.h as f32;
         match ev {
             Touch::Down(_, y) => {
-                self.drag = Drag::Lock { from: y, last: y, at: now, velocity: 0.0 };
+                // A measure of this finger alone: what it was doing before
+                // the lock came up is not part of this push.
+                self.tracker.clear();
+                self.tracker.add(now, y);
+                self.drag = Drag::Lock { from: y };
                 if let Some(lock) = self.lock.as_mut() {
                     // A lock still springing back is taken hold of where it
                     // is, rather than jumping to the finger.
@@ -208,31 +212,22 @@ impl App {
                 }
             }
             Touch::Move(_, y) => {
-                let Drag::Lock { from, last, at, velocity } = self.drag else { return Vec::new() };
+                let Drag::Lock { from } = self.drag else { return Vec::new() };
+                // The finger's travel, kept the way every other drag keeps
+                // it: letting go then reads a flick by the same measure the
+                // foot of the screen does, rather than a second one written
+                // here.
+                self.tracker.add(now, y);
                 let Some(lock) = self.lock.as_mut() else { return Vec::new() };
                 lock.away = (from - y).clamp(0.0, reach);
-                // How quick the finger is going, over the last move only.
-                // Two moves stamped the same instant say nothing about
-                // speed, so the last reading stands rather than dividing by
-                // nought and reading as an enormous flick.
-                let mut speed = velocity;
-                if let Some(elapsed) = now.checked_sub(at).filter(|ms| *ms > 0) {
-                    let reading = (last - y) / (elapsed as f32 / 1000.0);
-                    // Smoothed, so one shaky frame does not read as a flick.
-                    speed = velocity * 0.35 + reading * 0.65;
-                }
-                self.drag = Drag::Lock { from, last: y, at: now, velocity: speed };
                 self.dirty = true;
             }
             Touch::Up => {
-                let Drag::Lock { at, velocity, .. } = self.drag else { return Vec::new() };
+                let Drag::Lock { .. } = self.drag else { return Vec::new() };
+                // The tracker reads y, which grows down the screen; up is the
+                // way the lock goes, so the sign turns over.
+                let speed = -self.tracker.velocity(now);
                 let Some(lock) = self.lock.as_mut() else { return Vec::new() };
-                // A finger held still before it lifts is not a flick,
-                // whatever it was doing a moment before.
-                let speed = match now.saturating_sub(at) > 60 {
-                    true => 0.0,
-                    false => velocity,
-                };
                 let away = lock.away >= reach * LOCK_KEEP || speed >= reach * LOCK_FLING;
                 let to = if away { reach } else { 0.0 };
                 lock.to = to;
@@ -255,7 +250,12 @@ impl App {
         let (off, settled) = spring.at(now);
         lock.away = (lock.to + off).clamp(0.0, reach);
         self.dirty = true;
-        if !settled {
+        // A spring that overshot and was held at the end has nothing left to
+        // show. It can still read as unsettled by a fraction of a pixel, and
+        // a lock left standing at the screen's height goes on taking every
+        // touch while the page under it stands whole: the screen looks open
+        // and nothing answers. Where it has arrived, it has arrived.
+        if !settled && (lock.away - lock.to).abs() >= 0.5 {
             return fx;
         }
         if lock.to >= reach * 0.5 {
@@ -552,6 +552,32 @@ mod tests {
         app.touch(Touch::Up, &f, 216);
         app.tick(1_000);
         assert!(app.locked(), "a still finger is not a flick");
+    }
+
+    /// A push thrown off in an instant overshoots and is held at the screen's
+    /// height. The spring can go on reading as unsettled by a fraction of a
+    /// pixel, and a lock left standing there takes every touch while the page
+    /// under it stands whole: the screen looks open and nothing answers.
+    #[test]
+    fn a_quick_push_leaves_the_page_open_to_the_finger() {
+        use crate::app::testing::{info, spot, unlock};
+        let f = crate::font::bundled();
+        let i = info();
+        let mut app = App::new(Screen::Home, 1440, 3200, 3.5);
+        app.sleep(0);
+        // A finger on the dark panel, which lights nothing.
+        app.touch(Touch::Down(700.0, 1600.0), &f, 100);
+        app.touch(Touch::Move(700.0, 1300.0), &f, 120);
+        app.touch(Touch::Up, &f, 140);
+        app.wake(200);
+        app.lock_now();
+        // Sixteen hundred pixels in sixteen milliseconds.
+        unlock(&mut app, &f, 300);
+        assert!(!app.locked(), "the lock is away, not left standing at the top");
+        let (x, y) = spot(&mut app, &f, &i, Action::Open(Screen::Settings));
+        app.touch(Touch::Down(x, y), &f, 1400);
+        app.touch(Touch::Up, &f, 1400);
+        assert_eq!(app.screen(), Screen::Settings, "and the page under it takes a finger");
     }
 
     /// Let go and the spring carries the lock where the swipe said, a frame
