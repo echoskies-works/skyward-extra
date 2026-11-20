@@ -158,8 +158,9 @@ pub fn confirm_label(which: Confirm, s: &State) -> (&'static str, bool) {
     (s.lang.pick(label), danger)
 }
 
-/// The home page's large title.
-pub const HOME_TITLE: &str = "Skyward-Extra";
+/// The home page's large title: the mode the recovery is in, not the name
+/// of the build. The name is kept for the About page's wordmark alone.
+pub const HOME_TITLE: Text = ["恢复模式", "恢復模式", "Recovery"];
 pub const SEARCH_HINT: Text = ["搜索功能与分区", "搜尋功能與分割區", "Search features and partitions"];
 
 /// The desktop's title, never shown large but kept for the page's records.
@@ -2052,7 +2053,7 @@ pub fn home(cx: &Ctx) -> Frame {
     // However little it holds, the page scrolls far enough to fold its bar
     // away.
     let height = fitted(t, system.bottom).max(t.m.h + fold.span.ceil() as u32);
-    Frame { back: false, fold: Some(fold), ..Frame::new(t, c.crop_height(height), out, HOME_TITLE, cards_top) }
+    Frame { back: false, fold: Some(fold), ..Frame::new(t, c.crop_height(height), out, l.pick(HOME_TITLE), cards_top) }
 }
 
 /// What the home page says beside its entry to the systems: the one that

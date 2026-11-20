@@ -823,7 +823,7 @@ impl App {
             let below = m.content_top + m.search_h;
             out.put_rows(&frame.canvas, below.floor() as i32, frame.canvas.h as i32, (below - morph.scroll + rise).floor() as i32);
         }
-        let title = morph.title.get_or_insert_with(|| Blurs::new(widgets::big_title(&t, f, pages::HOME_TITLE)));
+        let title = morph.title.get_or_insert_with(|| Blurs::new(widgets::big_title(&t, f, self.state.lang.pick(pages::HOME_TITLE))));
         let level = (1.0 - q / MORPH_TITLE_GONE).clamp(0.0, 1.0);
         draw_faded(out, title, 0.0, rise - morph.scroll, t.pal.text, level, (1.0 - level) * m.dp(TITLE_BLUR_DP));
         if let Some((keys, top)) = &morph.keyboard {
