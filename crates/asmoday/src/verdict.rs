@@ -13,12 +13,19 @@ use std::time::Duration;
 
 /// How long the system may go without saying it is still there.
 ///
-/// Half a minute is not tight. The pages turn at least once a second even at
-/// rest, and everything that takes longer than that — an install, an erase, a
-/// backup, a filesystem being repaired — runs on a thread of its own while the
-/// loop keeps turning. What is left is a genuine stop: a driver waiting
-/// forever, a lock held by nothing.
-pub(crate) const SILENCE: Duration = Duration::from_secs(30);
+/// The pages turn at least once a second even at rest, and everything that
+/// takes longer than that — an install, an erase, a backup, a filesystem
+/// being repaired — runs on a thread of its own while the loop keeps turning.
+/// Ten seconds is ten chances to beat, which is enough for a real stop and
+/// short enough that a person watching a frozen panel sees the failure screen
+/// before they give up and hold the power button themselves.
+///
+/// The cost is at the other end: before the first frame, the system is busy
+/// with the port and the partitions and says nothing for as long as that
+/// takes. A slow start can outlast ten seconds and be killed here. That is
+/// why this is a number to revisit if a phone ever reports a crash while it
+/// was only coming up.
+pub(crate) const SILENCE: Duration = Duration::from_secs(10);
 
 /// The code reported for a system that was stopped for being silent.
 ///
@@ -190,15 +197,16 @@ mod tests {
     }
 
     #[test]
-    fn silence_is_believed_only_once_half_a_minute_has_passed() {
+    fn silence_is_believed_only_once_the_wait_has_passed() {
         let now = 100_000;
         let beat = |ago: u64| Some(now - ago);
+        let wait = SILENCE.as_millis() as u64;
         assert!(!overdue(beat(0), now, Duration::ZERO), "just said so");
-        assert!(!overdue(beat(29_000), now, Duration::from_secs(29)), "still inside the wait");
-        assert!(overdue(beat(30_000), now, Duration::from_secs(30)), "half a minute of nothing");
+        assert!(!overdue(beat(wait - 1), now, SILENCE - Duration::from_millis(1)), "still inside the wait");
+        assert!(overdue(beat(wait), now, SILENCE), "the whole wait of nothing");
         // A system that never spoke counts from the fork: the beat is what it
         // would have written first.
-        assert!(!overdue(None, now, Duration::from_secs(29)));
-        assert!(overdue(None, now, Duration::from_secs(30)));
+        assert!(!overdue(None, now, SILENCE - Duration::from_millis(1)));
+        assert!(overdue(None, now, SILENCE));
     }
 }

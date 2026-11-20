@@ -13,7 +13,8 @@ use anyhow::{anyhow, Result};
 use std::path::{Path, PathBuf};
 
 /// How long the system waits between two beats. A second wastes nothing on a
-/// memory filesystem and leaves thirty chances before silence is believed.
+/// memory filesystem and leaves several chances before silence is believed.
+/// The count on the other side is in asmoday's `verdict::SILENCE`.
 pub(crate) const BEAT_EVERY: u64 = 1000;
 
 /// Where a running system says that it got a frame onto the panel.

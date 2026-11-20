@@ -17,8 +17,8 @@
 //! nobody releases, a screen that stays black while the process behind it sits
 //! there — none of that leaves an exit code, because nothing exits. What it
 //! leaves is silence, and silence is what the parent watches for: the child
-//! writes the time to a file while it runs, and a file that has not moved in
-//! half a minute is a system that is not going to move again.
+//! writes the time to a file while it runs, and a file that has not moved for
+//! a few seconds is a system that is not going to move again.
 
 use crate::backlight::Backlight;
 use crate::verdict::{self, End, KILLED};
