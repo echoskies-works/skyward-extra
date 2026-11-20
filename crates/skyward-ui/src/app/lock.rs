@@ -20,13 +20,21 @@ const LOCK_DAY_AT: f32 = 66.0;
 /// enough the foot to sit under a thumb and clear of it.
 const LOCK_WORDS_AT: f32 = 0.872;
 /// How far up a finger drags the lock, as a share of the screen's height,
-/// to put it away: let go short of it, the lock goes back where it was.
-const LOCK_SWIPE: f32 = 0.34;
-/// How long the lock takes to go back, or away, once the finger lifts.
-const LOCK_PERIOD: f32 = 0.36;
-/// How far up the lock is dragged, of the share [`LOCK_SWIPE`] names, for
-/// letting go to put it away rather than back down.
-const LOCK_KEEP: f32 = 0.4;
+/// for letting go to put it away: short of it, the lock goes back where it
+/// was. The lock travels one for one with the finger, so this is a distance
+/// the finger itself covers — a short push up the screen, not a haul.
+const LOCK_KEEP: f32 = 0.18;
+/// A push this quick — screen heights a second — puts the lock away even
+/// when the finger never got that far: a flick reads as meant.
+const LOCK_FLING: f32 = 1.2;
+/// How long the lock takes to go away once the finger lifts: slow enough
+/// that the clock and the words are seen leaving the screen, rather than
+/// gone before the eye has followed them.
+const LOCK_AWAY: f32 = 0.52;
+/// How long it takes to come back down when the finger let go short of the
+/// mark. Quicker than going away: coming back reads as undoing a move, not
+/// as a move of its own.
+const LOCK_BACK: f32 = 0.34;
 /// A pixel of every this many of the page is kept for the lock's ground
 /// when no wallpaper is set, and for the soft copy the power menu stands
 /// on.
@@ -44,14 +52,15 @@ const LOCK_SOFT: Rgba = Rgba::rgb(224, 224, 224);
 const LOCK_INK_DARK: Rgba = Rgba::rgb(24, 24, 24);
 const LOCK_SOFT_DARK: Rgba = Rgba::rgb(96, 96, 96);
 
-/// The lock, once it is up: how far up it has been dragged, and where it is
+/// The lock, once it is up: how far up it has been pushed, and where it is
 /// going now that the finger has lifted.
 pub(super) struct Lock {
-    /// How far the lock has been pulled up, nought to one of the share of
-    /// the screen [`LOCK_SWIPE`] names.
-    pub(super) reveal: f32,
-    /// Where it comes to rest: nought back down, one away, the page under it
-    /// left as it was.
+    /// How far up the lock has been pushed, in pixels of this screen. The
+    /// sheet is drawn whole and moved up by this much, so it travels exactly
+    /// as far as the finger did.
+    pub(super) away: f32,
+    /// Where it comes to rest: nought back down, the screen's height away,
+    /// the page under it left as it was.
     pub(super) to: f32,
     /// The spring carrying it once the finger has gone.
     pub(super) spring: Option<Spring>,
@@ -62,7 +71,7 @@ pub(super) struct Lock {
 
 impl Lock {
     fn new() -> Lock {
-        Lock { reveal: 0.0, to: 0.0, spring: None, sheet: None }
+        Lock { away: 0.0, to: 0.0, spring: None, sheet: None }
     }
 }
 
@@ -91,12 +100,12 @@ impl App {
         self.lock.is_some()
     }
 
-    /// How far up a finger has to drag, in pixels of this screen, to put the
-    /// lock away. The lock follows the finger one for one up to that, so a
-    /// caller dragging it wants this to know where the end is — the preview
-    /// does, so its frames stand where the phone's would.
+    /// How far up a finger can push the lock, in pixels of this screen: the
+    /// screen's height, since the lock travels one for one with the finger.
+    /// A caller dragging it wants this to know where the end is — the
+    /// preview does, so its frames stand where the phone's would.
     pub fn lock_swipe_span(&self) -> f32 {
-        self.h as f32 * LOCK_SWIPE
+        self.h as f32
     }
 
     /// The lock over what is shown: its own wallpaper, veil, clock and words,
@@ -120,8 +129,13 @@ impl App {
             }
         }
         let Some(lock) = self.lock.as_ref() else { return };
-        let away = (lock.reveal * self.h as f32).round() as i32;
+        let away = lock.away.round() as i32;
         let sheet = lock.sheet.as_ref().expect("the sheet made just above");
+        // Pushed the whole screen up, nothing of the lock is left to lay
+        // down: the page under it is the whole picture now.
+        if away >= self.h as i32 {
+            return;
+        }
         out.put(sheet, -away);
     }
 
@@ -172,14 +186,21 @@ impl App {
         sheet
     }
 
-    /// A finger on the lock: dragged up it goes away, let go short of the
+    /// A finger on the lock: pushed up it goes away, let go short of the
     /// mark it goes back down. Nothing under it is touched, whatever the
     /// finger falls on.
+    ///
+    /// The lock travels one for one with the finger. It used to cover the
+    /// whole screen's height in the time the finger took to cover a third of
+    /// that, so the lock ran out from under the thumb about three pixels for
+    /// every one of the finger's — which read as the lock bolting the moment
+    /// it was touched. What the finger covers is now what the lock covers,
+    /// and the push that puts it away is a short one.
     pub(super) fn lock_touch(&mut self, ev: Touch, now: u64) -> Vec<Effect> {
-        let span = self.h as f32 * LOCK_SWIPE;
+        let reach = self.h as f32;
         match ev {
             Touch::Down(_, y) => {
-                self.drag = Drag::Lock { from: y };
+                self.drag = Drag::Lock { from: y, last: y, at: now, velocity: 0.0 };
                 if let Some(lock) = self.lock.as_mut() {
                     // A lock still springing back is taken hold of where it
                     // is, rather than jumping to the finger.
@@ -187,19 +208,36 @@ impl App {
                 }
             }
             Touch::Move(_, y) => {
-                let Drag::Lock { from } = self.drag else { return Vec::new() };
+                let Drag::Lock { from, last, at, velocity } = self.drag else { return Vec::new() };
                 let Some(lock) = self.lock.as_mut() else { return Vec::new() };
-                lock.reveal = ((from - y) / span).clamp(0.0, 1.0);
+                lock.away = (from - y).clamp(0.0, reach);
+                // How quick the finger is going, over the last move only.
+                // Two moves stamped the same instant say nothing about
+                // speed, so the last reading stands rather than dividing by
+                // nought and reading as an enormous flick.
+                let mut speed = velocity;
+                if let Some(elapsed) = now.checked_sub(at).filter(|ms| *ms > 0) {
+                    let reading = (last - y) / (elapsed as f32 / 1000.0);
+                    // Smoothed, so one shaky frame does not read as a flick.
+                    speed = velocity * 0.35 + reading * 0.65;
+                }
+                self.drag = Drag::Lock { from, last: y, at: now, velocity: speed };
                 self.dirty = true;
             }
             Touch::Up => {
+                let Drag::Lock { at, velocity, .. } = self.drag else { return Vec::new() };
                 let Some(lock) = self.lock.as_mut() else { return Vec::new() };
-                let to = match lock.reveal >= LOCK_KEEP {
-                    true => 1.0,
-                    false => 0.0,
+                // A finger held still before it lifts is not a flick,
+                // whatever it was doing a moment before.
+                let speed = match now.saturating_sub(at) > 60 {
+                    true => 0.0,
+                    false => velocity,
                 };
+                let away = lock.away >= reach * LOCK_KEEP || speed >= reach * LOCK_FLING;
+                let to = if away { reach } else { 0.0 };
                 lock.to = to;
-                lock.spring = Some(Spring::new(now, lock.reveal - to, 0.0, LOCK_PERIOD));
+                let period = if away { LOCK_AWAY } else { LOCK_BACK };
+                lock.spring = Some(Spring::new(now, lock.away - to, speed, period));
                 self.drag = Drag::Idle;
                 self.dirty = true;
             }
@@ -211,22 +249,23 @@ impl App {
     /// is gone.
     pub(super) fn settle_lock(&mut self, now: u64) -> Vec<Effect> {
         let fx = Vec::new();
+        let reach = self.h as f32;
         let Some(lock) = self.lock.as_mut() else { return fx };
         let Some(spring) = lock.spring else { return fx };
         let (off, settled) = spring.at(now);
-        lock.reveal = (lock.to + off).clamp(0.0, 1.0);
+        lock.away = (lock.to + off).clamp(0.0, reach);
         self.dirty = true;
         if !settled {
             return fx;
         }
-        if lock.to >= 0.5 {
+        if lock.to >= reach * 0.5 {
             // Away: the page under it is what shows, as it was left.
             self.lock = None;
             self.behind = None;
             return fx;
         }
         let lock = self.lock.as_mut().expect("the lock is under way");
-        lock.reveal = 0.0;
+        lock.away = 0.0;
         lock.spring = None;
         fx
     }
@@ -398,7 +437,7 @@ mod tests {
         app.lock_now();
         assert!(app.locked(), "the panel going dark leaves the lock behind it");
         app.touch(Touch::Down(200.0, 700.0), &f, 0);
-        app.touch(Touch::Move(200.0, 700.0 - 800.0 * LOCK_SWIPE * 0.6), &f, 0);
+        app.touch(Touch::Move(200.0, 700.0 - 800.0 * 0.30), &f, 0);
         app.touch(Touch::Up, &f, 0);
         app.tick(1_000);
         assert!(!app.locked(), "swiped past the mark, the lock goes away");
@@ -413,7 +452,7 @@ mod tests {
         app.wake(0);
         app.lock_now();
         app.touch(Touch::Down(200.0, 700.0), &f, 0);
-        app.touch(Touch::Move(200.0, 700.0 - 800.0 * LOCK_SWIPE * 0.2), &f, 0);
+        app.touch(Touch::Move(200.0, 700.0 - 800.0 * 0.08), &f, 0);
         app.touch(Touch::Up, &f, 0);
         app.tick(1_000);
         assert!(app.locked(), "let go short of the mark, the lock stays");
@@ -463,6 +502,58 @@ mod tests {
         }
     }
 
+    /// The lock goes up exactly as far as the finger does. It used to run
+    /// out from under the thumb three times as fast as the finger moved,
+    /// which read as the lock bolting the moment it was touched.
+    #[test]
+    fn the_lock_travels_exactly_as_far_as_the_finger() {
+        let f = crate::font::bundled();
+        let mut app = App::new(Screen::Desktop, 400, 800, 2.0);
+        app.sleep(0);
+        app.wake(0);
+        app.lock_now();
+        app.touch(Touch::Down(200.0, 700.0), &f, 0);
+        app.touch(Touch::Move(200.0, 500.0), &f, 16);
+        let away = app.lock.as_ref().expect("the lock is up").away;
+        assert_eq!(away, 200.0, "two hundred pixels of finger, two hundred of lock");
+    }
+
+    /// A quick flick puts the lock away even though the finger never got
+    /// near the mark: the push was meant, and asking for a longer haul would
+    /// read as the lock refusing.
+    #[test]
+    fn a_flick_puts_the_lock_away_short_of_the_mark() {
+        let f = crate::font::bundled();
+        let mut app = App::new(Screen::Desktop, 400, 800, 2.0);
+        app.sleep(0);
+        app.wake(0);
+        app.lock_now();
+        // Eighty pixels in sixteen milliseconds: a tenth of the screen, well
+        // short of the mark, but travelling at five thousand pixels a second.
+        app.touch(Touch::Down(200.0, 700.0), &f, 0);
+        app.touch(Touch::Move(200.0, 620.0), &f, 16);
+        app.touch(Touch::Up, &f, 16);
+        app.tick(1_000);
+        assert!(!app.locked(), "a flick means it, short of the mark or not");
+    }
+
+    /// A slow push that stops short is not a flick, however far it came: the
+    /// finger was at rest when it lifted, and the lock goes back down.
+    #[test]
+    fn a_slow_push_held_before_it_lifts_goes_back_down() {
+        let f = crate::font::bundled();
+        let mut app = App::new(Screen::Desktop, 400, 800, 2.0);
+        app.sleep(0);
+        app.wake(0);
+        app.lock_now();
+        app.touch(Touch::Down(200.0, 700.0), &f, 0);
+        app.touch(Touch::Move(200.0, 620.0), &f, 16);
+        // Held still for a fifth of a second before it let go.
+        app.touch(Touch::Up, &f, 216);
+        app.tick(1_000);
+        assert!(app.locked(), "a still finger is not a flick");
+    }
+
     /// Let go and the spring carries the lock where the swipe said, a frame
     /// at a time. Woken only when the spring was due to land, the panel drew
     /// the lock under the finger and then the page: the motion in between
@@ -475,7 +566,7 @@ mod tests {
         app.wake(0);
         app.lock_now();
         app.touch(Touch::Down(200.0, 700.0), &f, 0);
-        app.touch(Touch::Move(200.0, 700.0 - 800.0 * LOCK_SWIPE * 0.6), &f, 0);
+        app.touch(Touch::Move(200.0, 700.0 - 800.0 * 0.30), &f, 0);
         app.touch(Touch::Up, &f, 0);
         assert_eq!(app.deadline(0), Some(0), "the spring is carried a frame at a time");
         let _ = app.take_dirty();

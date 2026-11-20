@@ -744,8 +744,11 @@ enum Drag {
     /// counts until it lifts.
     Waking,
     /// A finger on the lock, pulling it up from where it came down at
-    /// `from`: past the mark it goes away, short of it, back down.
-    Lock { from: f32 },
+    /// `from`: past the mark it goes away, short of it, back down. `last`
+    /// and `at` are where and when it was on the move before, so letting go
+    /// knows how quick it was going — a flick puts the lock away without
+    /// the finger having to travel the whole mark.
+    Lock { from: f32, last: f32, at: u64, velocity: f32 },
     /// A finger on the status bar, or on the panel it has out, pulling it
     /// down or back up from where it came down at `from`. `last` is where
     /// it was on the move before, so a pull on a list already out scrolls

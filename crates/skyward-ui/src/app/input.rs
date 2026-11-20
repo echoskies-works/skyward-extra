@@ -444,7 +444,7 @@ impl App {
                 }
                 // A finger on the lock, which is swiped by its own path in
                 // `lock_touch` and never reaches here.
-                Drag::Lock { from } => self.drag = Drag::Lock { from },
+                Drag::Lock { .. } => {}
                 // A finger on the panel, which is moved by its own path in
                 // `shade_touch`; here only for a pull that began on the bar
                 // and has not yet shown the panel at all.
