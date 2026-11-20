@@ -10,7 +10,7 @@
 
 use crate::lang::Lang;
 use super::menu::{Action, Crash, Reason, View, ITEMS};
-use super::screen::{AMBER, Screen, CELL_H, INK, LINE_H, LIT, SCALE};
+use super::screen::{YELLOW, Screen, CELL_H, INK, LINE_H, LIT, SCALE};
 
 /// What the panel says at the top.
 pub(crate) const TITLE: [&str; 2] = ["Skyward-Extra Startup Menu", "Skyward-Extra 启动菜单"];
@@ -44,10 +44,10 @@ pub(crate) enum Ink {
     Plain,
     /// Black on a white band: the line the keys are pointing at.
     Reversed,
-    /// Amber on black: a state the panel is reporting, not a choice. Amber
+    /// Yellow on black: a state the panel is reporting, not a choice. Yellow
     /// rather than the white of the menu proper keeps a reading from being
     /// mistaken for one of the lines the keys can move through.
-    Amber,
+    Yellow,
 }
 
 /// A state the panel reports under the key legend.
@@ -62,8 +62,8 @@ pub(crate) struct Hint {
 }
 
 impl Hint {
-    pub(crate) fn amber(text: impl Into<String>) -> Self {
-        Hint { text: text.into(), ink: Ink::Amber }
+    pub(crate) fn yellow(text: impl Into<String>) -> Self {
+        Hint { text: text.into(), ink: Ink::Yellow }
     }
 }
 
@@ -75,7 +75,7 @@ impl Hint {
 /// Nothing here is carved into the drawing, so an empty list leaves the
 /// panel exactly as it was before any of this existed.
 pub(crate) fn hints(lang: Lang) -> Vec<Hint> {
-    vec![Hint::amber(lang.pick([
+    vec![Hint::yellow(lang.pick([
         "Secure Boot status unknown",
         "安全启动状态未知",
     ]))]
@@ -172,9 +172,9 @@ pub fn draw(screen: &mut Screen, view: View, lang: Lang, typed: usize) {
                 screen.draw_left(y, &shown, INK);
                 left -= shown.chars().count();
             }
-            Line::Words(text, Ink::Amber) => {
+            Line::Words(text, Ink::Yellow) => {
                 let shown: String = text.chars().take(left).collect();
-                screen.draw_left(y, &shown, AMBER);
+                screen.draw_left(y, &shown, YELLOW);
                 left -= shown.chars().count();
             }
             Line::Rule => {
@@ -482,7 +482,7 @@ mod tests {
     fn an_empty_reading_leaves_the_legend_at_the_end() {
         // When there is nothing to report — before a reading is taken, or
         // after it stops being true — the panel is what it was: the key
-        // legend is the last line, with no blank and no amber note after it.
+        // legend is the last line, with no blank and no yellow note after it.
         for lang in BOTH {
             let with_none = footer_with(lang, &[]);
             let with_one = footer(lang);
@@ -494,32 +494,32 @@ mod tests {
     }
 
     #[test]
-    fn a_reading_is_the_last_line_in_amber() {
+    fn a_reading_is_the_last_line_in_yellow() {
         for lang in BOTH {
             let lines = list(0, lang);
             let last = lines.last().expect("a footer");
             let reported = hints(lang);
             assert_eq!(reported.len(), 1, "{lang:?}: one reading for now");
             assert_eq!(last.text(), reported[0].text, "{lang:?}: the reading is the last line");
-            assert_eq!(reported[0].ink, Ink::Amber, "{lang:?}: reported, not offered");
+            assert_eq!(reported[0].ink, Ink::Yellow, "{lang:?}: reported, not offered");
             let expected = lang.pick(["Secure Boot status unknown", "安全启动状态未知"]);
             assert_eq!(last.text(), expected, "{lang:?}: the words are the ones asked for");
         }
     }
 
     #[test]
-    fn the_readings_are_amber_and_the_rest_is_black_and_white() {
+    fn the_readings_are_yellow_and_the_rest_is_black_and_white() {
         let (w, h) = (1200u32, 2608u32);
-        let amber = [AMBER[0], AMBER[1], AMBER[2], 0xff];
+        let yellow = [YELLOW[0], YELLOW[1], YELLOW[2], 0xff];
         for lang in BOTH {
             let mut screen = Screen::new(w, h);
             draw(&mut screen, View::List { sel: 1 }, lang, ALL);
-            // No greys and no theme: black, white, and one amber for the
+            // No greys and no theme: black, white, and one yellow for the
             // readings. The cursor is the same white reversed, not a shade.
             let pixels = screen.data.as_chunks::<4>().0;
-            assert!(pixels.iter().all(|px| *px == [0, 0, 0, 0xff] || *px == [0xff; 4] || *px == amber), "{lang:?}: a pixel that is neither black, white nor amber");
+            assert!(pixels.iter().all(|px| *px == [0, 0, 0, 0xff] || *px == [0xff; 4] || *px == yellow), "{lang:?}: a pixel that is neither black, white nor yellow");
             assert!(pixels.contains(&[0xff; 4]), "{lang:?}: and something is lit");
-            assert!(pixels.contains(&amber), "{lang:?}: the reading is in amber");
+            assert!(pixels.contains(&yellow), "{lang:?}: the reading is in yellow");
         }
     }
 
