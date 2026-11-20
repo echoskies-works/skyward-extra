@@ -1114,4 +1114,43 @@ mod tests {
         tags.sort();
         assert_eq!(tags, ["browser", "weather"]);
     }
+
+    #[test]
+    fn advanced_lists_the_desktop_apps_but_not_the_two_it_already_opens() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Advanced, W, H, PPD);
+        let opens: Vec<Action> = app.frame(&f, &i).hits.iter().map(|h| h.action).collect();
+        // The recovery and the files are already rows of the tools above:
+        // the second list carries the other six, and nothing twice.
+        let apps: Vec<Action> = opens.iter().copied().filter(|a| {
+            matches!(a, Action::Open(Screen::Clock | Screen::Calculator | Screen::Music | Screen::Tasks))
+                || matches!(a, Action::NotReady(_))
+        }).collect();
+        assert_eq!(apps, [
+            Action::Open(Screen::Clock),
+            Action::Open(Screen::Calculator),
+            Action::Open(Screen::Music),
+            Action::NotReady("browser"),
+            Action::Open(Screen::Tasks),
+            Action::NotReady("weather"),
+        ]);
+        assert_eq!(opens.iter().filter(|&&a| a == Action::Open(Screen::Home)).count(), 0);
+        assert_eq!(opens.iter().filter(|&&a| a == Action::Open(Screen::Files)).count(), 1, "files stays once, with the tools");
+    }
+
+    #[test]
+    fn an_app_in_advanced_opens_the_page_its_desktop_icon_opens() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Advanced, W, H, PPD);
+        tap(&mut app, &f, &i, Action::Open(Screen::Clock));
+        assert_eq!(app.screen(), Screen::Clock);
+    }
+
+    #[test]
+    fn a_desktop_app_not_built_yet_stops_from_advanced_too() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Advanced, W, H, PPD);
+        let fx = tap(&mut app, &f, &i, Action::NotReady("browser"));
+        assert!(matches!(fx.as_slice(), [Effect::Stop { code: NOT_READY, reason: Some(tag) }] if *tag == "browser"));
+    }
 }

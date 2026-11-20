@@ -3938,10 +3938,18 @@ const RESTORE_COMPLETE: Text = ["恢复完成", "還原完成", "Restore complet
 const RESTORE_FAILED: Text = ["恢复失败", "還原失敗", "Restore failed"];
 const STOP: Text = ["停止", "停止", "Stop"];
 
-/// Tools for the experienced.
+const DESKTOP_APPS_TITLE: Text = ["桌面应用", "桌面應用", "Desktop apps"];
+
+/// Tools for the experienced: the recovery's own tools, then the apps the
+/// desktop carries. The second list is the desktop's own apps less the two
+/// that open pages already named above — the recovery and the files — so
+/// the two lists never offer the same thing twice. What each row opens is
+/// what its icon on the desktop opens, including the ones not built yet,
+/// which answer by stopping rather than by opening an empty page.
 pub fn advanced(cx: &Ctx) -> Frame {
     let (t, f, l) = (cx.t, cx.f, cx.state.lang);
-    let mut c = page(cx);
+    let mut c = long_page(cx);
+    let mut out = Vec::new();
     let top = t.m.content_top;
     let tools = widgets::list(&mut c, t, f, top, &[
         Row::new(l.pick(FILES)).icon(BLUE, Icon::Folder),
@@ -3951,15 +3959,33 @@ pub fn advanced(cx: &Ctx) -> Frame {
         Row::new(l.pick(LOGS)).icon(ORANGE, Icon::Log),
         Row::new(l.pick(UPDATE)).icon(GREEN, Icon::Layers).trail(Trail::Value(update_value(cx))),
     ]);
-    let out = hits(&tools.rows, &[
+    out.extend(hits(&tools.rows, &[
         Action::Open(Screen::Files),
         Action::Open(Screen::Terminal),
         Action::Open(Screen::Relabel),
         Action::Open(Screen::Filesystems),
         Action::Open(Screen::Logs),
         Action::Open(Screen::Update),
-    ]);
-    Frame::new(t, c, out, l.pick(ADVANCED), top)
+    ]));
+
+    let y = widgets::section(&mut c, t, f, tools.bottom, l.pick(DESKTOP_APPS_TITLE));
+    let rows: Vec<Row> = DESKTOP_APPS
+        .iter()
+        .filter(|app| !matches!(app.opens, Opens::Page(Screen::Home | Screen::Files)))
+        .map(|app| Row::new(l.pick(app.name)).icon(app.color, app.icon))
+        .collect();
+    let apps = widgets::list(&mut c, t, f, y, &rows);
+    let opens: Vec<Action> = DESKTOP_APPS
+        .iter()
+        .filter(|app| !matches!(app.opens, Opens::Page(Screen::Home | Screen::Files)))
+        .map(|app| match app.opens {
+            Opens::Page(screen) => Action::Open(screen),
+            Opens::NotYet(tag) => Action::NotReady(tag),
+        })
+        .collect();
+    out.extend(hits(&apps.rows, &opens));
+
+    Frame::new(t, fit(c, t, apps.bottom), out, l.pick(ADVANCED), top)
 }
 
 const RELABEL: Text = ["修复 SELinux 上下文", "修復 SELinux 上下文", "Fix SELinux contexts"];
