@@ -4,14 +4,22 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+# The recovery service: it starts the system, watches it, and owns the panel
+# while there is no system to own it. init starts this under the name
+# `recovery`; the system it starts is a separate binary, `skyward`, so a
+# change to the system relinks nothing here.
+[[bin]]
+name = "asmoday"
+path = "src/main.rs"
+
 # The menu depends on the scanout and nothing else, on purpose. Adding a
 # dependency here is a decision about how likely this program is to still
 # work on a phone whose system partition is the thing that broke.
 [dependencies]
 anyhow = { workspace = true }
-skyward-kms = { path = "../skyward-kms" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 evdev = "0.13.2"
 libc = { workspace = true }
+skyward-kms = { path = "../skyward-kms" }
 skyward-sys = { path = "../skyward-sys" }

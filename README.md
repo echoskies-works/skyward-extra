@@ -216,8 +216,15 @@ the phone, and the packer for the computer:
 
 ```sh
 cargo ndk -t arm64-v8a --platform 30 build --release -p skyward
+cargo ndk -t arm64-v8a --platform 30 build --release -p asmoday
 cargo build --release -p skyward-pack
 ```
+
+The phone runs two programs: `skyward` is the system, and `asmoday` is the
+watcher init starts as `recovery`. It starts the system in a child and owns the
+panel (the startup menu and the failure screens) while there is no system to do
+it. Keeping them as two binaries means a rebuild of the system cannot touch the
+watcher.
 
 The second system's first program runs before any library is there to load, so it
 is built as a static program:
@@ -239,6 +246,7 @@ Then it builds the image on top of it:
 ```sh
 target/release/skyward-pack recovery \
   --stock target/stock/nezha/recovery.img \
+  --asmoday target/aarch64-linux-android/release/asmoday \
   --binary target/aarch64-linux-android/release/skyward \
   --system-init target/system-init/aarch64-linux-android/release/system-init \
   --config devices/nezha.toml \

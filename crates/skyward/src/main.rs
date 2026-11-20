@@ -43,10 +43,6 @@ mod supervise;
 mod ui;
 #[cfg(target_os = "android")]
 mod updates;
-// The rule that decides what a broken phone says, kept where a desk build can
-// reach it: the process that gathers the numbers only exists on a phone.
-#[cfg(any(target_os = "android", test))]
-mod verdict;
 #[cfg(any(target_os = "android", test))]
 mod waveform;
 #[cfg(target_os = "android")]
@@ -223,12 +219,6 @@ enum Cmd {
         /// The brand typeface the About page sets its wordmark in.
         #[arg(long, default_value = "/skyward/LexendDeca-VariableFont_wght.ttf")]
         brand: std::path::PathBuf,
-        /// Show the startup menu instead of the recovery UI. The shell's way
-        /// in where the `startup` link is not to hand, and just what the
-        /// menu does when the failure screen leads to it. The other options
-        /// here are ignored.
-        #[arg(long)]
-        startup: bool,
         /// Open on the unlock page instead of the home page.
         #[arg(long)]
         unlock: bool,
@@ -238,50 +228,14 @@ enum Cmd {
     },
 }
 
-/// The startup menu, when this binary is run as `startup`.
-///
-/// The menu is reached from the failure screen, now that there is a parent to
-/// show one — this name is the way in from a shell, which is still how the
-/// panel gets checked on a phone. "Continue" hands over to the same watching
-/// parent the recovery service starts through: a system started from the menu
-/// is no less able to fall over than one started by init.
-#[cfg(target_os = "android")]
-fn startup_menu() -> Result<()> {
-    match asmoday::run()? {
-        asmoday::Choice::System => supervise::run(),
-        asmoday::Choice::PowerOff => skyward_sys::power(Power::Off),
-        // The bootloader's own fastboot, not the recovery's userspace one:
-        // this is the mode that can write an image when nothing on the phone
-        // will start, which is the whole reason the line is on the menu.
-        asmoday::Choice::Fastboot => skyward_sys::power(Power::Bootloader),
-    }
-}
-
 fn main() -> Result<()> {
-    // init starts the recovery service by path with no arguments.
+    // The system is exec'd by the watcher under its own name, with no
+    // arguments. init never starts this binary directly: it starts the
+    // watcher as `recovery`, and the watcher exec's this as `skyward`.
     let started_as = std::env::args_os().next().unwrap_or_default();
     let name = Path::new(&started_as).file_name().unwrap_or_default();
-    if name == "recovery" {
-        // On the phone the recovery service is the child half of a pair: the
-        // parent outlives it, and is what the panel has left to say what
-        // became of it. A shell trying the system out can ask for it with
-        // nothing watching.
-        #[cfg(target_os = "android")]
-        {
-            if std::env::var_os("SKYWARD_UNSUPERVISED").is_some() {
-                return recovery();
-            }
-            return supervise::run();
-        }
-        #[cfg(not(target_os = "android"))]
+    if name == "skyward" {
         return recovery();
-    }
-    // The menu, by its own name: reachable from a shell while nothing starts
-    // it automatically yet, which is also how the panel gets checked on a
-    // real phone before init is told about it.
-    #[cfg(target_os = "android")]
-    if name == "startup" {
-        return startup_menu();
     }
     // Install scripts run the commands linked to this binary by their names.
     let args: Vec<_> = std::env::args_os().skip(1).collect();
@@ -489,13 +443,7 @@ fn main() -> Result<()> {
             Ok(())
         }
         #[cfg(target_os = "android")]
-        Cmd::Ui { config, font, mono, brand, startup, unlock, dump } => {
-            // The menu is a different screen from the recovery UI: it has its
-            // own fonts and its own way on, so none of the UI's options apply
-            // once this one is asked for.
-            if startup {
-                return startup_menu();
-            }
+        Cmd::Ui { config, font, mono, brand, unlock, dump } => {
             let cfg = DeviceConfig::load(&config)?;
             let start = if unlock { skyward_ui::app::Screen::Decrypt } else { skyward_ui::app::Screen::Desktop };
             // The programs the recovery service started for the phone's

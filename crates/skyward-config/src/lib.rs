@@ -45,8 +45,12 @@ pub mod ramdisk {
     /// speak: the「个性化选项」page reads them to show which ring and which
     /// notification are in use, as it reads the wallpapers' names.
     pub const SFX_NAMES: &str = "skyward/sfx/sfx.toml";
-    /// The recovery service binary init starts.
+    /// The recovery service init starts. This is the watcher (asmoday): it
+    /// starts the system below in a child and owns the panel while it is down.
     pub const RECOVERY: &str = "system/bin/recovery";
+    /// The system the watcher exec's in its child. A separate binary, so a
+    /// rebuild of the system relinks nothing in the watcher.
+    pub const SKYWARD: &str = "system/bin/skyward";
     /// The first program of a system installed beside the installed one,
     /// which Skyward puts in that system's init_boot image: linked
     /// statically, since it runs before any system's libraries are there.
@@ -54,16 +58,16 @@ pub mod ramdisk {
     /// The commands install scripts written for other recoveries run that
     /// Skyward answers itself: 7za, avbctl, resetprop and zstd, which a
     /// stock recovery does not carry, and unzip, whose stock version holds
-    /// all that `-p` takes out in memory. Each is a link to the recovery
-    /// service binary beside it, which runs the command it is started as.
+    /// all that `-p` takes out in memory. Each is a link to the system binary
+    /// beside it, which runs the command it is started as — not to the watcher
+    /// at `RECOVERY`, which knows nothing about installs.
     pub const COMMANDS: [&str; 5] =
         ["system/bin/7za", "system/bin/avbctl", "system/bin/resetprop", "system/bin/unzip", "system/bin/zstd"];
     /// The startup menu, reached by this name.
     ///
-    /// init starts the recovery service by path with no arguments, so a
-    /// program that has to be reachable on its own needs a name of its own.
-    /// For now the link points at the recovery binary and the binary picks
-    /// the menu by the name it was started as.
+    /// The link points at the watcher (`RECOVERY`), which picks the menu by
+    /// the name it was started as. It needs no second binary: the watcher and
+    /// the menu are the same program seen from two sides.
     pub const STARTUP: &str = "system/bin/startup";
     /// The first property file init loads in recovery mode.
     pub const PROP_DEFAULT: &str = "prop.default";
@@ -723,10 +727,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_commands_sit_beside_the_recovery_service_binary() {
+    fn the_commands_sit_beside_the_system_binary() {
+        // Install commands are answered by the system, not by the watcher at
+        // RECOVERY — the watcher knows nothing about installs.
         let folder = |path: &str| Path::new(path).parent().map(Path::to_path_buf);
         for command in ramdisk::COMMANDS {
-            assert_eq!(folder(command), folder(ramdisk::RECOVERY), "{command}");
+            assert_eq!(folder(command), folder(ramdisk::SKYWARD), "{command}");
         }
     }
 

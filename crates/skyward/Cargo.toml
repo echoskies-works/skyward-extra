@@ -19,10 +19,6 @@ skyward-info = { path = "../skyward-info" }
 skyward-install = { path = "../skyward-install" }
 skyward-sys = { path = "../skyward-sys" }
 skyward-lp = { path = "../skyward-lp" }
-# Both are here rather than under android because the rule that decides what a
-# broken phone says is checked on a desk, and it reads exit statuses: see
-# src/verdict.rs.
-asmoday = { path = "../asmoday" }
 libc = { workspace = true }
 
 [dev-dependencies]

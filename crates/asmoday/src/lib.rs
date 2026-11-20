@@ -25,12 +25,27 @@ mod lang;
 mod menu;
 mod paint;
 mod screen;
+mod verdict;
 
 #[cfg(target_os = "android")]
+mod backlight;
+#[cfg(target_os = "android")]
 mod keys;
+#[cfg(target_os = "android")]
+mod watch;
 
 pub use lang::Lang;
 pub use menu::{Action, Crash, Reason, View};
+
+/// Start the system, watch it, and own the panel while it is down.
+///
+/// This is the recovery service init starts. It lives here, next to the menu,
+/// because the two are the same job seen from two sides: while a system runs
+/// the parent only waits, and the moment it stops the parent is the menu.
+#[cfg(target_os = "android")]
+pub fn watch() -> Result<()> {
+    watch::run()
+}
 
 /// Draw `view` into a fresh RGBA buffer of `w` by `h`.
 ///

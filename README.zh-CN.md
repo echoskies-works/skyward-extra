@@ -162,8 +162,11 @@ Skyward 使用 `rust-toolchain.toml` 指定版本的 Rust 和它的 `aarch64-lin
 
 ```sh
 cargo ndk -t arm64-v8a --platform 30 build --release -p skyward
+cargo ndk -t arm64-v8a --platform 30 build --release -p asmoday
 cargo build --release -p skyward-pack
 ```
+
+手机上运行两个程序：`skyward` 是系统，`asmoday` 是 init 以 `recovery` 之名启动的看护者。它在子进程里启动系统，系统不在时由它接管面板（启动菜单和崩溃屏）。两者分成两个二进制，系统重新编译不会碰到看护者。
 
 第二系统启动时运行的第一个程序在任何动态库可用之前运行，因此构建为静态程序：
 
@@ -182,6 +185,7 @@ target/release/skyward-pack stock --config devices/nezha.toml --out target/stock
 ```sh
 target/release/skyward-pack recovery \
   --stock target/stock/nezha/recovery.img \
+  --asmoday target/aarch64-linux-android/release/asmoday \
   --binary target/aarch64-linux-android/release/skyward \
   --system-init target/system-init/aarch64-linux-android/release/system-init \
   --config devices/nezha.toml \

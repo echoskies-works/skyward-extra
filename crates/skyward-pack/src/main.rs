@@ -19,6 +19,9 @@ struct Cli {
     cmd: Cmd,
 }
 
+// A CLI enum: parsed once, never copied in a loop. Boxing its variants to
+// shrink the largest would only make the argument definitions harder to read.
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand)]
 enum Cmd {
     /// Print an image's header and the files in its ramdisk.
@@ -48,7 +51,12 @@ enum Cmd {
         /// phone or a full update package holds it, ending in its AVB footer.
         #[arg(long)]
         stock: PathBuf,
-        /// Skyward built for the device (aarch64-linux-android).
+        /// The watcher, asmoday built for the device (aarch64-linux-android).
+        /// init starts this as `system/bin/recovery`.
+        #[arg(long)]
+        asmoday: PathBuf,
+        /// The system, skyward built for the device (aarch64-linux-android).
+        /// The watcher exec's this as `system/bin/skyward`.
         #[arg(long)]
         binary: PathBuf,
         /// The first program of a system installed beside the installed
@@ -138,6 +146,7 @@ fn main() -> Result<()> {
         }
         Cmd::Recovery {
             stock,
+            asmoday,
             binary,
             system_init,
             config,
@@ -159,16 +168,21 @@ fn main() -> Result<()> {
             }
             let read = |p: &PathBuf| std::fs::read(p).with_context(|| format!("read {}", p.display()));
             skyward_config::DeviceConfig::load(&config)?;
-            rd.replace(paths::RECOVERY, read(&binary)?)?;
+            // init starts the watcher under the name it already knows. The
+            // system is a second, independent binary that the watcher exec's;
+            // a rebuild of the system leaves the watcher's ELF untouched.
+            rd.replace(paths::RECOVERY, read(&asmoday)?)?;
+            rd.add(paths::SKYWARD, 0o755, read(&binary)?)?;
             // Install scripts look for the commands a stock recovery lacks
             // among its programs, and its unzip there too, a link to ziptool
-            // until it points here; the recovery binary is each of them.
-            let (_, recovery) = paths::RECOVERY.rsplit_once('/').expect("the recovery binary is in a folder");
+            // until it points here; the system binary answers each of them.
+            let (_, system) = paths::SKYWARD.rsplit_once('/').expect("the system binary is in a folder");
             for command in paths::COMMANDS {
-                rd.link(command, recovery)?;
+                rd.link(command, system)?;
             }
-            // The startup menu, under a name of its own: nothing runs it yet,
-            // and this is what makes it reachable from a shell on the phone.
+            // The startup menu is the watcher under a name of its own: still
+            // how the panel gets reached from a shell on the phone.
+            let (_, recovery) = paths::RECOVERY.rsplit_once('/').expect("the recovery binary is in a folder");
             rd.link(paths::STARTUP, recovery)?;
             rd.add(paths::SYSTEM_INIT, 0o755, read(&system_init)?)?;
             rd.add(paths::CONFIG, 0o644, read(&config)?)?;

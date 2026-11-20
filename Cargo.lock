@@ -172,6 +172,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
+name = "asmoday"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "evdev",
+ "libc",
+ "skyward-kms",
+ "skyward-sys",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2384,7 +2395,6 @@ dependencies = [
  "skyward-net",
  "skyward-omapi",
  "skyward-programs",
- "asmoday",
  "skyward-sys",
  "skyward-systems",
  "skyward-ui",
@@ -2615,13 +2625,13 @@ name = "skyward-preview"
 version = "0.3.1"
 dependencies = [
  "anyhow",
+ "asmoday",
  "png",
  "serde",
  "skyward-config",
  "skyward-info",
  "skyward-install",
  "skyward-net",
- "asmoday",
  "skyward-systems",
  "skyward-ui",
  "skyward-vab",
@@ -2637,17 +2647,6 @@ dependencies = [
  "skyward-config",
  "skyward-sys",
  "tempfile",
-]
-
-[[package]]
-name = "asmoday"
-version = "0.3.1"
-dependencies = [
- "anyhow",
- "evdev",
- "libc",
- "skyward-kms",
- "skyward-sys",
 ]
 
 [[package]]
