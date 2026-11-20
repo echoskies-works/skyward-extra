@@ -177,6 +177,11 @@ pub struct Weights {
 /// screenshots, and the wordmark is no longer set in it.
 const BRAND_WEIGHT: f32 = 480.0;
 
+/// The `wght` the lock's clock asks: MiSans at its semibold coordinate, a
+/// step heavier than any role the pages use, so the time reads as the lock's
+/// own lettering rather than as a title that happens to be large.
+const LOCK_WEIGHT: f32 = 600.0;
+
 pub const STOCK_WEIGHTS: Weights = Weights {
     title: 322.0,
     heading: 365.0,
@@ -192,6 +197,9 @@ pub const STOCK_WEIGHTS: Weights = Weights {
 pub struct Fonts {
     /// Large page title.
     pub title: Face,
+    /// The lock's clock, set a step heavier than any page's text: the time
+    /// is the lock's own piece of lettering, not a title.
+    pub lock_clock: Face,
     /// Row, card and grid-value titles.
     pub heading: Face,
     /// Section captions.
@@ -284,6 +292,7 @@ impl Fonts {
         let face = |wght: f32| Face::new(data, index, wght);
         Ok(Fonts {
             title: face(w.title)?,
+            lock_clock: face(LOCK_WEIGHT)?,
             heading: face(w.heading)?,
             label: face(w.label)?,
             body: face(w.body)?,

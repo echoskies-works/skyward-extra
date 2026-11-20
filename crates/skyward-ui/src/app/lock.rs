@@ -11,10 +11,17 @@ use super::*;
 /// own system sets it.
 const LOCK_CLOCK_AT: f32 = 0.181;
 /// The clock's size in dp: the figures are the page, so they are set the way
-/// a clock face's are rather than a title's that happens to be large.
-const LOCK_CLOCK_PX: f32 = 104.0;
-/// How far under the clock's middle the day stands, in dp.
-const LOCK_DAY_AT: f32 = 66.0;
+/// a clock face's are rather than a title's that happens to be large. Set
+/// semibold the figures are wider than a page's text, and this is the size
+/// that keeps them to the middle of the screen with room either side, as the
+/// lock's own system sets them.
+const LOCK_CLOCK_PX: f32 = 88.0;
+/// How far above the clock's middle the day stands, in dp: the day reads
+/// first and the time under it, the way the lock's own system sets them.
+const LOCK_DAY_AT: f32 = -62.0;
+/// The day's size in dp: about a quarter of the clock's, so the time is what
+/// the eye lands on and the day reads as the line standing over it.
+const LOCK_DAY_PX: f32 = 24.0;
 /// Where the words over the swipe stand, as a share of the screen's height:
 /// on the line the lock's own system puts its torch and its camera on, near
 /// enough the foot to sit under a thumb and clear of it.
@@ -139,8 +146,8 @@ impl App {
         out.put(sheet, -away);
     }
 
-    /// The lock drawn whole: its own wallpaper, the status bar, the clock,
-    /// the day under it and the words. The lock's wallpaper read at startup
+    /// The lock drawn whole: its own wallpaper, the status bar, the day, the
+    /// clock under it and the words. The lock's wallpaper read at startup
     /// is the ground it stands on whatever page it came over; where the
     /// ramdisk carries none, the desktop's wallpaper stands in, and where
     /// neither does, the page last shown. The wallpaper is shown as it is,
@@ -172,15 +179,12 @@ impl App {
         // The status bar the lock carries of its own, in the lock's ink over
         // the wallpaper rather than the theme's over a page.
         widgets::status_bar(&mut sheet, &t, f, &self.bar(clock, info), ink, dark);
-        // The clock is the lock's one piece of lettering done large, and it
-        // is set in the UI's own typeface as the stock lock's is: the brand
-        // face is kept for the wordmark, where it is lettering rather than
-        // a page's text.
-        sheet.text_center(&f.title, clock, w / 2.0, h * LOCK_CLOCK_AT, m.dp(LOCK_CLOCK_PX), ink);
-        // The day under the clock, on the line the battery's level used to
-        // take. The level is in the status bar already, and the day is what
-        // the lock's own system puts under the time.
-        sheet.text_center(&f.body, today, w / 2.0, h * LOCK_CLOCK_AT + m.dp(LOCK_DAY_AT), m.sub_px, soft);
+        // The day over the time, and the time larger than anything a page
+        // sets: the lock states where in the month it is and what hour it is,
+        // in that order, and nothing else of the phone. The clock is set a
+        // step heavier than the pages' own text, as the stock lock sets it.
+        sheet.text_center(&f.regular, today, w / 2.0, h * LOCK_CLOCK_AT + m.dp(LOCK_DAY_AT), m.dp(LOCK_DAY_PX), soft);
+        sheet.text_center(&f.lock_clock, clock, w / 2.0, h * LOCK_CLOCK_AT, m.dp(LOCK_CLOCK_PX), ink);
         let said = self.state.lang.pick(["上滑解锁", "上滑解鎖", "Swipe up to open"]);
         sheet.text_center(&f.label, said, w / 2.0, h * LOCK_WORDS_AT, m.sub_px, soft);
         sheet
