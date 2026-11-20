@@ -158,12 +158,6 @@ impl App {
         let pressing = self.pressing();
         match ev {
             Touch::Down(x, y) => {
-                // A touch above the tasks puts them down again, leaving
-                // whatever they stood over as it was.
-                if self.tasks_top().is_some_and(|top| y < top) {
-                    self.lower_tasks(now);
-                    return fx;
-                }
                 self.tracker.clear();
                 self.tracker.add(now, y);
                 let side = if x < edge {
@@ -310,18 +304,19 @@ impl App {
                             self.start_face_swipe(now, dx < 0.0, x0, x);
                             Drag::Face { from: x0 }
                         }
-                        _ if dy < -slop && dy.abs() > dx.abs() && y0 > m.h as f32 - m.dp(FOOT_DP) && !self.working() => {
-                            // Over the desktop there is nowhere further to go
-                            // than the tasks themselves.
-                            let tasks = self.screen() == Screen::Desktop;
-                            let cap = if tasks { m.dp(TASKS_DP) } else { self.h as f32 };
+                        _ if dy < -slop
+                            && dy.abs() > dx.abs()
+                            && y0 > m.h as f32 - m.dp(FOOT_DP)
+                            && self.screen() != Screen::Desktop
+                            && !self.working() =>
+                        {
                             // Whatever the page was doing under the finger
                             // stops with it.
                             self.glide = None;
                             self.fling = None;
                             self.bounce = None;
                             self.pull = 0.0;
-                            self.foot = Some(Foot { pull: (-dy).min(cap), to: 0.0, spring: None, tasks, armed: false });
+                            self.foot = Some(Foot { pull: (-dy).min(self.h as f32), to: 0.0, spring: None });
                             self.dirty = true;
                             Drag::Foot { from: y0 }
                         }
@@ -390,20 +385,8 @@ impl App {
                 }
                 Drag::Foot { from } => {
                     self.tracker.add(now, y);
-                    // The mark is where the pull would come to rest at the
-                    // tasks' height rather than sink back: let go past it and
-                    // they stay up.
-                    let mark = m.dp(TASKS_DP) * TASKS_MARK;
                     if let Some(foot) = self.foot.as_mut() {
-                        let cap = if foot.tasks { m.dp(TASKS_DP) } else { self.h as f32 };
-                        foot.pull = (from - y).clamp(0.0, cap);
-                        let armed = foot.pull > mark;
-                        // A tap of the motor as the tasks come within reach,
-                        // which is the moment they would stay up if let go.
-                        if armed && !foot.armed && self.state.vibrate {
-                            fx.push(Effect::Haptic);
-                        }
-                        foot.armed = armed;
+                        foot.pull = (from - y).clamp(0.0, self.h as f32);
                     }
                     self.drag = Drag::Foot { from };
                     self.dirty = true;
@@ -537,26 +520,16 @@ impl App {
                 Drag::Edge { armed: true, .. } => fx.extend(self.back(now)),
                 Drag::Foot { .. } => {
                     // A pull let go: thrown on fast, it takes the page off
-                    // for the desktop; let go slower, it comes to rest where
-                    // the tasks are, if it got far enough, else it sinks
-                    // back. Over the desktop there is nowhere further than
-                    // the tasks, so nothing there goes off.
+                    // for the desktop; let go slower, it sinks back.
                     let speed = -self.tracker.velocity(now);
                     let h = self.h as f32;
-                    let (tasks_h, fling) = (m.dp(TASKS_DP), h * FOOT_FLING);
+                    let fling = h * FOOT_FLING;
                     if let Some(foot) = self.foot.as_mut() {
-                        let to = if !foot.tasks && speed > fling {
-                            h
-                        } else if foot.pull > tasks_h * TASKS_MARK {
-                            tasks_h
-                        } else {
-                            0.0
-                        };
+                        let to = if speed > fling { h } else { 0.0 };
                         foot.to = to;
                         // Going off the screen takes the lock's own time;
-                        // coming to rest — back down, or at the tasks — takes
-                        // its quicker one. A page and the lock leave and come
-                        // back at one pace.
+                        // coming back takes its quicker one. A page and the
+                        // lock leave and come back at one pace.
                         let period = if to >= h - 0.5 { FOOT_AWAY } else { FOOT_BACK };
                         foot.spring = Some(Spring::new(now, foot.pull - to, speed, period));
                         self.dirty = true;
@@ -771,12 +744,6 @@ impl App {
         match key {
             Key::Back => {
                 self.button = Some((key, Press::Spent));
-                // With the tasks up there is nothing behind them to go
-                // back to: back puts them down.
-                if self.tasks_top().is_some() {
-                    self.lower_tasks(at);
-                    return Vec::new();
-                }
                 self.act(Action::Back, at)
             }
             Key::VolumeUp | Key::VolumeDown => {
@@ -1258,5 +1225,59 @@ mod tests {
         assert_ne!(grey_at(&c, W as f32 / 2.0, H as f32 / 2.0), 0, "the page still stands at the middle");
         app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 6000);
         assert!(app.turn.is_none(), "come to rest, the desktop is left alone");
+    }
+
+    /// A slow pull from a page's foot has nowhere to stop any more: it sinks
+    /// back, and the page it started on is still the one showing. There is
+    /// no tasks' height to hover over.
+    #[test]
+    fn a_slow_pull_from_the_foot_has_no_tasks_to_stop_at() {
+        let f = fonts();
+        let mut app = App::new(Screen::Clock, W, H, PPD);
+        let x = W as f32 / 2.0;
+        let from = H as f32 - 10.0;
+        app.touch(Touch::Down(x, from), &f, 0);
+        // Well past the old tasks' height, but slow: 40 px a frame at
+        // 20 ms, under half a screen a second.
+        for k in 1..=50 {
+            app.touch(Touch::Move(x, from - k as f32 * 40.0), &f, k as u64 * 20);
+        }
+        app.touch(Touch::Up, &f, 1020);
+        assert_eq!(app.foot.as_ref().map(|foot| foot.to), Some(0.0), "back down, not held at a tasks' height");
+        app.tick(20_000);
+        assert!(app.foot.is_none());
+        assert_eq!(app.screen(), Screen::Clock, "the page was never taken off");
+    }
+
+    /// The desktop is not a page to leave, and has no tasks to raise: a pull
+    /// at its foot does nothing at all.
+    #[test]
+    fn a_pull_at_the_desktop_foot_does_nothing() {
+        let f = fonts();
+        let mut app = App::new(Screen::Desktop, W, H, PPD);
+        let x = W as f32 / 2.0;
+        let from = H as f32 - 10.0;
+        app.touch(Touch::Down(x, from), &f, 0);
+        app.touch(Touch::Move(x, from - 600.0), &f, 20);
+        app.touch(Touch::Up, &f, 40);
+        assert!(app.foot.is_none(), "nothing stands up from the foot");
+        assert_eq!(app.screen(), Screen::Desktop);
+    }
+
+    /// A flick still takes the page off for the desktop, at the lock's pace.
+    #[test]
+    fn a_flick_at_the_foot_still_leaves_for_the_desktop() {
+        let f = fonts();
+        let mut app = App::new(Screen::Clock, W, H, PPD);
+        let x = W as f32 / 2.0;
+        let from = H as f32 - 10.0;
+        app.touch(Touch::Down(x, from), &f, 0);
+        app.touch(Touch::Move(x, from - 500.0), &f, 10);
+        app.touch(Touch::Move(x, from - 1500.0), &f, 20);
+        app.touch(Touch::Move(x, from - 2500.0), &f, 30);
+        app.touch(Touch::Up, &f, 40);
+        assert_eq!(app.foot.as_ref().map(|foot| foot.to), Some(H as f32), "the page is on its way off");
+        app.tick(10_000);
+        assert_eq!(app.screen(), Screen::Desktop);
     }
 }

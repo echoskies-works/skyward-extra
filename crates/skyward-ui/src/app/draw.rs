@@ -170,10 +170,6 @@ impl App {
         if charge < 1.0 {
             self.compose_page(out, f, info, clock, now);
         }
-        // The tasks come up over whatever is shown, a page or the desktop:
-        // over a page they stand where the pull left them and the page goes
-        // on standing above them.
-        self.compose_tasks(out, f);
         // The notice that has just come stands over the page, under the
         // panel: with the panel out the list is the better place to read it.
         self.compose_banner(out, f, now);
@@ -324,11 +320,8 @@ impl App {
         // A finger pulling the page off the screen by its foot: the page
         // and the desktop under it, both drawn whole, moved against each
         // other, the page's foot standing on the row the pull has left it.
-        // Let go where the tasks stand, the page keeps that much of its
-        // rise and the tasks fill what it has left, so what stands at the
-        // foot is the tasks and not the desktop under it.
         if matches!(slide, Motion::None)
-            && let Some(off) = self.foot.as_ref().filter(|f| !f.tasks).map(|f| f.pull)
+            && let Some(off) = self.foot.as_ref().map(|foot| foot.pull)
         {
             let mut page = Canvas::new(out.w, out.h);
             self.paint_page(&mut page, &t, Some((f, info)), &view);
@@ -339,12 +332,7 @@ impl App {
             }
             let desk = self.desktop_canvas(f, info, clock);
             let foot = (self.h as f32 - off).round().clamp(0.0, self.h as f32) as i32;
-            // What lies under the page darkens as the tasks come up over
-            // it, while the page itself stays as bright as it was: the
-            // page's own rise and the darkening behind it are one motion,
-            // off one measure of how far the pull has come.
-            let dim = TASKS_DIM * tasks_up(off, t.m.dp(TASKS_DP));
-            out.lift(&page, &desk, foot, dim, self.corners);
+            out.lift(&page, &desk, foot, 0.0, self.corners);
             self.shown = Some(view);
             self.layer = None;
             return;

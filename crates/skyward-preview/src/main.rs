@@ -1450,7 +1450,7 @@ fn main() -> Result<()> {
     }
 
     // The panel mid-gesture, to set beside recordings of the same moves.
-    let moments: [Moment; 43] = [
+    let moments: [Moment; 41] = [
         // A page pulled off the screen by its foot, the desktop come in
         // under it: four frames of the one move, the page gone up by about a
         // quarter, a half, three quarters and all but its last strip. The
@@ -1469,20 +1469,6 @@ fn main() -> Result<()> {
         }),
         ("00-08-going-home-4-light", Screen::Calculator, false, &|app, f| {
             let by = app.theme().m.h as f32 * 0.93;
-            pull_up(app, f, by)
-        }),
-        // The tasks up over the desktop, the desktop dimmed under them, and
-        // the foot of the screen saying there is nothing running yet.
-        ("00-05-tasks-up-dark", Screen::Desktop, true, &|app, f| {
-            let by = app.theme().m.dp(120.0);
-            pull_up(app, f, by)
-        }),
-        // The same over a page, the way a touch stays put instead of going
-        // on: the page has gone up as far as the tasks are tall and dimmed
-        // with them, and the strip they stand in is the desktop's own black,
-        // left bare by the page rather than covered by a card.
-        ("00-05-tasks-over-a-page-light", Screen::Calculator, false, &|app, f| {
-            let by = app.theme().m.dp(120.0);
             pull_up(app, f, by)
         }),
         // The power menu over the desktop, brought up the way the panel
@@ -1913,9 +1899,9 @@ fn drag(app: &mut App, f: &Fonts, y0: f32, y1: f32) -> u64 {
 }
 
 /// A finger down in the strip at the foot of the screen and pulled `by`
-/// pixels up it, kept down: a page on its way off the screen, or the
-/// desktop's tasks on their way up. Returns a time after the pull is drawn,
-/// so the frame shows where it got to rather than where it will settle.
+/// pixels up it, kept down: a page on its way off the screen. Returns a time
+/// after the pull is drawn, so the frame shows where it got to rather than
+/// where it will settle.
 fn pull_up(app: &mut App, f: &Fonts, by: f32) -> u64 {
     let m = app.theme().m;
     let foot = m.h as f32 - m.dp(24.0) + 2.0;
