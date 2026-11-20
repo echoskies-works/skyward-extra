@@ -39,7 +39,7 @@ pub use menu::{Action, Crash, Reason, View};
 /// get compared against the bootloader's before anything is flashed.
 pub fn render(w: u32, h: u32, view: View, lang: Lang) -> Vec<u8> {
     let mut screen = screen::Screen::new(w, h);
-    paint::draw(&mut screen, view, lang, paint::ALL);
+    paint::draw(&mut screen, view, lang);
     screen.data
 }
 
@@ -66,37 +66,6 @@ const CARD: &str = "/dev/dri/card0";
 /// How long to sit between looks at /dev/input while waiting for a press.
 #[cfg(target_os = "android")]
 const IDLE: std::time::Duration = std::time::Duration::from_millis(250);
-
-/// How long a line of the menu holds the panel before the next one lands.
-///
-/// A boot menu is written out a line at a time, not typed: a dozen lines of
-/// prose at four words a second would be twelve seconds of waiting before the
-/// first press could do anything, and nobody has ever wanted to watch a menu
-/// being written. This is the whole list in about half a second — long enough
-/// to read as printing, short enough that the panel is ready before the
-/// finger is.
-#[cfg(target_os = "android")]
-const TYPE_LINE: std::time::Duration = std::time::Duration::from_millis(45);
-
-/// How long one character of a failure screen holds before the next lands.
-///
-/// A failure is the one screen on this panel that is read rather than
-/// scanned, and the one nobody is in a hurry to answer: it is written out a
-/// character at a time, at a speed that reads as a console printing under a
-/// fault rather than as a font being loaded. Seven lines come to under a
-/// second, and a press takes the rest of it at once.
-#[cfg(target_os = "android")]
-const TYPE_CHAR: std::time::Duration = std::time::Duration::from_millis(12);
-
-/// How a view is put on the panel.
-#[cfg(target_os = "android")]
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Reveal {
-    /// One character at a time, the way a console prints under a fault.
-    Chars,
-    /// One line at a time, gap by gap, the way a boot menu comes up.
-    Lines,
-}
 
 /// The panel, the buttons and the buffer: everything this crate draws with,
 /// so the menu and a failure screen go up the same way.
@@ -134,38 +103,9 @@ impl Panel {
     /// `view` in full, in one frame.
     fn present(&mut self, view: View, lang: Lang) -> Result<()> {
         use anyhow::Context;
-        paint::draw(&mut self.screen, view, lang, paint::ALL);
+        paint::draw(&mut self.screen, view, lang);
         let (w, h) = (self.screen.w, self.screen.h);
         self.surface.present_frame(&self.screen.data, w, h).context("draw the panel")
-    }
-
-    /// Write `view` onto the panel one step at a time, and put all of it up
-    /// the moment a key is pressed.
-    ///
-    /// The press that stops the printing is taken and not handed back: it was
-    /// aimed at the printing, and the screen it was aimed at has not finished
-    /// arriving. Answering a question nobody has read yet is worse than one
-    /// more press.
-    fn type_out(&mut self, view: View, lang: Lang, reveal: Reveal, pace: std::time::Duration) -> Result<()> {
-        use anyhow::Context;
-        let ends = paint::steps(view, lang);
-        let total = ends.last().copied().unwrap_or(0);
-        let steps: Vec<usize> = match reveal {
-            Reveal::Lines => ends,
-            Reveal::Chars => (1..=total).collect(),
-        };
-        let (w, h) = (self.screen.w, self.screen.h);
-        for at in steps {
-            paint::draw(&mut self.screen, view, lang, at);
-            self.surface.present_frame(&self.screen.data, w, h).context("print the panel")?;
-            if !self.buttons.poll().is_empty() {
-                paint::draw(&mut self.screen, view, lang, paint::ALL);
-                self.surface.present_frame(&self.screen.data, w, h).context("finish the panel")?;
-                return Ok(());
-            }
-            std::thread::sleep(pace);
-        }
-        Ok(())
     }
 
     /// Say `text` where the menu was, wait for one press, and let the caller
@@ -221,7 +161,7 @@ pub fn run() -> Result<Choice> {
     let lang = Lang::from_env();
     let mut panel = Panel::open()?;
     let mut menu = menu::Menu::new();
-    panel.type_out(menu.view(), lang, Reveal::Lines, TYPE_LINE)?;
+    panel.present(menu.view(), lang)?;
 
     loop {
         for key in panel.buttons.wait(IDLE) {
@@ -233,9 +173,9 @@ pub fn run() -> Result<Choice> {
                     if kind(after) == kind(before) {
                         panel.present(after, lang)?;
                     } else {
-                        // The question comes up printed too: it is a new
-                        // screen, not the list with a band moved.
-                        panel.type_out(after, lang, Reveal::Lines, TYPE_LINE)?;
+                        // A question is a new screen, not the list with a
+                        // band moved, so draw the whole of it at once.
+                        panel.present(after, lang)?;
                     }
                 }
                 Step::Done(Action::Continue) => return Ok(Choice::System),
@@ -274,7 +214,7 @@ pub fn show_crash(crash: Crash, code: i32, reason: Option<Reason>) -> Result<()>
     let lang = Lang::from_env();
     let mut panel = Panel::open()?;
     let view = View::Failure { crash, code, reason };
-    panel.type_out(view, lang, Reveal::Chars, TYPE_CHAR)?;
+    panel.present(view, lang)?;
     panel.wait_power();
     Ok(())
 }
@@ -330,7 +270,7 @@ mod tests {
         for lang in BOTH {
             for view in views {
                 let mut screen = screen::Screen::new(w, h);
-                paint::draw(&mut screen, view, lang, paint::ALL);
+                paint::draw(&mut screen, view, lang);
                 // Nothing is drawn in the top sixteenth: that is where the hole is.
                 let band = h / 16;
                 let lit_in_band = (0..band).any(|y| (0..w).any(|x| screen.data[((y * w + x) * 4) as usize] != 0));

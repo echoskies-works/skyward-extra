@@ -133,73 +133,32 @@ const RULE_LINE_H: u32 = RULE_H + 5 * SCALE;
 /// rather than as the first item's overline.
 const RULE_DY: u32 = 2 * SCALE;
 
-/// How much of a view is on the panel, counted in the characters [`draw`]
-/// prints: everything, for a panel that goes up in one go.
-pub const ALL: usize = usize::MAX;
-
-/// Paint `view` over the whole screen, up to `typed` characters in.
+/// Paint `view` over the whole screen, in one go.
 ///
-/// A console prints as it goes, and this is that: the lines are walked from
-/// the top and each one is printed whole until the count runs out, so the
-/// caller can put one character more on the panel a frame at a time and get
-/// the words arriving in the order they are read. A rule counts as one
-/// character — it is a line of the panel like any other, and it should come
-/// in where it stands rather than up front with the title.
-pub fn draw(screen: &mut Screen, view: View, lang: Lang, typed: usize) {
+/// The lines are walked from the top and each printed whole. A rule is a
+/// line of the panel like any other, taking the space between the words.
+pub fn draw(screen: &mut Screen, view: View, lang: Lang) {
     screen.fill([0, 0, 0]);
     let lines = lines_of(view, lang);
     // Ranged from the top left, not centred. A console starts where a page
     // starts; centring the block would also move every line when the question
     // comes up, since it is a line shorter than the list.
     let mut y = top(screen.h);
-    let mut left = typed;
     for line in &lines {
-        if left == 0 {
-            break;
-        }
         match line {
-            Line::Words(text, Ink::Plain) => {
-                let shown: String = text.chars().take(left).collect();
-                screen.draw_left(y, &shown, LIT);
-                left -= shown.chars().count();
-            }
+            Line::Words(text, Ink::Plain) => screen.draw_left(y, text, LIT),
             Line::Words(text, Ink::Reversed) => {
                 // The band runs the whole width of the panel, edge to edge,
                 // the way a BIOS menu shows where the cursor is; the words on
                 // it are knocked out of it rather than drawn beside it.
-                let shown: String = text.chars().take(left).collect();
                 screen.fill_rect(0, y, screen.w, CELL_H, LIT);
-                screen.draw_left(y, &shown, INK);
-                left -= shown.chars().count();
+                screen.draw_left(y, text, INK);
             }
-            Line::Words(text, Ink::Yellow) => {
-                let shown: String = text.chars().take(left).collect();
-                screen.draw_left(y, &shown, YELLOW);
-                left -= shown.chars().count();
-            }
-            Line::Rule => {
-                screen.fill_rect(0, y + RULE_DY as i32, screen.w, RULE_H, LIT);
-                left -= 1;
-            }
+            Line::Words(text, Ink::Yellow) => screen.draw_left(y, text, YELLOW),
+            Line::Rule => screen.fill_rect(0, y + RULE_DY as i32, screen.w, RULE_H, LIT),
         }
         y += step(line);
     }
-}
-
-/// Where each line ends, in the characters [`draw`] counts: the steps a
-/// line-at-a-time reveal takes, the last of them the whole view.
-pub fn steps(view: View, lang: Lang) -> Vec<usize> {
-    let mut at = 0usize;
-    lines_of(view, lang)
-        .iter()
-        .map(|line| {
-            at += match line {
-                Line::Words(text, _) => text.chars().count(),
-                Line::Rule => 1,
-            };
-            at
-        })
-        .collect()
 }
 
 /// How far down the panel one line moves the pen.
@@ -392,7 +351,7 @@ mod tests {
         let (w, h) = (1200u32, 2608u32);
         for lang in BOTH {
             let mut screen = Screen::new(w, h);
-            draw(&mut screen, View::List { sel: 0 }, lang, ALL);
+            draw(&mut screen, View::List { sel: 0 }, lang);
             let start = top(h) as u32;
             // Line 2 is the rule under the title: the title's cell, the blank
             // under it, then the air the rule keeps above itself.
@@ -513,7 +472,7 @@ mod tests {
         let yellow = [YELLOW[0], YELLOW[1], YELLOW[2], 0xff];
         for lang in BOTH {
             let mut screen = Screen::new(w, h);
-            draw(&mut screen, View::List { sel: 1 }, lang, ALL);
+            draw(&mut screen, View::List { sel: 1 }, lang);
             // No greys and no theme: black, white, and one yellow for the
             // readings. The cursor is the same white reversed, not a shade.
             let pixels = screen.data.as_chunks::<4>().0;
@@ -527,7 +486,7 @@ mod tests {
     fn a_notice_replaces_the_whole_menu_with_one_line() {
         let (w, h) = (1080u32, 2400u32);
         let mut screen = Screen::new(w, h);
-        draw(&mut screen, View::List { sel: 0 }, Lang::Zh, ALL);
+        draw(&mut screen, View::List { sel: 0 }, Lang::Zh);
         notice(&mut screen, "重置还没有接上");
         // One line of glyphs and nothing else: the list is gone, so a press
         // that could not be carried out does not look like a redraw.
@@ -541,7 +500,7 @@ mod tests {
         let (w, h) = (400u32, 800u32);
         for lang in BOTH {
             let mut screen = Screen::new(w, h);
-            draw(&mut screen, View::List { sel: 0 }, lang, ALL);
+            draw(&mut screen, View::List { sel: 0 }, lang);
 
             let lit_at = |y: u32| (0..w).any(|x| screen.data[((y * w + x) * 4) as usize] != 0);
             let rows: Vec<u32> = (0..h).filter(|&y| lit_at(y)).collect();
@@ -556,7 +515,7 @@ mod tests {
         let (w, h) = (1200u32, 2608u32);
         for lang in BOTH {
             let mut screen = Screen::new(w, h);
-            draw(&mut screen, View::List { sel: 0 }, lang, ALL);
+            draw(&mut screen, View::List { sel: 0 }, lang);
             let start = top(h) as u32;
             let mut top_y = start;
             for (line, what) in list(0, lang).iter().enumerate() {
@@ -634,44 +593,6 @@ mod tests {
     }
 
     #[test]
-    fn the_panel_is_printed_in_the_order_it_is_read() {
-        let (w, h) = (1200u32, 2608u32);
-        for lang in BOTH {
-            let view = View::Failure { crash: Crash::Runtime, code: 67, reason: Some(Reason::Music) };
-            let lines = failure(Crash::Runtime, 67, Some(Reason::Music), lang);
-            let total: usize = lines
-                .iter()
-                .map(|line| match line {
-                    Line::Words(text, _) => text.chars().count(),
-                    Line::Rule => 1,
-                })
-                .sum();
-            let ends = steps(view, lang);
-            assert_eq!(ends.len(), lines.len(), "{lang:?}: one step a line");
-            assert_eq!(*ends.last().expect("a failure holds lines"), total, "{lang:?}: and the steps add up to the view");
-
-            // Nothing is on the panel before the printing starts.
-            let mut blank = Screen::new(w, h);
-            draw(&mut blank, view, lang, 0);
-            assert!(blank.data.as_chunks::<4>().0.iter().all(|px| *px == [0, 0, 0, 0xff]), "{lang:?}: a blank panel to print onto");
-
-            // Part way, what is up is the start of the screen and nothing
-            // after it: a console does not put the last line up first.
-            let mut part = Screen::new(w, h);
-            draw(&mut part, view, lang, ends[0] - 1);
-            let below = top(h) as u32 + LINE_H;
-            assert!(!(below..h).any(|y| (0..w).any(|x| part.data[((y * w + x) * 4) as usize] != 0)), "{lang:?}: nothing below an unfinished line");
-
-            // And the last step is the whole screen, character for character.
-            let mut all = Screen::new(w, h);
-            draw(&mut all, view, lang, ALL);
-            let mut done = Screen::new(w, h);
-            draw(&mut done, view, lang, total);
-            assert_eq!(all.data, done.data, "{lang:?}: counted to the end is the whole view");
-        }
-    }
-
-    #[test]
     fn a_failure_is_not_the_menu_with_a_line_on_top() {
         for lang in BOTH {
             let lines = failure(Crash::Runtime, 101, None, lang);
@@ -692,7 +613,7 @@ mod tests {
             for crash in [Crash::Startup, Crash::Runtime] {
                 for (reason, count) in [(None, 5), (Some(Reason::Tasks), 7)] {
                     let mut screen = Screen::new(w, h);
-                    draw(&mut screen, View::Failure { crash, code: 67, reason }, lang, ALL);
+                    draw(&mut screen, View::Failure { crash, code: 67, reason }, lang);
                     // What happened, the code, a blank, the reason where
                     // there is one, and how to leave: rows of cells and
                     // nothing under them.
