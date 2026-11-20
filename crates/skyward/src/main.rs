@@ -223,6 +223,12 @@ enum Cmd {
         /// The brand typeface the About page sets its wordmark in.
         #[arg(long, default_value = "/skyward/LexendDeca-VariableFont_wght.ttf")]
         brand: std::path::PathBuf,
+        /// Show the startup menu instead of the recovery UI. The shell's way
+        /// in where the `startup` link is not to hand, and just what the
+        /// menu does when the failure screen leads to it. The other options
+        /// here are ignored.
+        #[arg(long)]
+        startup: bool,
         /// Open on the unlock page instead of the home page.
         #[arg(long)]
         unlock: bool,
@@ -483,7 +489,13 @@ fn main() -> Result<()> {
             Ok(())
         }
         #[cfg(target_os = "android")]
-        Cmd::Ui { config, font, mono, brand, unlock, dump } => {
+        Cmd::Ui { config, font, mono, brand, startup, unlock, dump } => {
+            // The menu is a different screen from the recovery UI: it has its
+            // own fonts and its own way on, so none of the UI's options apply
+            // once this one is asked for.
+            if startup {
+                return startup_menu();
+            }
             let cfg = DeviceConfig::load(&config)?;
             let start = if unlock { skyward_ui::app::Screen::Decrypt } else { skyward_ui::app::Screen::Desktop };
             // The programs the recovery service started for the phone's
