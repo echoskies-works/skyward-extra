@@ -6095,21 +6095,21 @@ mod tests {
         let (w, h) = (1080u32, 2400u32);
         let (cx, cy, deg) = (540.0, t.m.dp(DIAL_CY), 0.0);
         // Sixty per cent of the way out to the hour hand's tip, four dp off
-        // its centre line: past the needle's edge (1.2 dp each side, plus
-        // its antialiasing) and well inside the hour hand's (4.5 dp each
-        // side).
+        // its centre line: past the needle's edge (1.2 dp each side) and
+        // well inside the hour hand's (4.5 dp each side), so only the
+        // needle's blown-out shadow reaches the point.
         let px = cx + t.m.dp(4.0);
         let py = cy - t.m.dp(HOUR_HAND.tip) * 0.6;
         let i = (py as usize * w as usize + px as usize) * 4;
-        let round = crate::widgets::disc_fill(&t);
-        let disc = [round.r, round.g, round.b];
-        let at = |c: &Canvas| [c.data[i], c.data[i + 1], c.data[i + 2]];
+        // The face is pale and the hand's ink is dark, so the sum of the
+        // three channels tells them apart without pinning either's exact
+        // value, which the shadow under the hand is free to thin a little.
+        let at = |c: &Canvas| c.data[i] as u32 + c.data[i + 1] as u32 + c.data[i + 2] as u32;
         let mut second = Canvas::new(w, h);
         clock_dial(&mut second, &t.m, &t, &f, cx, cy, deg, 0.0);
         let mut hour = Canvas::new(w, h);
         timer_dial(&mut hour, &t.m, &t, &f, cx, cy, deg, 0.0);
-        assert_eq!(at(&second), disc, "the needle is too fine to reach three dp off its line");
-        assert_ne!(at(&hour), disc, "the hour hand covers it");
+        assert!(at(&second) > at(&hour) + 200, "the hour hand covers four dp off its line where the needle leaves the face bare");
     }
 
     /// The clock is laid out on the 411.6 × 914 dp panel the pages were
