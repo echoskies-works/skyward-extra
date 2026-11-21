@@ -802,8 +802,9 @@ const TOAST_MS: u64 = 2000;
 /// The volume panel stays up this long after the last volume key.
 const VOLUME_BAR_MS: u64 = 1500;
 /// The volume's span, in steps: the panel's tracks and the volume keys both
-/// count the same fifteen.
-const VOLUME_STEPS: u8 = 15;
+/// count the same fifteen. Shared with the settings file so its saved levels
+/// are checked against the same span the panel shows.
+pub(crate) const VOLUME_STEPS: u8 = 15;
 /// How long a text field's cursor shows and then hides, as the stock
 /// fields blink it.
 const BLINK_MS: u64 = 500;

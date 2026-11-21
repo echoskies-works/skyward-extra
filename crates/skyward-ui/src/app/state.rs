@@ -6,6 +6,14 @@ use super::*;
 /// ramdisk carries and `sfx.toml` names 恋爱裁判.
 pub const DEFAULT_TIMER_SOUND: &str = "love_trial";
 
+/// The keys each wallpaper and sound starts on, matching the ramdisk files
+/// the pages read today. They are kept so a settings file can name a choice
+/// before a page lets one be made; an empty value means no choice yet.
+pub const DEFAULT_DESK_WALLPAPER: &str = "starsky";
+pub const DEFAULT_LOCK_WALLPAPER: &str = "night";
+pub const DEFAULT_RING: &str = "love_trial";
+pub const DEFAULT_NOTIFICATION: &str = "basic";
+
 /// Choices the pages show and the user changes, and where installing
 /// stands.
 #[derive(Clone, Debug, PartialEq)]
@@ -242,6 +250,15 @@ pub struct State {
     /// the pages speak, read from the ramdisk beside the wallpapers' own:
     /// the「个性化选项」page shows the ones in use by them.
     pub sound_names: skyward_config::SoundNames,
+    /// Which wallpaper each place shows, by its key in the ramdisk's table.
+    /// No page picks one yet; these hold the ones the pages read today so a
+    /// choice kept in the settings file survives until a picker is wired up.
+    pub desk_wallpaper: String,
+    pub lock_wallpaper: String,
+    /// Which sound the phone plays for a ring and a notification, by its key
+    /// in the ramdisk's table. Also held ready for the picker to come.
+    pub ring_sound: String,
+    pub notification_sound: String,
 }
 
 impl Default for State {
@@ -348,6 +365,10 @@ impl Default for State {
             clock_ticking_background: false,
             wallpaper_names: skyward_config::WallpaperNames::default(),
             sound_names: skyward_config::SoundNames::default(),
+            desk_wallpaper: DEFAULT_DESK_WALLPAPER.to_string(),
+            lock_wallpaper: DEFAULT_LOCK_WALLPAPER.to_string(),
+            ring_sound: DEFAULT_RING.to_string(),
+            notification_sound: DEFAULT_NOTIFICATION.to_string(),
         }
     }
 }

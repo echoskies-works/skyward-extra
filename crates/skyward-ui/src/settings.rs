@@ -5,7 +5,7 @@
 //! a time zone, a part or a place by its name, so a later version that lists
 //! them otherwise reads them the same.
 
-use crate::app::{Place, State, SCREEN_OFF, TIME_ZONES};
+use crate::app::{Place, State, SCREEN_OFF, TIME_ZONES, VOLUME_STEPS};
 use crate::Lang;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -53,6 +53,44 @@ pub struct Settings {
     pub backup: Backup,
     pub logs: Logs,
     pub clock: Clock,
+    pub volume: Volume,
+    pub wallpaper: Wallpaper,
+    pub sound: Sound,
+}
+
+/// Which wallpaper each place shows, by its key in the ramdisk's table. A
+/// place holds the key the pages read today until a picker lets one change.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Wallpaper {
+    pub desk: String,
+    pub lock: String,
+}
+
+/// Which sound each event plays, by its key in the ramdisk's table. Held
+/// ready for the picker; the files only play once audio is wired up.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Sound {
+    pub ring: String,
+    pub notification: String,
+}
+
+/// The volume panel's settings: what the keys do, the two levels and whether
+/// the phone is set silent. The level the finger last moved is left out —
+/// that is which track shows as held, not a choice to keep.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Volume {
+    /// The volume keys move the light from control to control when on, and
+    /// turn the volume up and down when off.
+    pub keys: bool,
+    /// The system's level, in steps from 0 to [`VOLUME_STEPS`].
+    pub system: u8,
+    /// The media's level, in steps from 0 to [`VOLUME_STEPS`].
+    pub media: u8,
+    /// The panel shows the phone as silent. Nothing sounds either way yet.
+    pub muted: bool,
 }
 
 /// The clock's settings: the sound its timer's end makes, and whether it
@@ -134,6 +172,24 @@ impl Default for Clock {
     }
 }
 
+impl Default for Volume {
+    fn default() -> Self {
+        Settings::default().volume
+    }
+}
+
+impl Default for Wallpaper {
+    fn default() -> Self {
+        Settings::default().wallpaper
+    }
+}
+
+impl Default for Sound {
+    fn default() -> Self {
+        Settings::default().sound
+    }
+}
+
 impl Settings {
     /// The settings `state` holds.
     pub fn of(state: &State) -> Settings {
@@ -164,6 +220,14 @@ impl Settings {
                 ticking: state.clock_ticking,
                 ticking_background: state.clock_ticking_background,
             },
+            volume: Volume {
+                keys: state.volume_keys,
+                system: state.system_volume,
+                media: state.media_volume,
+                muted: state.muted,
+            },
+            wallpaper: Wallpaper { desk: state.desk_wallpaper.clone(), lock: state.lock_wallpaper.clone() },
+            sound: Sound { ring: state.ring_sound.clone(), notification: state.notification_sound.clone() },
         }
     }
 
@@ -232,6 +296,32 @@ impl Settings {
         }
         state.clock_ticking = self.clock.ticking;
         state.clock_ticking_background = self.clock.ticking_background;
+        state.volume_keys = self.volume.keys;
+        // A level beyond the panel's span is a file from a version with a
+        // different span, or a hand-edited one: keep the level a recovery
+        // starts with rather than a bar the panel cannot draw.
+        if self.volume.system <= VOLUME_STEPS {
+            state.system_volume = self.volume.system;
+        }
+        if self.volume.media <= VOLUME_STEPS {
+            state.media_volume = self.volume.media;
+        }
+        state.muted = self.volume.muted;
+        // A file that names none keeps the key the pages read today: an
+        // empty wallpaper or sound would leave a blank picture or silence,
+        // which is worse than the one the ramdisk carries.
+        if !self.wallpaper.desk.is_empty() {
+            state.desk_wallpaper = self.wallpaper.desk.clone();
+        }
+        if !self.wallpaper.lock.is_empty() {
+            state.lock_wallpaper = self.wallpaper.lock.clone();
+        }
+        if !self.sound.ring.is_empty() {
+            state.ring_sound = self.sound.ring.clone();
+        }
+        if !self.sound.notification.is_empty() {
+            state.notification_sound = self.sound.notification.clone();
+        }
     }
 }
 
@@ -332,6 +422,7 @@ impl Keeper {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::{DEFAULT_DESK_WALLPAPER, DEFAULT_RING};
 
     #[test]
     fn the_settings_go_round_through_their_file() {
@@ -356,6 +447,10 @@ mod tests {
             timer_sound: "bell".into(),
             clock_ticking: false,
             clock_ticking_background: true,
+            volume_keys: true,
+            system_volume: 3,
+            media_volume: 12,
+            muted: true,
             ..State::default()
         };
         let kept = Settings::read(&Settings::of(&state).text()).unwrap();
@@ -364,6 +459,9 @@ mod tests {
         assert_eq!(Settings::of(&back), Settings::of(&state));
         assert_eq!((back.lang, back.screen_off, back.time_zone), (Lang::En, 6, 7));
         assert_eq!((back.timer_sound.as_str(), back.clock_ticking, back.clock_ticking_background), ("bell", false, true));
+        assert_eq!((back.volume_keys, back.system_volume, back.media_volume, back.muted), (true, 3, 12, true));
+        assert_eq!((back.desk_wallpaper.as_str(), back.lock_wallpaper.as_str()), ("starsky", "night"));
+        assert_eq!((back.ring_sound.as_str(), back.notification_sound.as_str()), ("love_trial", "basic"));
     }
 
     #[test]
@@ -380,10 +478,46 @@ mod tests {
             "ticking": true,
             "ticking_background": false,
         }));
+        assert_eq!(json["volume"], serde_json::json!({ "keys": false, "system": 8, "media": 8, "muted": false }));
+        assert_eq!(json["wallpaper"], serde_json::json!({ "desk": "starsky", "lock": "night" }));
+        assert_eq!(json["sound"], serde_json::json!({ "ring": "love_trial", "notification": "basic" }));
         assert_eq!(json["spoken"], "zh-Hans");
         assert!(json.get("language").is_none(), "no language is chosen until one is");
         let never = Settings::of(&State { screen_off: SCREEN_OFF.len() - 1, ..State::default() });
         assert_eq!(never.screen_off, 0, "a screen that stays on");
+    }
+
+    #[test]
+    fn wallpapers_sounds_and_levels_go_round_and_bad_values_are_ignored() {
+        let state = State {
+            desk_wallpaper: "sunset".into(),
+            lock_wallpaper: "night".into(),
+            ring_sound: "chime".into(),
+            notification_sound: "tap".into(),
+            system_volume: 15,
+            media_volume: 0,
+            ..State::default()
+        };
+        let kept = Settings::read(&Settings::of(&state).text()).unwrap();
+        let mut back = State::default();
+        kept.apply(&mut back);
+        assert_eq!((back.desk_wallpaper.as_str(), back.ring_sound.as_str()), ("sunset", "chime"));
+        assert_eq!((back.system_volume, back.media_volume), (15, 0), "both ends of the span");
+
+        // A level outside the panel's span, and empty names, leave what a
+        // recovery starts with instead of a bar it cannot draw or a blank.
+        let bad = Settings {
+            volume: Volume { system: 99, media: 200, ..Volume::default() },
+            wallpaper: Wallpaper { desk: String::new(), lock: "night".into() },
+            sound: Sound { ring: String::new(), notification: String::new() },
+            ..Settings::default()
+        };
+        let mut kept = State::default();
+        bad.apply(&mut kept);
+        assert_eq!(kept.system_volume, 8, "a level beyond the span is ignored");
+        assert_eq!(kept.media_volume, 8);
+        assert_eq!(kept.desk_wallpaper, DEFAULT_DESK_WALLPAPER, "an empty name keeps the default");
+        assert_eq!(kept.ring_sound, DEFAULT_RING);
     }
 
     #[test]
