@@ -382,6 +382,9 @@ pub enum Action {
     ClockSpan(u64),
     /// Make the sound at this place in the sounds the timer's end can make.
     ClockSound(usize),
+    /// Pick one of the personalization page's wallpapers: which of the two
+    /// pictures to set, and the place of the choice in the page's list.
+    Wallpaper { desk: bool, at: usize },
     /// A key of the row above the keyboard, the terminal's or the editor's.
     TermKey(TermKey),
     /// Empty the search field.
@@ -535,6 +538,10 @@ pub enum Effect {
     /// as strong as the phone's own system plays them whatever the
     /// vibration settings say.
     Ticks,
+    /// Read the wallpaper named `key` from the ramdisk and draw the desk
+    /// with it, or the lock when `desk` is false. The picture is the
+    /// runtime's to decode, so the pages only carry the name.
+    Wallpaper { desk: bool, key: String },
     /// Save what the panel shows as a picture: into the gallery's
     /// screenshots in the owner's shared storage where `storage` says it is
     /// open, and otherwise held until it is, telling how it went with

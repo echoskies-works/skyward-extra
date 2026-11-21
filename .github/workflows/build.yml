@@ -159,6 +159,7 @@ jobs:
             --wallpaper resources/wallpapers/desk/starsky.png \
             --wallpaper resources/wallpapers/desk/sunset.png \
             --wallpaper resources/wallpapers/lock/night.png \
+            --wallpaper resources/wallpapers/lock/aether.png \
             --wallpaper resources/wallpapers/wallpaper.toml \
             --out "out/$name.img"
           echo "name=$name" >> "$GITHUB_OUTPUT"

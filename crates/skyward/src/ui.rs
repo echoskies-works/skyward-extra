@@ -346,28 +346,13 @@ fn untaken(told: &mut skyward_sys::ToldOnce, what: &str, why: Option<&anyhow::Er
     Ok(())
 }
 
-/// The picture the desktop is drawn on, as the ramdisk carries it: a
-/// ramdisk packed without one draws the desktop black, and a picture that
-/// will not decode leaves it so rather than keeping the pages from coming
-/// up.
-fn wallpaper() -> Option<Canvas> {
-    let path = format!("/{}", skyward_config::ramdisk::WALLPAPER);
-    let bytes = std::fs::read(&path).ok()?;
-    match Canvas::from_png(&bytes) {
-        Ok(picture) => Some(picture),
-        Err(e) => {
-            let _ = skyward_sys::kmsg(&format!("wallpaper {path} is not drawn: {e:#}"));
-            None
-        }
-    }
-}
-
-/// The lock's own wallpaper, read apart from the desktop's: a ramdisk
-/// packed without one leaves the lock to the desktop's picture, and one
-/// that will not decode leaves it so rather than keeping the lock from
-/// coming up.
-fn lock_wallpaper() -> Option<Canvas> {
-    let path = format!("/{}", skyward_config::ramdisk::WALLPAPER_LOCK);
+/// The picture the desktop or the lock is drawn on, by the key the
+/// personalization page chose: the ramdisk keeps each under its own name
+/// in the wallpapers' folder. A picture that is missing or will not decode
+/// leaves the caller with none, rather than keeping the pages from coming
+/// up; the caller decides what stands in for it.
+fn wallpaper(key: &str) -> Option<Canvas> {
+    let path = format!("/{}/{key}.png", skyward_config::ramdisk::WALLPAPERS);
     let bytes = std::fs::read(&path).ok()?;
     match Canvas::from_png(&bytes) {
         Ok(picture) => Some(picture),
@@ -1407,12 +1392,6 @@ impl<'a> Pages<'a> {
             | Work::SystemStopped => start,
         };
         let mut app = App::new(first, w, h, cfg.display.density as f32 / 160.0);
-        if let Some(picture) = wallpaper() {
-            app.set_wallpaper(picture);
-        }
-        if let Some(picture) = lock_wallpaper() {
-            app.set_lock_wallpaper(picture);
-        }
         app.state.wallpaper_names = wallpaper_names();
         app.state.sound_names = sound_names();
         app.set_screen_corners(cfg.display.corner_radius as f32);
@@ -1425,6 +1404,16 @@ impl<'a> Pages<'a> {
         let locale = request.locale.as_deref().or(info.locale.as_deref());
         let named = locale.map(Lang::for_locale).transpose()?;
         app.take_settings(kept.settings(), named);
+        // The pictures come after the settings are back: the keys kept from
+        // last time name which wallpapers these are, so they are read here
+        // rather than before the settings were applied.
+        if let Some(picture) = wallpaper(&app.state.desk_wallpaper) {
+            app.set_wallpaper(picture);
+        }
+        if let Some(picture) = wallpaper(&app.state.lock_wallpaper) {
+            app.set_lock_wallpaper(picture);
+        }
+        app.refresh();
         let keeper = Keeper::new(&kept);
         skyward_sys::kmsg(&format!(
             "the pages speak {:?}, {}, and the locale named is {}",
@@ -2730,6 +2719,22 @@ impl Pages<'_> {
             Effect::Haptic => self.click()?,
             Effect::TimerAlarm { on } => self.timer_alarm(on)?,
             Effect::Ticks => self.ticks()?,
+            // A wallpaper chosen on the personalization page: the pages
+            // carry its key, and the picture itself is read here where the
+            // ramdisk is. One that will not open leaves the picture as it
+            // was, rather than blanking the page.
+            Effect::Wallpaper { desk, key } => {
+                if let Some(picture) = wallpaper(&key) {
+                    if desk {
+                        self.app.set_wallpaper(picture);
+                    } else {
+                        self.app.set_lock_wallpaper(picture);
+                    }
+                    self.app.refresh();
+                } else {
+                    let _ = skyward_sys::kmsg(&format!("wallpaper {key} is not shown: no picture was read"));
+                }
+            }
             // The panel shows the last frame drawn, which is what is
             // saved; one that cannot be is the page's to report.
             Effect::Screenshot { storage } => {

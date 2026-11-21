@@ -218,6 +218,22 @@ impl App {
                     self.refresh();
                 }
             }
+            // A wallpaper is kept by its key and shown at once: the pages
+            // list the keys in the order the pick page shows them, so the
+            // place is all the touch needs to carry. The runtime decodes
+            // the picture the key names.
+            Action::Wallpaper { desk, at } => {
+                let pick = if desk { crate::pages::PersonalPick::Desk } else { crate::pages::PersonalPick::Lock };
+                if let Some(key) = crate::pages::pick_keys(&self.state, pick).get(at).cloned() {
+                    if desk {
+                        self.state.desk_wallpaper = key.clone();
+                    } else {
+                        self.state.lock_wallpaper = key.clone();
+                    }
+                    self.refresh();
+                    return vec![Effect::Wallpaper { desk, key }];
+                }
+            }
             // The switch moves at once; the runtime then tells how the WLAN
             // came up, or went off.
             Action::Toggle(Switch::Wlan) => {
@@ -1042,6 +1058,43 @@ impl App {
 mod tests {
     use super::*;
     use crate::app::testing::*;
+
+    /// The personalization page's wallpaper rows answer a touch: the key
+    /// they name is kept in the state and sent to the runtime to draw,
+    /// while the two sound rows still answer nothing.
+    #[test]
+    fn a_wallpaper_row_sets_the_picture_and_the_sound_rows_do_not() {
+        use skyward_config::WallpaperName;
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Personal(crate::pages::PersonalPick::Desk), W, H, PPD);
+        app.state.wallpaper_names = skyward_config::WallpaperNames {
+            desk: [("sunset".to_string(), WallpaperName { zh: "日落".into(), en: "Sunset".into() })].into_iter().collect(),
+            lock: [
+                ("aether".to_string(), WallpaperName { zh: "以太".into(), en: "Aether".into() }),
+                ("night".to_string(), WallpaperName { zh: "夜色".into(), en: "Night".into() }),
+            ].into_iter().collect(),
+        };
+
+        // The desk's page holds one choice besides the one in use; its row
+        // carries the key so the state can be set from a place alone.
+        let desk_hits: Vec<Action> = app.frame(&f, &i).hits.iter().map(|h| h.action).filter(|a| matches!(a, Action::Wallpaper { .. })).collect();
+        assert_eq!(desk_hits.len(), 1, "the desk lists its one other picture");
+
+        // The lock's page lists two, sorted: aether, then night. Picking
+        // the first sets "aether" and the runtime is asked to draw it.
+        app.open(Screen::Personal(crate::pages::PersonalPick::Lock));
+        let fx = tap(&mut app, &f, &i, Action::Wallpaper { desk: false, at: 0 });
+        assert_eq!(app.state.lock_wallpaper, "aether", "the chosen key is kept");
+        assert_eq!(app.state.desk_wallpaper, crate::app::DEFAULT_DESK_WALLPAPER, "the desk is left alone");
+        assert!(fx.contains(&Effect::Wallpaper { desk: false, key: "aether".into() }), "the runtime is asked to read the picture");
+
+        // The two sound pages are still only lists to look at.
+        for pick in [crate::pages::PersonalPick::Ring, crate::pages::PersonalPick::Notf] {
+            app.open(Screen::Personal(pick));
+            let has_wallpaper = app.frame(&f, &i).hits.iter().any(|h| matches!(h.action, Action::Wallpaper { .. }));
+            assert!(!has_wallpaper, "a sound page has no wallpaper row");
+        }
+    }
 
     #[test]
     fn search_finds_by_pinyin_typed_on_its_own_keyboard() {
