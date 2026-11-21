@@ -8,6 +8,7 @@
 //! Every string here is written twice, English and Chinese, side by side, so
 //! that a line added to one language cannot be forgotten in the other.
 
+use crate::bootstate::SecureBoot;
 use crate::lang::Lang;
 use super::menu::{Action, Crash, Reason, View, ITEMS};
 use super::screen::{YELLOW, Screen, CELL_H, INK, LINE_H, LIT, SCALE};
@@ -75,10 +76,28 @@ impl Hint {
 /// Nothing here is carved into the drawing, so an empty list leaves the
 /// panel exactly as it was before any of this existed.
 pub(crate) fn hints(lang: Lang) -> Vec<Hint> {
-    vec![Hint::yellow(lang.pick([
-        "Secure Boot status unknown",
-        "安全启动状态未知",
-    ]))]
+    hints_from(lang, crate::bootstate::secure_boot())
+}
+
+/// The same lines with the reading supplied, so a desk build can check what
+/// each answer looks like without a phone — and a phone that did not answer
+/// keeps a panel that looks exactly as it did before this reading existed.
+///
+/// Three answers, two of them written: a Qualcomm phone says whether its
+/// boot chain is checked, and only a phone that said neither nothing nor
+/// something else gets to say it.
+pub(crate) fn hints_from(lang: Lang, boot: SecureBoot) -> Vec<Hint> {
+    match boot {
+        SecureBoot::On => vec![Hint::yellow(lang.pick([
+            "Secure Boot is enabled.",
+            "安全启动已开启。",
+        ]))],
+        SecureBoot::Off => vec![Hint::yellow(lang.pick([
+            "Secure Boot is off.",
+            "安全启动未开启。",
+        ]))],
+        SecureBoot::Unknown => Vec::new(),
+    }
 }
 
 /// One line of the panel.
@@ -138,13 +157,18 @@ const RULE_DY: u32 = 2 * SCALE;
 /// The lines are walked from the top and each printed whole. A rule is a
 /// line of the panel like any other, taking the space between the words.
 pub fn draw(screen: &mut Screen, view: View, lang: Lang) {
+    draw_lines(screen, &lines_of(view, lang));
+}
+
+/// Paint already-composed lines. Split from [`draw`] so a desk build can
+/// paint a panel with a supplied reading and check the ink on the real path.
+fn draw_lines(screen: &mut Screen, lines: &[Line]) {
     screen.fill([0, 0, 0]);
-    let lines = lines_of(view, lang);
     // Ranged from the top left, not centred. A console starts where a page
     // starts; centring the block would also move every line when the question
     // comes up, since it is a line shorter than the list.
     let mut y = top(screen.h);
-    for line in &lines {
+    for line in lines {
         match line {
             Line::Words(text, Ink::Plain) => screen.draw_left(y, text, LIT),
             Line::Words(text, Ink::Reversed) => {
@@ -426,9 +450,11 @@ mod tests {
         for lang in BOTH {
             for lines in [list(0, lang), confirm(Action::Reset, false, lang)] {
                 let n = lines.len();
-                // The readings come last, so count back from the end past
-                // them and their blank to find where the key legend sits.
-                let tail = hints(lang).len() + 1;
+                // The readings come last, behind a blank line. On a desk
+                // build there is no kernel to read, so there is neither a
+                // reading nor its blank and the legend runs to the end.
+                let reported = hints(lang).len();
+                let tail = if reported > 0 { reported + 1 } else { 0 };
                 for (i, hint) in HINT.iter().enumerate() {
                     assert_eq!(lines[n - tail - HINT.len() + i].text(), lang.pick(*hint), "{lang:?}: the legend is in order");
                 }
@@ -439,12 +465,12 @@ mod tests {
 
     #[test]
     fn an_empty_reading_leaves_the_legend_at_the_end() {
-        // When there is nothing to report — before a reading is taken, or
-        // after it stops being true — the panel is what it was: the key
-        // legend is the last line, with no blank and no yellow note after it.
+        // When there is nothing to report — another platform, no such key, or
+        // a value that is neither — the panel is what it was: the key legend
+        // is the last line, with no blank and no yellow note after it.
         for lang in BOTH {
             let with_none = footer_with(lang, &[]);
-            let with_one = footer(lang);
+            let with_one = footer_with(lang, &hints_from(lang, SecureBoot::On));
             assert_eq!(with_none.len() + 2, with_one.len(), "{lang:?}: one blank and one line for a reading");
             for (i, hint) in HINT.iter().enumerate() {
                 assert_eq!(with_none[with_none.len() - HINT.len() + i].text(), lang.pick(*hint), "{lang:?}: the legend ends it");
@@ -452,16 +478,33 @@ mod tests {
         }
     }
 
+    /// Both answers a Qualcomm phone can give are written, in the same
+    /// yellow, and a phone that gave neither says nothing at all.
+    #[test]
+    fn the_secure_boot_hint_reads_both_answers_and_keeps_quiet_otherwise() {
+        for lang in BOTH {
+            let on = hints_from(lang, SecureBoot::On);
+            assert_eq!(on.len(), 1, "{lang:?}: a checked chain is one line");
+            assert_eq!(on[0].ink, Ink::Yellow, "{lang:?}: reported, not offered");
+            assert_eq!(on[0].text, lang.pick(["Secure Boot is enabled.", "安全启动已开启。"]));
+            let off = hints_from(lang, SecureBoot::Off);
+            assert_eq!(off.len(), 1, "{lang:?}: an unchecked chain is one line too");
+            assert_eq!(off[0].ink, Ink::Yellow, "{lang:?}: the same ink, a different reading");
+            assert_eq!(off[0].text, lang.pick(["Secure Boot is off.", "安全启动未开启。"]));
+            assert!(hints_from(lang, SecureBoot::Unknown).is_empty(), "{lang:?}: a phone that did not answer gets no line");
+        }
+    }
+
     #[test]
     fn a_reading_is_the_last_line_in_yellow() {
         for lang in BOTH {
-            let lines = list(0, lang);
+            let reported = hints_from(lang, SecureBoot::On);
+            let lines = footer_with(lang, &reported);
             let last = lines.last().expect("a footer");
-            let reported = hints(lang);
-            assert_eq!(reported.len(), 1, "{lang:?}: one reading for now");
+            assert_eq!(reported.len(), 1, "{lang:?}: one reading when the chain is checked");
             assert_eq!(last.text(), reported[0].text, "{lang:?}: the reading is the last line");
             assert_eq!(reported[0].ink, Ink::Yellow, "{lang:?}: reported, not offered");
-            let expected = lang.pick(["Secure Boot status unknown", "安全启动状态未知"]);
+            let expected = lang.pick(["Secure Boot is enabled.", "安全启动已开启。"]);
             assert_eq!(last.text(), expected, "{lang:?}: the words are the ones asked for");
         }
     }
@@ -470,9 +513,13 @@ mod tests {
     fn the_readings_are_yellow_and_the_rest_is_black_and_white() {
         let (w, h) = (1200u32, 2608u32);
         let yellow = [YELLOW[0], YELLOW[1], YELLOW[2], 0xff];
+        // A desk build supplies its own reading, since the kernel files are
+        // not there to be read on a host.
         for lang in BOTH {
             let mut screen = Screen::new(w, h);
-            draw(&mut screen, View::List { sel: 1 }, lang);
+            let mut lines = header(lang);
+            lines.extend(footer_with(lang, &hints_from(lang, SecureBoot::On)));
+            draw_lines(&mut screen, &lines);
             // No greys and no theme: black, white, and one yellow for the
             // readings. The cursor is the same white reversed, not a shade.
             let pixels = screen.data.as_chunks::<4>().0;

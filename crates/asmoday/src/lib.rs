@@ -20,6 +20,7 @@
 #[cfg(target_os = "android")]
 use anyhow::Result;
 
+mod bootstate;
 mod font;
 mod lang;
 mod menu;
