@@ -106,7 +106,19 @@ pub fn run() -> Result<()> {
 
     loop {
         let forked = Instant::now();
-        let (code, crash, reason) = match wait(start()?, forked) {
+        let ended = wait(start()?, forked);
+        // A system that left deliberately says where it wants to go. Reading
+        // the note comes before judging the exit: the note makes this an
+        // ordinary departure whatever the code says, and the power operation
+        // belongs here, in the process that is still alive to carry it out.
+        // Anything the system could not say — a note it failed to write —
+        // falls back to the system having written sys.powerctl itself, and
+        // the phone is already leaving.
+        if let Some(power) = skyward_sys::leave::take() {
+            let _ = skyward_sys::kmsg(&format!("the system left for {}; carrying it out", skyward_sys::leave::name(power)));
+            return skyward_sys::power(power);
+        }
+        let (code, crash, reason) = match ended {
             End::Clean | End::Asked => return Ok(()),
             End::Stopped { code, crash, reason } => (code, crash, reason),
         };
@@ -179,6 +191,11 @@ fn start() -> Result<libc::pid_t> {
     // A panic note from a previous life would be read as this one's: an
     // ordinary stop would come up claiming to know which line panicked.
     let _ = std::fs::remove_file(crate::crashlog::panic_file());
+    // A leave note from a previous life would turn an ordinary stop into a
+    // power operation: this system would reboot the phone when it only
+    // stopped. The system clears it too on the way in; clearing it here as
+    // well covers a system that never got that far.
+    skyward_sys::leave::clear();
 
     match unsafe { libc::fork() } {
         -1 => Err(anyhow!("start the system: {}", std::io::Error::last_os_error())),

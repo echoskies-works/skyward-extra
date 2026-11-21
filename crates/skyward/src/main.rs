@@ -781,6 +781,10 @@ fn recovery() -> Result<()> {
         std::fs::set_permissions(skyward_sys::RUN, std::fs::Permissions::from_mode(0o755))
             .with_context(|| format!("open {} to the recovery's other users", skyward_sys::RUN))?;
         skyward_sys::keep_log(Path::new(skyward_sys::LOG))?;
+        // A leave note from a previous life would make the watcher reboot the
+        // phone when this system only stops. It is cleared before the fork
+        // too; doing it here as well covers a system started by hand.
+        skyward_sys::leave::clear();
         // The folder the parent watches is there now, so the first thing to
         // do with it is say that this is a system that came up.
         beat();
