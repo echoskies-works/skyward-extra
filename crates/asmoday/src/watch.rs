@@ -47,10 +47,13 @@ const LOOK: Duration = Duration::from_millis(100);
 
 /// The time the child is given to take a SIGTERM before it is killed.
 ///
-/// A stopped system is stopped, but a system that is merely slow will act on
-/// the signal: it closes the display and puts the port down, and the parent
-/// gets the panel back without a fight. Five seconds is long enough to be
-/// worth trying and short enough that nobody waits for it.
+/// Only a system that has already failed both questions is sent this, so the
+/// grace is not a wait for a slow system to finish its work. Nothing in the
+/// system handles SIGTERM today, which means in practice the process is gone
+/// the moment it arrives; the grace is kept for the day something does handle
+/// it, and for a kernel that takes a while to deliver to a process that is not
+/// coming back. Five seconds is long enough to be worth trying and short
+/// enough that nobody waits for it.
 const GRACE: Duration = Duration::from_secs(5);
 
 /// Where a running system says that it got a frame onto the panel.
