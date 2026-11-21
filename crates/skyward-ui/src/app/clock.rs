@@ -552,6 +552,42 @@ mod tests {
         assert!(!clock.timer_hand.moving(HAND_REWIND_MS + HAND_TINT_MS + 1), "and stops asking for frames");
     }
 
+    /// Both hands come home the way a spring carries them: anticlockwise,
+    /// the direction they were wound against, never round the other way
+    /// through twelve. A needle a hair short of the minute has the furthest
+    /// to travel, so that is the case worth pinning.
+    #[test]
+    fn a_sweep_home_only_ever_turns_anticlockwise() {
+        // The stopwatch, a tenth of a second short of the minute.
+        let mut watch = Clock { stop: 59_900, stop_since: None, ..Clock::default() };
+        let from = watch.hand_deg(0);
+        assert!(from > 359.0, "the needle starts nearly all the way round, got {from}");
+        watch.hand.reset(from, 0);
+        watch.stop = 0;
+        let mut prev = watch.hand_deg(0);
+        for k in 1..=20 {
+            let deg = watch.hand_deg(HAND_REWIND_MS * k / 20);
+            assert!(deg <= prev + 1e-4, "the watch turned clockwise at {k}/20: {prev} then {deg}");
+            prev = deg;
+        }
+        assert!(prev < 0.01, "the watch lands at twelve, got {prev}");
+
+        // The timer, seven tenths of the way round.
+        let mut timer = Clock { left: 2_040_000, left_since: Some(0), span: 2_040_000, ..Clock::default() };
+        let from = timer.timer_hand_deg(0);
+        timer.reset_timer_hand(0);
+        timer.left = 0;
+        timer.left_since = None;
+        let mut prev = timer.timer_hand_deg(0);
+        assert!((prev - from).abs() < 0.02, "the timer's sweep begins where its hand was");
+        for k in 1..=20 {
+            let deg = timer.timer_hand_deg(HAND_REWIND_MS * k / 20);
+            assert!(deg <= prev + 1e-4, "the timer turned clockwise at {k}/20: {prev} then {deg}");
+            prev = deg;
+        }
+        assert!(prev < 0.01, "the timer lands at twelve, got {prev}");
+    }
+
     #[test]
     fn the_timer_hand_takes_the_colour_of_its_count() {
         let mut clock = Clock { left: 60_000, ..Clock::default() };

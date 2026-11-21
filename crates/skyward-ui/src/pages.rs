@@ -1489,19 +1489,29 @@ const HAND_SHADOW: Rgba = Rgba::rgb(0, 0, 0).with_alpha(26);
 const HAND_SHADOW_DROP: f32 = 3.4;
 const HAND_SHADOW_BLUR: f32 = 4.2;
 
+/// The counterweight a hand may carry behind its hub: the fine line that
+/// runs on past the centre and the thicker stroke it widens into. The
+/// stopwatch's needle has one; the timer's hour hand does not.
+#[derive(Clone, Copy)]
+struct Tail {
+    gap: f32,
+    len: f32,
+    w: f32,
+}
+
 /// The measurements of one hand, so the same drawing serves both faces.
 ///
 /// The stopwatch's is a fine needle. The timer's is that same hand drawn
 /// thick and a little short, the way a watch draws its hour hand: it stands
 /// for a whole minute's mark rather than a second's, so it is a stout rod
-/// and not a hairline. Everything else — the shadow under it, the tail and
-/// its counterweight, the pin it turns about — is the stopwatch's own.
+/// and not a hairline. Its rod ends at the hub — Smartisan's hour hand has
+/// no line running on behind it, and a tail on a rod this thick reads as a
+/// second, smaller hand — while the shadow, the pin and the way it turns
+/// about are the stopwatch's own.
 struct HandSpec {
     tip: f32,
     tip_w: f32,
-    tail_gap: f32,
-    tail: f32,
-    tail_w: f32,
+    tail: Option<Tail>,
     hub: f32,
     shadow_drop: f32,
     shadow_blur: f32,
@@ -1510,23 +1520,19 @@ struct HandSpec {
 const SECOND_HAND: HandSpec = HandSpec {
     tip: HAND_TIP,
     tip_w: HAND_TIP_W,
-    tail_gap: HAND_TAIL_GAP,
-    tail: HAND_TAIL,
-    tail_w: HAND_TAIL_W,
+    tail: Some(Tail { gap: HAND_TAIL_GAP, len: HAND_TAIL, w: HAND_TAIL_W }),
     hub: HAND_HUB,
     shadow_drop: HAND_SHADOW_DROP,
     shadow_blur: HAND_SHADOW_BLUR,
 };
 
 /// The timer's hour hand: a little short of the needle's reach and nearly
-/// four times its width, its counterweight brought in so the rod reads as
-/// one piece. Its tip stops short of the minute ring, where the numbers are.
+/// four times its width, its counterweight left off so the rod reads as one
+/// piece. Its tip stops short of the minute ring, where the numbers are.
 const HOUR_HAND: HandSpec = HandSpec {
     tip: 70.0,
     tip_w: 9.0,
-    tail_gap: 8.0,
-    tail: 14.0,
-    tail_w: 8.0,
+    tail: None,
     hub: 10.0,
     shadow_drop: HAND_SHADOW_DROP,
     shadow_blur: 5.0,
@@ -1629,29 +1635,31 @@ type Stroke = (f32, f32, f32, f32, f32);
 /// The hub the hand turns about: its centre and its radius.
 type Hub = (f32, f32, f32);
 
-/// The hand's three strokes — the fine one through the hub, the tail run on
-/// past it, and the counterweight laid over its outer part — and the hub
-/// itself, turning about (`cx`, `cy`).
-fn hand_geom(m: &crate::theme::Metrics, cx: f32, cy: f32, deg: f32, s: &HandSpec) -> ([Stroke; 3], Hub) {
+/// The hand's strokes — the one through the hub to its tip, and behind it,
+/// when the spec carries a tail, the thin line run on past the hub and the
+/// counterweight laid over its outer part — and the hub itself, turning
+/// about (`cx`, `cy`).
+fn hand_geom(m: &crate::theme::Metrics, cx: f32, cy: f32, deg: f32, s: &HandSpec) -> (Vec<Stroke>, Hub) {
     let a = deg * std::f32::consts::PI / 180.0;
     let (ux, uy) = (a.sin(), -a.cos());
     let tip = m.dp(s.tip);
-    let gap = m.dp(s.tail_gap);
-    let tail_end = gap + m.dp(s.tail);
-    (
-        [
-            (cx, cy, cx + ux * tip, cy + uy * tip, m.dp(s.tip_w)),
-            (cx, cy, cx - ux * tail_end, cy - uy * tail_end, m.dp(s.tip_w)),
-            (
-                cx - ux * gap,
-                cy - uy * gap,
-                cx - ux * tail_end,
-                cy - uy * tail_end,
-                m.dp(s.tail_w),
-            ),
-        ],
-        (cx, cy, m.dp(s.hub) / 2.0),
-    )
+    let mut strokes = vec![(cx, cy, cx + ux * tip, cy + uy * tip, m.dp(s.tip_w))];
+    // A hand with no tail gets no strokes at all behind the hub, rather
+    // than two of no length: a line drawn from the hub back to itself still
+    // lays a dot there.
+    if let Some(tail) = s.tail {
+        let gap = m.dp(tail.gap);
+        let end = gap + m.dp(tail.len);
+        strokes.push((cx, cy, cx - ux * end, cy - uy * end, m.dp(s.tip_w)));
+        strokes.push((
+            cx - ux * gap,
+            cy - uy * gap,
+            cx - ux * end,
+            cy - uy * end,
+            m.dp(tail.w),
+        ));
+    }
+    (strokes, (cx, cy, m.dp(s.hub) / 2.0))
 }
 
 /// The hand itself, in `ink`.
@@ -6110,6 +6118,22 @@ mod tests {
         let mut hour = Canvas::new(w, h);
         timer_dial(&mut hour, &t.m, &t, &f, cx, cy, deg, 0.0);
         assert!(at(&second) > at(&hour) + 200, "the hour hand covers four dp off its line where the needle leaves the face bare");
+    }
+
+    /// Smartisan's hour hand ends at the hub. Only the stopwatch's needle
+    /// runs on behind its centre and widens into a counterweight, so a tail
+    /// on the timer's rod would read as a second, smaller hand.
+    #[test]
+    fn the_timer_s_hour_hand_carries_no_tail_behind_its_hub() {
+        let t = Theme::light(1080, 2400, 2.624);
+        let (cx, cy) = (540.0, t.m.dp(DIAL_CY));
+        let (hour, _) = hand_geom(&t.m, cx, cy, 0.0, &HOUR_HAND);
+        assert_eq!(hour.len(), 1, "the rod and nothing behind it");
+        let (needle, _) = hand_geom(&t.m, cx, cy, 0.0, &SECOND_HAND);
+        assert_eq!(needle.len(), 3, "the needle keeps its line and its weight");
+        // At twelve the rod runs up from the hub, so its far end is above
+        // the centre. A tail would have put a stroke below it.
+        assert!(hour[0].3 < cy, "the hour hand's one stroke runs up, not down");
     }
 
     /// The clock is laid out on the 411.6 × 914 dp panel the pages were
