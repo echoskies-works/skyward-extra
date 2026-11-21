@@ -1070,7 +1070,7 @@ mod tests {
         app.state.wallpaper_names = skyward_config::WallpaperNames {
             desk: [("sunset".to_string(), WallpaperName { zh: "日落".into(), en: "Sunset".into() })].into_iter().collect(),
             lock: [
-                ("aether".to_string(), WallpaperName { zh: "以太".into(), en: "Aether".into() }),
+                ("aether".to_string(), WallpaperName { zh: "天穹".into(), en: "Aether".into() }),
                 ("night".to_string(), WallpaperName { zh: "夜色".into(), en: "Night".into() }),
             ].into_iter().collect(),
         };
