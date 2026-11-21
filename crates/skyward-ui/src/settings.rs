@@ -422,7 +422,7 @@ impl Keeper {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::{DEFAULT_DESK_WALLPAPER, DEFAULT_RING};
+    use crate::app::DEFAULT_RING;
 
     #[test]
     fn the_settings_go_round_through_their_file() {
@@ -460,7 +460,7 @@ mod tests {
         assert_eq!((back.lang, back.screen_off, back.time_zone), (Lang::En, 6, 7));
         assert_eq!((back.timer_sound.as_str(), back.clock_ticking, back.clock_ticking_background), ("bell", false, true));
         assert_eq!((back.volume_keys, back.system_volume, back.media_volume, back.muted), (true, 3, 12, true));
-        assert_eq!((back.desk_wallpaper.as_str(), back.lock_wallpaper.as_str()), ("starsky", "night"));
+        assert_eq!((back.desk_wallpaper.as_str(), back.lock_wallpaper.as_str()), ("", ""), "no choice saved");
         assert_eq!((back.ring_sound.as_str(), back.notification_sound.as_str()), ("love_trial", "basic"));
     }
 
@@ -479,7 +479,7 @@ mod tests {
             "ticking_background": false,
         }));
         assert_eq!(json["volume"], serde_json::json!({ "keys": false, "system": 8, "media": 8, "muted": false }));
-        assert_eq!(json["wallpaper"], serde_json::json!({ "desk": "starsky", "lock": "night" }));
+        assert_eq!(json["wallpaper"], serde_json::json!({ "desk": "", "lock": "" }), "no choice saved");
         assert_eq!(json["sound"], serde_json::json!({ "ring": "love_trial", "notification": "basic" }));
         assert_eq!(json["spoken"], "zh-Hans");
         assert!(json.get("language").is_none(), "no language is chosen until one is");
@@ -504,8 +504,9 @@ mod tests {
         assert_eq!((back.desk_wallpaper.as_str(), back.ring_sound.as_str()), ("sunset", "chime"));
         assert_eq!((back.system_volume, back.media_volume), (15, 0), "both ends of the span");
 
-        // A level outside the panel's span, and empty names, leave what a
-        // recovery starts with instead of a bar it cannot draw or a blank.
+        // A level outside the panel's span is ignored; an empty wallpaper
+        // name means "no choice saved" and leaves the state as it was, for
+        // the runtime to fill from the names file's first entry.
         let bad = Settings {
             volume: Volume { system: 99, media: 200, ..Volume::default() },
             wallpaper: Wallpaper { desk: String::new(), lock: "night".into() },
@@ -516,7 +517,7 @@ mod tests {
         bad.apply(&mut kept);
         assert_eq!(kept.system_volume, 8, "a level beyond the span is ignored");
         assert_eq!(kept.media_volume, 8);
-        assert_eq!(kept.desk_wallpaper, DEFAULT_DESK_WALLPAPER, "an empty name keeps the default");
+        assert_eq!(kept.desk_wallpaper, "", "an empty name saves no choice");
         assert_eq!(kept.ring_sound, DEFAULT_RING);
     }
 

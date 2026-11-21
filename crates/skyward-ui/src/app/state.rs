@@ -6,9 +6,10 @@ use super::*;
 /// ramdisk carries and `sfx.toml` names 恋爱裁判.
 pub const DEFAULT_TIMER_SOUND: &str = "love_trial";
 
-/// The keys each wallpaper and sound starts on, matching the ramdisk files
-/// the pages read today. They are kept so a settings file can name a choice
-/// before a page lets one be made; an empty value means no choice yet.
+/// The wallpapers a ramdisk without a names file still draws: the pages
+/// have always read these two files. Only a ramdisk carrying no names at
+/// all falls back to them; otherwise the first name the file writes is the
+/// default, so changing its order changes the starting picture.
 pub const DEFAULT_DESK_WALLPAPER: &str = "starsky";
 pub const DEFAULT_LOCK_WALLPAPER: &str = "night";
 pub const DEFAULT_RING: &str = "love_trial";
@@ -251,8 +252,9 @@ pub struct State {
     /// the「个性化选项」page shows the ones in use by them.
     pub sound_names: skyward_config::SoundNames,
     /// Which wallpaper each place shows, by its key in the ramdisk's table.
-    /// No page picks one yet; these hold the ones the pages read today so a
-    /// choice kept in the settings file survives until a picker is wired up.
+    /// Empty means no choice was made: the names file's first entry is the
+    /// one drawn, and stays the default as long as no choice is saved. A
+    /// set key is a real choice, kept in the settings file across restarts.
     pub desk_wallpaper: String,
     pub lock_wallpaper: String,
     /// Which sound the phone plays for a ring and a notification, by its key
@@ -365,8 +367,8 @@ impl Default for State {
             clock_ticking_background: false,
             wallpaper_names: skyward_config::WallpaperNames::default(),
             sound_names: skyward_config::SoundNames::default(),
-            desk_wallpaper: DEFAULT_DESK_WALLPAPER.to_string(),
-            lock_wallpaper: DEFAULT_LOCK_WALLPAPER.to_string(),
+            desk_wallpaper: String::new(),
+            lock_wallpaper: String::new(),
             ring_sound: DEFAULT_RING.to_string(),
             notification_sound: DEFAULT_NOTIFICATION.to_string(),
         }
@@ -374,6 +376,21 @@ impl Default for State {
 }
 
 impl State {
+    /// The wallpaper key a place actually draws with. A saved choice wins;
+    /// with none saved the first name in the file is the default, and only
+    /// a ramdisk with no names at all falls back to the built-in file.
+    pub fn wallpaper_key(&self, desk: bool) -> &str {
+        let chosen = if desk { &self.desk_wallpaper } else { &self.lock_wallpaper };
+        if !chosen.is_empty() {
+            return chosen;
+        }
+        self.wallpaper_names.first(desk).unwrap_or(if desk {
+            DEFAULT_DESK_WALLPAPER
+        } else {
+            DEFAULT_LOCK_WALLPAPER
+        })
+    }
+
     /// The key of the on-screen keyboard a finger holds down.
     pub fn key_held(&self) -> Option<Cap> {
         match self.held {

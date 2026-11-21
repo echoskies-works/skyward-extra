@@ -1080,12 +1080,15 @@ mod tests {
         let desk_hits: Vec<Action> = app.frame(&f, &i).hits.iter().map(|h| h.action).filter(|a| matches!(a, Action::Wallpaper { .. })).collect();
         assert_eq!(desk_hits.len(), 1, "the desk lists its one other picture");
 
-        // The lock's page lists two, sorted: aether, then night. Picking
-        // the first sets "aether" and the runtime is asked to draw it.
+        // The lock's page lists two in the names file's order: aether first,
+        // then night, so the first is the default. Picking it sets "aether"
+        // and the runtime is asked to draw it. With nothing chosen the
+        // effective key is that first entry, not a built-in file.
         app.open(Screen::Personal(crate::pages::PersonalPick::Lock));
+        assert_eq!(app.state.wallpaper_key(false), "aether", "the first name is the default");
         let fx = tap(&mut app, &f, &i, Action::Wallpaper { desk: false, at: 0 });
         assert_eq!(app.state.lock_wallpaper, "aether", "the chosen key is kept");
-        assert_eq!(app.state.desk_wallpaper, crate::app::DEFAULT_DESK_WALLPAPER, "the desk is left alone");
+        assert_eq!(app.state.desk_wallpaper, "", "the desk keeps no choice");
         assert!(fx.contains(&Effect::Wallpaper { desk: false, key: "aether".into() }), "the runtime is asked to read the picture");
 
         // The two sound pages are still only lists to look at.

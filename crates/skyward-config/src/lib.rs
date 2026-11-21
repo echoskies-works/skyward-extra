@@ -1,4 +1,5 @@
 use anyhow::{ensure, Context, Result};
+use indexmap::IndexMap;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -546,20 +547,28 @@ pub struct WallpaperName {
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct WallpaperNames {
     #[serde(default)]
-    pub desk: HashMap<String, WallpaperName>,
+    pub desk: IndexMap<String, WallpaperName>,
     #[serde(default)]
-    pub lock: HashMap<String, WallpaperName>,
+    pub lock: IndexMap<String, WallpaperName>,
 }
 
 impl WallpaperNames {
     /// Read the names from `path`, which the ramdisk holds as
     /// [`ramdisk::WALLPAPERS_NAMES`]. A file missing or unreadable is fine:
     /// the names are a nicety, not something to keep the recovery from
-    /// starting for.
+    /// starting for. The maps keep the file's order, so the first name
+    /// written under each heading is the one a recovery starts on.
     pub fn load(path: impl AsRef<Path>) -> Self {
         let p = path.as_ref();
         let Ok(text) = std::fs::read_to_string(p) else { return Self::default() };
         toml::from_str(&text).unwrap_or_default()
+    }
+
+    /// The first key written under `desk` or `lock`, which is the default
+    /// picture for that place. `None` where the file names none.
+    pub fn first(&self, desk: bool) -> Option<&str> {
+        let names = if desk { &self.desk } else { &self.lock };
+        names.keys().next().map(String::as_str)
     }
 }
 
@@ -725,6 +734,21 @@ fn from_the_top(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_first_wallpaper_written_is_the_default() {
+        // The names file's order is kept, and its first entry is what a
+        // recovery starts on — the same order the picker shows.
+        let names: WallpaperNames = toml::from_str(
+            "[desk]\nz = { zh = \"Z\" }\na = { zh = \"A\" }\n[lock]\nn = { zh = \"N\" }\nb = { zh = \"B\" }\n",
+        )
+        .unwrap();
+        assert_eq!(names.desk.keys().map(String::as_str).collect::<Vec<_>>(), ["z", "a"]);
+        assert_eq!(names.lock.keys().map(String::as_str).collect::<Vec<_>>(), ["n", "b"]);
+        assert_eq!(names.first(true), Some("z"));
+        assert_eq!(names.first(false), Some("n"));
+        assert_eq!(WallpaperNames::default().first(true), None, "no names, no default");
+    }
 
     #[test]
     fn the_commands_sit_beside_the_system_binary() {

@@ -1404,13 +1404,13 @@ impl<'a> Pages<'a> {
         let locale = request.locale.as_deref().or(info.locale.as_deref());
         let named = locale.map(Lang::for_locale).transpose()?;
         app.take_settings(kept.settings(), named);
-        // The pictures come after the settings are back: the keys kept from
-        // last time name which wallpapers these are, so they are read here
-        // rather than before the settings were applied.
-        if let Some(picture) = wallpaper(&app.state.desk_wallpaper) {
+        // The pictures come after the settings are back: a key kept from
+        // last time wins, and with no key saved the names file's first entry
+        // is the default. Changing that order changes the starting picture.
+        if let Some(picture) = wallpaper(app.state.wallpaper_key(true)) {
             app.set_wallpaper(picture);
         }
-        if let Some(picture) = wallpaper(&app.state.lock_wallpaper) {
+        if let Some(picture) = wallpaper(app.state.wallpaper_key(false)) {
             app.set_lock_wallpaper(picture);
         }
         app.refresh();

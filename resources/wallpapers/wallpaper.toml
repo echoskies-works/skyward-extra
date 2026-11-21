@@ -7,5 +7,5 @@ starsky = { zh = "星空", en = "Starry Sky" }
 sunset = { zh = "日落", en = "Sunset" }
 
 [lock]
-aether = { zh = "天穹", en = "Aether" }
 night = { zh = "夜色", en = "Night" }
+aether = { zh = "天穹", en = "Aether" }

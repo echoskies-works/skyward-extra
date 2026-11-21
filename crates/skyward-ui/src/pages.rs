@@ -5389,13 +5389,14 @@ impl PersonalPick {
 
     /// The key the phone is set to now: what the list marks as in use.
     /// Sounds still come from the fixed ramdisk file; a wallpaper comes
-    /// from the state, so the choice made here survives a restart.
+    /// from the state's effective key — a saved choice, or the names file's
+    /// first entry when none was saved.
     fn in_use(self, s: &State) -> String {
         match self {
             PersonalPick::Ring => file_key(skyward_config::ramdisk::RINGTONE),
             PersonalPick::Notf => file_key(skyward_config::ramdisk::NOTIFICATION),
-            PersonalPick::Desk => s.desk_wallpaper.clone(),
-            PersonalPick::Lock => s.lock_wallpaper.clone(),
+            PersonalPick::Desk => s.wallpaper_key(true).to_string(),
+            PersonalPick::Lock => s.wallpaper_key(false).to_string(),
         }
     }
 
@@ -5412,18 +5413,27 @@ impl PersonalPick {
     }
 }
 
-/// The keys `pick` can be set to, in the order the page shows them: what
-/// the names file holds, sorted, and the one in use alone where the file
-/// holds nothing, so the page is never blank. The app uses the same order
-/// to map a touch back to the key it names.
+/// The keys `pick` can be set to, in the order the page shows them: the
+/// wallpapers in the order the names file writes them, so the first one it
+/// names is the default and the one at the top; the sounds sorted, since
+/// their table has no order of its own. Where the file holds nothing the
+/// one in use stands alone, so the page is never blank. The app uses the
+/// same order to map a touch back to the key it names.
 pub(super) fn pick_keys(s: &State, pick: PersonalPick) -> Vec<String> {
     let mut keys: Vec<String> = match pick {
-        PersonalPick::Ring => s.sound_names.ring.keys().cloned().collect(),
-        PersonalPick::Notf => s.sound_names.notf.keys().cloned().collect(),
+        PersonalPick::Ring => {
+            let mut keys: Vec<String> = s.sound_names.ring.keys().cloned().collect();
+            keys.sort();
+            keys
+        }
+        PersonalPick::Notf => {
+            let mut keys: Vec<String> = s.sound_names.notf.keys().cloned().collect();
+            keys.sort();
+            keys
+        }
         PersonalPick::Desk => s.wallpaper_names.desk.keys().cloned().collect(),
         PersonalPick::Lock => s.wallpaper_names.lock.keys().cloned().collect(),
     };
-    keys.sort();
     if keys.is_empty() {
         keys.push(pick.in_use(s));
     }
@@ -5483,8 +5493,8 @@ pub fn personalization(cx: &Ctx) -> Frame {
     ]);
     out.extend(hits(&sound.rows, &[Action::Open(Screen::Personal(PersonalPick::Ring)), Action::Open(Screen::Personal(PersonalPick::Notf))]));
     let y = widgets::section(&mut c, t, f, sound.bottom, l.pick(WALLPAPER_TITLE));
-    let desk = PersonalPick::Desk.name(l, s, &s.desk_wallpaper);
-    let lock = PersonalPick::Lock.name(l, s, &s.lock_wallpaper);
+    let desk = PersonalPick::Desk.name(l, s, s.wallpaper_key(true));
+    let lock = PersonalPick::Lock.name(l, s, s.wallpaper_key(false));
     let wallpapers = widgets::list(&mut c, t, f, y, &[
         Row::new(l.pick(DESK_WALLPAPER)).icon(PURPLE, Icon::Phone).trail(Trail::Value(desk.as_str())),
         Row::new(l.pick(LOCK_WALLPAPER)).icon(ORANGE, Icon::Lock).trail(Trail::Value(lock.as_str())),

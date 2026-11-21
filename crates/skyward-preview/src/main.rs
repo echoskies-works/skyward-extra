@@ -175,27 +175,26 @@ fn main() -> Result<()> {
     let (w, h) = (cfg.display.width, cfg.display.height);
     let ppd = cfg.display.density as f32 / 160.0;
     let light = Theme::light(w, h, ppd);
-    // The desktop is drawn on the wallpaper the image carries: the preview
-    // takes the one the repository holds, cropped to the screen as the
-    // image's own does.
-    let wallpaper = std::fs::read(root.join("resources/wallpapers/desk/starsky.png")).ok().and_then(|bytes| match Canvas::from_png(&bytes) {
-        Ok(picture) => Some(picture),
-        Err(e) => {
-            eprintln!("wallpaper: {e:#}");
-            None
-        }
-    });
-    // The lock's own wallpaper, read apart from the desktop's, so the lock
-    // is drawn over the picture it will stand over on the phone.
-    let lock_wallpaper = std::fs::read(root.join("resources/wallpapers/lock/night.png")).ok().and_then(|bytes| match Canvas::from_png(&bytes) {
-        Ok(picture) => Some(picture),
-        Err(e) => {
-            eprintln!("lock wallpaper: {e:#}");
-            None
-        }
-    });
-    // The wallpapers' names, as the「个性化选项」page shows them.
+    // The wallpapers' names, as the「个性化选项」page shows them. The first
+    // name written under each heading is the default the phone starts on.
     let wallpaper_names = skyward_config::WallpaperNames::load(root.join("resources/wallpapers/wallpaper.toml"));
+    // The pictures the desktop and the lock are drawn on: the first the
+    // names file writes, so the preview follows a change of that order the
+    // same way the phone does. A key with no file leaves the picture plain.
+    let read_wallpaper = |desk: bool| {
+        let (dir, key) = if desk { ("desk", wallpaper_names.first(true)) } else { ("lock", wallpaper_names.first(false)) };
+        let key = key?;
+        let path = root.join(format!("resources/wallpapers/{dir}/{key}.png"));
+        std::fs::read(&path).ok().and_then(|bytes| match Canvas::from_png(&bytes) {
+            Ok(picture) => Some(picture),
+            Err(e) => {
+                eprintln!("wallpaper {}: {e:#}", path.display());
+                None
+            }
+        })
+    };
+    let wallpaper = read_wallpaper(true);
+    let lock_wallpaper = read_wallpaper(false);
     // The names of the ring and of the notification, shown the same way.
     let sound_names = skyward_config::SoundNames::load(root.join("resources/sfx/sfx.toml"));
     let on_wallpaper = |screen: Screen, mut app: App| {
