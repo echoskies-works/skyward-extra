@@ -89,7 +89,7 @@ pub(crate) fn hints(lang: Lang) -> Vec<Hint> {
 pub(crate) fn hints_from(lang: Lang, boot: SecureBoot) -> Vec<Hint> {
     match boot {
         SecureBoot::On => vec![Hint::yellow(lang.pick([
-            "Secure Boot is enabled.",
+            "Secure Boot is on.",
             "安全启动已开启。",
         ]))],
         SecureBoot::Off => vec![Hint::yellow(lang.pick([
@@ -486,7 +486,7 @@ mod tests {
             let on = hints_from(lang, SecureBoot::On);
             assert_eq!(on.len(), 1, "{lang:?}: a checked chain is one line");
             assert_eq!(on[0].ink, Ink::Yellow, "{lang:?}: reported, not offered");
-            assert_eq!(on[0].text, lang.pick(["Secure Boot is enabled.", "安全启动已开启。"]));
+            assert_eq!(on[0].text, lang.pick(["Secure Boot is on.", "安全启动已开启。"]));
             let off = hints_from(lang, SecureBoot::Off);
             assert_eq!(off.len(), 1, "{lang:?}: an unchecked chain is one line too");
             assert_eq!(off[0].ink, Ink::Yellow, "{lang:?}: the same ink, a different reading");
@@ -504,7 +504,7 @@ mod tests {
             assert_eq!(reported.len(), 1, "{lang:?}: one reading when the chain is checked");
             assert_eq!(last.text(), reported[0].text, "{lang:?}: the reading is the last line");
             assert_eq!(reported[0].ink, Ink::Yellow, "{lang:?}: reported, not offered");
-            let expected = lang.pick(["Secure Boot is enabled.", "安全启动已开启。"]);
+            let expected = lang.pick(["Secure Boot is on.", "安全启动已开启。"]);
             assert_eq!(last.text(), expected, "{lang:?}: the words are the ones asked for");
         }
     }
