@@ -17,7 +17,6 @@
 // attributes on every item.
 #![cfg_attr(not(target_os = "android"), allow(dead_code))]
 
-#[cfg(target_os = "android")]
 use anyhow::Result;
 
 mod bootstate;
@@ -37,6 +36,47 @@ mod watch;
 
 pub use lang::Lang;
 pub use menu::{Action, Crash, Reason, View};
+
+/// What the caller was asking of this program.
+///
+/// init starts the service as `recovery` with no arguments, and a shell gets
+/// at the menu by making a link called `startup`. Neither name is a choice
+/// the person at the phone made, so `--menu` is there as well: it says what is
+/// wanted outright, whatever the binary happens to be called. The word wins
+/// over the name, because the name was fixed when the image was built and the
+/// word was said a moment ago.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Job {
+    /// Start the system and own the panel while it is down.
+    Watch,
+    /// Put the menu up on its own.
+    Menu,
+}
+
+/// Read the job off the name the program was started under and the words
+/// after it.
+///
+/// Only `--menu` is understood. Anything else is refused rather than skipped:
+/// a name or a word nobody meant is a menu that does not come up, and one that
+/// comes up anyway with a typo swallowed is worse than one that says so on the
+/// kernel log and stays down.
+pub fn job_of(name: &str, args: &[String]) -> Result<Job> {
+    let mut menu = false;
+    for arg in args {
+        match arg.as_str() {
+            "--menu" => menu = true,
+            other => anyhow::bail!("asmoday: unknown argument {other}"),
+        }
+    }
+    if menu {
+        return Ok(Job::Menu);
+    }
+    match name {
+        "recovery" => Ok(Job::Watch),
+        "startup" => Ok(Job::Menu),
+        other => anyhow::bail!("asmoday: unknown command {other}"),
+    }
+}
 
 /// Start the system, watch it, and own the panel while it is down.
 ///
@@ -303,5 +343,21 @@ mod tests {
     #[test]
     fn the_menu_has_five_lines() {
         assert_eq!(menu::ITEMS.len(), 5);
+    }
+
+    /// The ways in: the name init or a link gives, and the word a shell says
+    /// outright. The word wins over the name, and a word that is nearly right
+    /// is refused rather than skipped.
+    #[test]
+    fn the_job_is_read_from_the_name_and_the_words() {
+        let nothing: Vec<String> = Vec::new();
+        let menu = vec!["--menu".to_string()];
+        assert_eq!(job_of("recovery", &nothing).expect("what init starts"), Job::Watch);
+        assert_eq!(job_of("recovery", &menu).expect("a shell asking for it"), Job::Menu);
+        assert_eq!(job_of("startup", &nothing).expect("the link"), Job::Menu);
+        assert_eq!(job_of("startup", &menu).expect("either way"), Job::Menu);
+        assert!(job_of("recovery", &["--menus".to_string()]).is_err(), "a typo is not a request");
+        assert!(job_of("startup", &["menu".to_string()]).is_err(), "the dashes are part of the word");
+        assert!(job_of("asmoday", &nothing).is_err(), "a name nobody meant starts nothing");
     }
 }
