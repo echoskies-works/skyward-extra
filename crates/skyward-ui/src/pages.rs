@@ -1489,6 +1489,49 @@ const HAND_SHADOW: Rgba = Rgba::rgb(0, 0, 0).with_alpha(26);
 const HAND_SHADOW_DROP: f32 = 3.4;
 const HAND_SHADOW_BLUR: f32 = 4.2;
 
+/// The measurements of one hand, so the same drawing serves both faces.
+///
+/// The stopwatch's is a fine needle. The timer's is that same hand drawn
+/// thick and a little short, the way a watch draws its hour hand: it stands
+/// for a whole minute's mark rather than a second's, so it is a stout rod
+/// and not a hairline. Everything else — the shadow under it, the tail and
+/// its counterweight, the pin it turns about — is the stopwatch's own.
+struct HandSpec {
+    tip: f32,
+    tip_w: f32,
+    tail_gap: f32,
+    tail: f32,
+    tail_w: f32,
+    hub: f32,
+    shadow_drop: f32,
+    shadow_blur: f32,
+}
+
+const SECOND_HAND: HandSpec = HandSpec {
+    tip: HAND_TIP,
+    tip_w: HAND_TIP_W,
+    tail_gap: HAND_TAIL_GAP,
+    tail: HAND_TAIL,
+    tail_w: HAND_TAIL_W,
+    hub: HAND_HUB,
+    shadow_drop: HAND_SHADOW_DROP,
+    shadow_blur: HAND_SHADOW_BLUR,
+};
+
+/// The timer's hour hand: a little short of the needle's reach and nearly
+/// four times its width, its counterweight brought in so the rod reads as
+/// one piece. Its tip stops short of the minute ring, where the numbers are.
+const HOUR_HAND: HandSpec = HandSpec {
+    tip: 70.0,
+    tip_w: 9.0,
+    tail_gap: 8.0,
+    tail: 14.0,
+    tail_w: 8.0,
+    hub: 10.0,
+    shadow_drop: HAND_SHADOW_DROP,
+    shadow_blur: 5.0,
+};
+
 /// Where the stopwatch's parts sit in dp: the dial's centre from the top of
 /// the page, the count's centre and size under it, the short rule the paper
 /// hangs from, and where the paper starts and how tall a row of it is. The
@@ -1532,8 +1575,9 @@ pub fn clock_paper_room(m: &crate::theme::Metrics) -> usize {
 }
 
 /// The dial's still face laid on centred at (`cx`, `cy`): the cache in one
-/// blit, and nothing of the hand. The timer wears this and only this while
-/// it has no hand of its own to turn.
+/// blit, and nothing of the hand. Both hands are laid over it — the
+/// stopwatch's needle by `clock_dial`, the timer's hour hand by
+/// `timer_dial` — so what is shared is the face, not the hand.
 fn clock_face_at(c: &mut Canvas, m: &crate::theme::Metrics, t: &crate::theme::Theme, f: &Fonts, cx: f32, cy: f32) {
     let face = clock_face(m, t, f);
     let side = face.w as f32;
@@ -1560,8 +1604,23 @@ fn clock_dial(
     // all — and furthest out from it when the hand lies down at six, which
     // is the shadow growing as the hand turns, without anything having to
     // follow the turn.
-    clock_hand_shadow(c, m, cx, cy, deg);
-    clock_hand(c, m, cx, cy, deg, mix(HAND_STILL, HAND_BLUE, tint));
+    clock_hand_shadow(c, m, cx, cy, deg, &SECOND_HAND);
+    clock_hand(c, m, cx, cy, deg, mix(HAND_STILL, HAND_BLUE, tint), &SECOND_HAND);
+    c.fill_circle(cx, cy, m.dp(HAND_PIN) / 2.0, Rgba::rgb(255, 255, 255));
+}
+
+/// The timer's dial: the same still face and the same shadow and pin, with
+/// the hour hand over it. It wears no bail and no knobs — the timer's dial
+/// is the bare disc Smartisan's is, not the pocket watch the stopwatch
+/// hangs from — so only the hand itself differs between the two faces.
+#[allow(clippy::too_many_arguments)]
+fn timer_dial(
+    c: &mut Canvas, m: &crate::theme::Metrics, t: &crate::theme::Theme, f: &Fonts,
+    cx: f32, cy: f32, deg: f32, tint: f32,
+) {
+    clock_face_at(c, m, t, f, cx, cy);
+    clock_hand_shadow(c, m, cx, cy, deg, &HOUR_HAND);
+    clock_hand(c, m, cx, cy, deg, mix(HAND_STILL, HAND_BLUE, tint), &HOUR_HAND);
     c.fill_circle(cx, cy, m.dp(HAND_PIN) / 2.0, Rgba::rgb(255, 255, 255));
 }
 
@@ -1573,33 +1632,33 @@ type Hub = (f32, f32, f32);
 /// The hand's three strokes — the fine one through the hub, the tail run on
 /// past it, and the counterweight laid over its outer part — and the hub
 /// itself, turning about (`cx`, `cy`).
-fn hand_geom(m: &crate::theme::Metrics, cx: f32, cy: f32, deg: f32) -> ([Stroke; 3], Hub) {
+fn hand_geom(m: &crate::theme::Metrics, cx: f32, cy: f32, deg: f32, s: &HandSpec) -> ([Stroke; 3], Hub) {
     let a = deg * std::f32::consts::PI / 180.0;
     let (ux, uy) = (a.sin(), -a.cos());
-    let tip = m.dp(HAND_TIP);
-    let gap = m.dp(HAND_TAIL_GAP);
-    let tail_end = gap + m.dp(HAND_TAIL);
+    let tip = m.dp(s.tip);
+    let gap = m.dp(s.tail_gap);
+    let tail_end = gap + m.dp(s.tail);
     (
         [
-            (cx, cy, cx + ux * tip, cy + uy * tip, m.dp(HAND_TIP_W)),
-            (cx, cy, cx - ux * tail_end, cy - uy * tail_end, m.dp(HAND_TIP_W)),
+            (cx, cy, cx + ux * tip, cy + uy * tip, m.dp(s.tip_w)),
+            (cx, cy, cx - ux * tail_end, cy - uy * tail_end, m.dp(s.tip_w)),
             (
                 cx - ux * gap,
                 cy - uy * gap,
                 cx - ux * tail_end,
                 cy - uy * tail_end,
-                m.dp(HAND_TAIL_W),
+                m.dp(s.tail_w),
             ),
         ],
-        (cx, cy, m.dp(HAND_HUB) / 2.0),
+        (cx, cy, m.dp(s.hub) / 2.0),
     )
 }
 
 /// The hand itself, in `ink`.
 fn clock_hand(
-    c: &mut Canvas, m: &crate::theme::Metrics, cx: f32, cy: f32, deg: f32, ink: Rgba,
+    c: &mut Canvas, m: &crate::theme::Metrics, cx: f32, cy: f32, deg: f32, ink: Rgba, s: &HandSpec,
 ) {
-    let (strokes, (hx, hy, hr)) = hand_geom(m, cx, cy, deg);
+    let (strokes, (hx, hy, hr)) = hand_geom(m, cx, cy, deg, s);
     for (x0, y0, x1, y1, w) in strokes {
         c.line(x0, y0, x1, y1, w, ink);
     }
@@ -1609,9 +1668,9 @@ fn clock_hand(
 /// The shadow of the hand, set down the way the light casts it and blown
 /// out on either side, so what lands on the face is a soft smudge under the
 /// hand rather than a second hand laid beside it.
-fn clock_hand_shadow(c: &mut Canvas, m: &crate::theme::Metrics, cx: f32, cy: f32, deg: f32) {
-    let blur = m.dp(HAND_SHADOW_BLUR);
-    let (strokes, (hx, hy, hr)) = hand_geom(m, cx, cy + m.dp(HAND_SHADOW_DROP), deg);
+fn clock_hand_shadow(c: &mut Canvas, m: &crate::theme::Metrics, cx: f32, cy: f32, deg: f32, s: &HandSpec) {
+    let blur = m.dp(s.shadow_blur);
+    let (strokes, (hx, hy, hr)) = hand_geom(m, cx, cy + m.dp(s.shadow_drop), deg, s);
     for (x0, y0, x1, y1, w) in strokes {
         c.soft_line(x0, y0, x1, y1, w, blur, HAND_SHADOW);
     }
@@ -1736,12 +1795,15 @@ pub fn clock(cx: &Ctx) -> Frame {
             Some((dial_top as u32, (read_cy + px).min(m.h as f32) as u32))
         }
         ClockFace::Timer => {
-            // The dial the stopwatch wears, laid where it sits there. Its hand
-            // is the stopwatch's — it turns with the tenths that watch keeps,
-            // and the timer counts whole minutes off its ruler — so the dial
-            // goes down bare, and the face is what the two pages share until
-            // the timer has a reading of its own to turn it with.
-            clock_face_at(&mut c, m, t, f, mid, m.dp(DIAL_CY));
+            // The same dial the stopwatch wears, laid where it sits there,
+            // with the hour hand over it: a turn an hour, so the marks it
+            // passes are minutes and the hand creeps across one rather than
+            // sitting on it and then jumping. It stands at twelve before a
+            // length is chosen, and a reset sweeps it back there beside the
+            // ruler, so the two settle together.
+            let deg = clock.timer_hand_deg(cx.now);
+            let tint = clock.timer_hand_tint(cx.now);
+            timer_dial(&mut c, m, t, f, mid, m.dp(DIAL_CY), deg, tint);
             // The timer's count takes the same place and size as the
             // stopwatch's: only what it says is different.
             let reading = timer_text(clock.timer(cx.now));
@@ -1774,7 +1836,12 @@ pub fn clock(cx: &Ctx) -> Frame {
             // A reset carries the ruler home, so while it is on its way the
             // band drawn again a frame at a time takes in the bar as well as
             // the count; once it lands the count alone moves.
-            let (mut top, mut bottom) = ((read_cy - px).max(0.0), (read_cy + px).min(m.h as f32));
+            // The hand and the count both change while the timer runs, so
+            // the band drawn again a frame at a time has to reach the top of
+            // the dial as well. Drawing the reading alone would leave the
+            // hand standing wherever it was when the band was first taken.
+            let dial_top = m.dp(DIAL_CY - DIAL_D / 2.0 - DIAL_FACE_PAD).max(0.0);
+            let (mut top, mut bottom) = (dial_top, (read_cy + px).min(m.h as f32));
             if clock.ruler_sweeping(cx.now) {
                 top = top.min(ruler_cy - rh / 2.0 - m.dp(2.0));
                 bottom = bottom.max(ruler_cy + rh / 2.0 + m.dp(2.0));
@@ -6015,6 +6082,34 @@ mod tests {
         let still = ink(0.0);
         assert!(running[2] > running[0] + 60, "a running hand must read blue, got {running:?}");
         assert!((still[0] as i32 - still[2] as i32).abs() < 20, "a standing hand must be grey, got {still:?}");
+    }
+
+    /// The timer's hand is the stopwatch's needle drawn thick — a hairline
+    /// for a second, a rod for a minute. Three dp off the centre line the
+    /// needle has left the face bare while the hour hand still covers it,
+    /// which is what tells the two drawings apart.
+    #[test]
+    fn the_timer_s_hand_is_a_heavier_rod_than_the_second_hand() {
+        let t = Theme::light(1080, 2400, 2.624);
+        let f = crate::font::bundled();
+        let (w, h) = (1080u32, 2400u32);
+        let (cx, cy, deg) = (540.0, t.m.dp(DIAL_CY), 0.0);
+        // Sixty per cent of the way out to the hour hand's tip, four dp off
+        // its centre line: past the needle's edge (1.2 dp each side, plus
+        // its antialiasing) and well inside the hour hand's (4.5 dp each
+        // side).
+        let px = cx + t.m.dp(4.0);
+        let py = cy - t.m.dp(HOUR_HAND.tip) * 0.6;
+        let i = (py as usize * w as usize + px as usize) * 4;
+        let round = crate::widgets::disc_fill(&t);
+        let disc = [round.r, round.g, round.b];
+        let at = |c: &Canvas| [c.data[i], c.data[i + 1], c.data[i + 2]];
+        let mut second = Canvas::new(w, h);
+        clock_dial(&mut second, &t.m, &t, &f, cx, cy, deg, 0.0);
+        let mut hour = Canvas::new(w, h);
+        timer_dial(&mut hour, &t.m, &t, &f, cx, cy, deg, 0.0);
+        assert_eq!(at(&second), disc, "the needle is too fine to reach three dp off its line");
+        assert_ne!(at(&hour), disc, "the hour hand covers it");
     }
 
     /// The clock is laid out on the 411.6 × 914 dp panel the pages were

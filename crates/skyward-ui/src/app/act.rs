@@ -107,6 +107,7 @@ impl App {
                             // A count held here stays held if the ruler is
                             // moved while it is paused.
                             clock.timer_paused = true;
+                            clock.timer_hand.follow(false, now);
                         }
                         None if clock.span == 0 => {}
                         None => {
@@ -115,6 +116,7 @@ impl App {
                             }
                             clock.left_since = Some(now);
                             clock.timer_paused = false;
+                            clock.timer_hand.follow(true, now);
                         }
                     },
                 }
@@ -135,8 +137,11 @@ impl App {
                         clock.paper = 0;
                     }
                     ClockFace::Timer => {
-                        // The ruler is carried home rather than put there:
-                        // the marks run back to zero as the hand does.
+                        // The hand and the ruler are both carried home
+                        // rather than put there: the hand's angle comes from
+                        // the count, which is about to go, and the two
+                        // sweeps run together.
+                        clock.reset_timer_hand(now);
                         clock.sweep_ruler(now);
                         clock.span = 0;
                         clock.left = 0;
@@ -151,6 +156,7 @@ impl App {
             Action::TimerDoneOk => {
                 self.close_sheet(now);
                 let clock = &mut self.state.clock;
+                clock.reset_timer_hand(now);
                 clock.sweep_ruler(now);
                 clock.span = 0;
                 clock.left = 0;

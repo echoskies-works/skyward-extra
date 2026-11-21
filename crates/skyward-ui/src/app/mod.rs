@@ -1735,7 +1735,11 @@ impl App {
         // their own motion: after a pause or a reset the count stands still,
         // so `running` does not see them. Without them here the loop woke
         // only at the one-second fallback and the hand jumped to its end.
-        let busy = self.state.clock.running() || self.state.clock.ruler_sweeping(now) || self.state.clock.hand.moving(now);
+        // The timer's hand has its own sweep home for the same reason.
+        let busy = self.state.clock.running()
+            || self.state.clock.ruler_sweeping(now)
+            || self.state.clock.hand.moving(now)
+            || self.state.clock.timer_hand.moving(now);
         let ticking = (self.display_on && busy).then(|| now + clock::step(&self.state.clock, now));
         [self.toast.as_ref().map(|t| t.1), self.volume_bar, easing, self.idle_due(), held, repeat, blink, darkens, chord, ticking]
             .into_iter()
@@ -1958,13 +1962,14 @@ impl App {
         // A reset sweep ends on its own: once the hand lands, give its
         // angle back to the count and start fading it to charcoal.
         self.state.clock.settle_hand(now);
+        self.state.clock.settle_timer_hand(now);
         self.state.clock.land_ruler(now);
         // The clock's counts go on of their own accord: while either goes,
         // the rows the reading is drawn in are drawn again each frame so the
         // reading follows. The hand's own sweep and fade need the same
         // frames, so the dial keeps up. A timer reaching its end stops there
         // with a tap of the motor.
-        if self.state.clock.running() || self.state.clock.hand.moving(now) {
+        if self.state.clock.running() || self.state.clock.hand.moving(now) || self.state.clock.timer_hand.moving(now) {
             if self.display_on {
                 match self.frame.as_ref().and_then(|fr| fr.live) {
                     // One band of rows, drawn again once however many ticks

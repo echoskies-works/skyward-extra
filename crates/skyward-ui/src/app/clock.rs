@@ -141,23 +141,27 @@ impl HandAnim {
 /// what lets it keep to that pace.
 pub(super) const CLOCK_STEP_MS: u64 = 16;
 
-/// How long until the reading next changes, while a count on the face shown
-/// runs. The stopwatch reads to the hundredth, so it takes a frame on; the
-/// timer reads only to the second, so it takes the rest of the second it is
-/// showing. A face left standing still takes a second, which is near enough
-/// for a count on the other face that runs out to be tapped for then.
+/// How long until the page is drawn again, while a count on the face shown
+/// runs. Both faces take a frame at a time: the stopwatch because it reads
+/// to the hundredth, the timer because its hand has to be laid down as it
+/// creeps, not only where it comes to rest. A face left standing still takes
+/// a second, which is near enough for a count on the other face that runs
+/// out to be tapped for then.
 pub(super) fn step(clock: &Clock, now: u64) -> u64 {
     match clock.face {
         ClockFace::Stopwatch if clock.stop_since.is_some() || clock.hand.moving(now) => CLOCK_STEP_MS,
-        // The reading is rounded up to the second it is shown by, so it
-        // changes as the count comes down onto a whole second.
-        // On its way home from a reset the scale is drawn again a frame at
-        // a time, as the hand is.
-        ClockFace::Timer if clock.ruler_sweeping(now) => CLOCK_STEP_MS,
-        ClockFace::Timer if clock.left_since.is_some() => match clock.timer(now) % 1_000 {
-            0 => 1_000,
-            left => left,
-        },
+        // The timer's hand is a slow one — a turn an hour, so about half a
+        // pixel a second at its tip — and it is still given a frame at a
+        // time, exactly as the stopwatch's is. Left to the one-second
+        // fallback it would be drawn at two places a stride apart, and a
+        // hand that arrives in strides reads as stepping, which is the one
+        // thing a hand must not do. The price is the stopwatch's own: the
+        // dial's band is taken again each frame while the count runs.
+        ClockFace::Timer
+            if clock.left_since.is_some() || clock.timer_hand.moving(now) || clock.ruler_sweeping(now) =>
+        {
+            CLOCK_STEP_MS
+        }
         _ => 1_000,
     }
 }
@@ -181,6 +185,10 @@ pub struct Clock {
     /// Which of them is at the top of the paper, when there are more than
     /// the page shows: what a finger has scrolled down to, the oldest first.
     pub paper: usize,
+    /// The timer's own hand: the colour fade and the sweep home on a reset,
+    /// kept apart from the stopwatch's so one face's colour never follows the
+    /// other's count.
+    pub timer_hand: HandAnim,
     /// The timer: how long it is set for, how much of it was left when it
     /// was last stopped, and when it went on again since.
     pub span: u64,
@@ -207,6 +215,7 @@ impl Default for Clock {
             laps: Vec::new(),
             hand: HandAnim::default(),
             paper: 0,
+            timer_hand: HandAnim::default(),
             span: CLOCK_SPAN,
             left: CLOCK_SPAN,
             left_since: None,
@@ -375,6 +384,50 @@ impl Clock {
         self.hand.settle(now);
     }
 
+    /// Where the timer's hand points at `now`, clockwise from twelve. One
+    /// turn is an hour of the count: the dial's figures run to sixty, so a
+    /// minute is one mark.
+    ///
+    /// The angle is the count's own, not a minute rounded off it. Sixty
+    /// minutes to a turn makes a minute six degrees, and a second a tenth of
+    /// one: the hand creeps across the mark instead of standing on it for a
+    /// minute and then jumping. Its tip travels less than half a pixel a
+    /// second on this dial, which is why a frame a second reads as smooth.
+    pub fn timer_hand_deg(&self, now: u64) -> f32 {
+        if let Some(deg) = self.timer_hand.rewind_deg(now) {
+            return deg;
+        }
+        // 60:00 and 00:00 are the same place on the dial, so the hour drops
+        // out of the angle rather than piling turns on top of each other.
+        (self.timer(now) as f64 / 60_000.0 % 60.0) as f32 * 6.0
+    }
+
+    /// How blue the timer's hand reads now, by the same rule as the
+    /// stopwatch's: blue while the count moves, charcoal once it stands.
+    pub fn timer_hand_tint(&self, now: u64) -> f32 {
+        if self.timer_hand.moving(now) {
+            self.timer_hand.tint(now)
+        } else if self.left_since.is_some() {
+            1.0
+        } else {
+            0.0
+        }
+    }
+
+    /// Begin the timer hand's sweep home from where it stands, before the
+    /// count is cleared: the angle comes from `left`, which is about to go.
+    /// It runs beside the ruler's own sweep, so the two settle together.
+    pub fn reset_timer_hand(&mut self, now: u64) {
+        let from = self.timer_hand_deg(now);
+        self.timer_hand.reset(from, now);
+    }
+
+    /// Once the timer's sweep lands, hand the angle back to the count and
+    /// fade the blue out.
+    pub fn settle_timer_hand(&mut self, now: u64) {
+        self.timer_hand.settle(now);
+    }
+
     /// The timer has run out: it stops at nothing, waiting to be started
     /// again. Told so once, as it gets there.
     pub(super) fn arrive(&mut self, now: u64) -> bool {
@@ -448,6 +501,68 @@ mod tests {
         clock.stop = clock.stopwatch(16_000);
         clock.stop_since = None;
         assert!((clock.hand_deg(99_000) - 90.0).abs() < 0.01, "a paused hand holds its angle");
+    }
+
+    /// The timer's hand is not the stopwatch's: it stands at twelve with no
+    /// length chosen, and a reset leaves it there rather than taking it off
+    /// the dial.
+    #[test]
+    fn the_timer_hand_stands_at_twelve_until_a_length_is_chosen() {
+        let clock = Clock::default();
+        assert_eq!(clock.timer_hand_deg(0), 0.0, "a timer never set has its hand at twelve");
+        assert_eq!(clock.timer_hand_deg(123_456), 0.0, "and it stays there");
+        assert!(clock.timer_hand_tint(0) < 0.01, "charcoal, not blue");
+    }
+
+    /// A turn is an hour of the count, and the hand creeps between the
+    /// marks: a minute is six degrees, a second a tenth of one. Rounding it
+    /// to the minute would leave it standing for a minute and then jumping,
+    /// which is the one thing this hand must not do.
+    #[test]
+    fn the_timer_hand_turns_an_hour_to_the_dial_and_creeps_between_the_marks() {
+        let clock = Clock { left: 2_700_000, left_since: Some(0), ..Clock::default() };
+        assert!((clock.timer_hand_deg(0) - 270.0).abs() < 0.01, "forty-five minutes is three quarters round");
+        let (now, next) = (clock.timer_hand_deg(0), clock.timer_hand_deg(1_000));
+        assert!((now - next - 0.1).abs() < 0.001, "a second is a tenth of a degree, got {}", now - next);
+        // An hour drops out of the angle: an hour and a quarter reads as a
+        // quarter, not as four hundred and fifty degrees.
+        let clock = Clock { left: 4_500_000, left_since: Some(0), ..Clock::default() };
+        assert!((clock.timer_hand_deg(0) - 90.0).abs() < 0.01, "seventy-five minutes is a quarter round");
+    }
+
+    /// A reset carries the timer's hand home the way it carries the ruler:
+    /// from the angle it was showing, eased out, and blue on its way. The
+    /// hand it lands on is the count's own zero, so the dial is not left
+    /// bare and the hand does not vanish.
+    #[test]
+    fn a_reset_carries_the_timer_hand_home() {
+        let mut clock = Clock { left: 2_040_000, left_since: Some(0), span: 2_040_000, ..Clock::default() };
+        assert!((clock.timer_hand_deg(0) - 204.0).abs() < 0.01, "thirty-four minutes is seven tenths round");
+        clock.reset_timer_hand(0);
+        clock.left = 0; // the reset clears the count as the sweep begins
+        clock.left_since = None;
+        assert!((clock.timer_hand_deg(0) - 204.0).abs() < 0.02, "the sweep begins where the hand was");
+        assert!(clock.timer_hand_tint(HAND_TINT_MS) > 0.99, "the hand is blue during the sweep");
+        let mid = clock.timer_hand_deg(HAND_REWIND_MS / 2);
+        assert!(mid > 0.0 && mid < 102.0, "the sweep eases out early, got {mid} degrees");
+        clock.settle_timer_hand(HAND_REWIND_MS);
+        assert_eq!(clock.timer_hand_deg(HAND_REWIND_MS), 0.0, "the sweep ends at twelve");
+        assert!(clock.timer_hand_tint(HAND_REWIND_MS) > 0.99, "still blue the moment it lands");
+        assert!(clock.timer_hand_tint(HAND_REWIND_MS + HAND_TINT_MS) < 0.01, "then fades to charcoal");
+        assert!(!clock.timer_hand.moving(HAND_REWIND_MS + HAND_TINT_MS + 1), "and stops asking for frames");
+    }
+
+    #[test]
+    fn the_timer_hand_takes_the_colour_of_its_count() {
+        let mut clock = Clock { left: 60_000, ..Clock::default() };
+        clock.timer_hand.follow(true, 0);
+        clock.left_since = Some(0);
+        assert!(clock.timer_hand_tint(0) < 0.01, "the fade starts at grey");
+        assert!(clock.timer_hand_tint(HAND_TINT_MS) > 0.99, "then blue while it runs");
+        clock.left = clock.timer(1_000);
+        clock.left_since = None;
+        clock.timer_hand.follow(false, 1_000);
+        assert!(clock.timer_hand_tint(1_000 + HAND_TINT_MS) < 0.01, "back to charcoal at pause");
     }
 
     #[test]
@@ -541,18 +656,23 @@ mod tests {
     }
 
     #[test]
-    fn the_stopwatch_is_waited_for_a_frame_and_the_timer_for_the_second_it_shows() {
+    fn the_stopwatch_and_the_timer_are_both_waited_for_a_frame() {
         let mut clock = Clock::default();
         assert_eq!(step(&clock, 0), 1_000, "a clock at rest is waited for a second at a time");
         clock.stop_since = Some(0);
         assert_eq!(step(&clock, 4_000), CLOCK_STEP_MS, "the stopwatch reads to the hundredth: a frame on");
-        // The timer is rounded up to the second it shows, so it changes as
-        // the count comes down onto a whole second, not as a second passes.
+        // The timer's hand creeps across its mark, so it too is drawn a
+        // frame at a time: waiting for the second it shows would leave the
+        // hand laid down at two places a stride apart.
         clock.face = ClockFace::Timer;
         clock.left = 2_000;
         clock.left_since = Some(0);
-        assert_eq!(step(&clock, 1_250), 750, "a moment short of the second it shows next");
-        assert_eq!(step(&clock, 2_000), 1_000, "lands on a whole second, the next one after it");
+        assert_eq!(step(&clock, 1_250), CLOCK_STEP_MS, "a running timer is drawn a frame at a time");
+        // Once it stands still there is nothing to draw until the fallback,
+        // which is near enough for a count on the other face to be tapped.
+        clock.left = 0;
+        clock.left_since = None;
+        assert_eq!(step(&clock, 2_000), 1_000, "a timer standing still waits a second");
     }
 
     #[test]
@@ -700,13 +820,14 @@ mod tests {
             let k = (m.dp(cy).round() as usize * w as usize + w as usize / 2) * 4;
             [fr.canvas.data[k], fr.canvas.data[k + 1], fr.canvas.data[k + 2]]
         };
-        // The dial is the very disc the keys under it are made of, which is
-        // the chip's fill rather than the page's card.
-        let round = crate::widgets::disc_fill(&t);
-        let disc = [round.r, round.g, round.b];
+        // The dial is the stopwatch's own face, and the timer's hand stands
+        // on it from the first frame: the white pin at its centre is that
+        // hand's, at twelve before a length is chosen and back there after
+        // a reset.
+        let pin = [255, 255, 255];
         let rule = [t.pal.hairline.r, t.pal.hairline.g, t.pal.hairline.b];
         let page = [t.pal.bg.r, t.pal.bg.g, t.pal.bg.b];
-        assert_eq!(at(&app, crate::pages::DIAL_CY), disc, "the dial is the stopwatch's own face, and no hand on it");
+        assert_eq!(at(&app, crate::pages::DIAL_CY), pin, "the dial is the stopwatch's own face, its hand standing at twelve");
         assert_eq!(at(&app, crate::pages::RULE_CY), rule, "a new timer says how a length is set");
         app.state.clock.span = 60_000;
         app.state.clock.left = 60_000;
