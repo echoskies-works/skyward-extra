@@ -23,6 +23,7 @@ mod keys;
 mod merge;
 #[cfg(target_os = "android")]
 mod partwork;
+mod paniclog;
 #[cfg(target_os = "android")]
 mod pty;
 #[cfg(target_os = "android")]
@@ -768,6 +769,10 @@ fn beat() {
 fn beat() {}
 
 fn recovery() -> Result<()> {
+    // Before the folder is even made: a panic in the setup below should be
+    // the one that gets written, not one that goes unrecorded because the
+    // hook was still waiting for its own directory to exist.
+    paniclog::install();
     use std::os::unix::fs::PermissionsExt;
     let run = || -> Result<()> {
         // Open to the programs the recovery runs as other users, the

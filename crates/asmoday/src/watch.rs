@@ -111,6 +111,14 @@ pub fn run() -> Result<()> {
             End::Stopped { code, crash, reason } => (code, crash, reason),
         };
         eprintln!("asmoday: the system stopped, {crash:?} {code} {reason:?}");
+        // Taken before the panel is touched: even if the failure screen
+        // cannot come up, the line about where it died is already in the
+        // kernel log. The exit code says how, this says where.
+        if let Some(line) = crate::crashlog::read() {
+            let said = format!("the system died here: {line}");
+            eprintln!("asmoday: {said}");
+            let _ = skyward_sys::kmsg(&said);
+        }
 
         light_panel(&mut light);
         // The screen offers one key and one way on. It does not return until
@@ -168,6 +176,9 @@ fn start() -> Result<libc::pid_t> {
     let _ = std::fs::remove_file(note());
     let _ = std::fs::remove_file(up());
     let _ = std::fs::remove_file(beat_file());
+    // A panic note from a previous life would be read as this one's: an
+    // ordinary stop would come up claiming to know which line panicked.
+    let _ = std::fs::remove_file(crate::crashlog::panic_file());
 
     match unsafe { libc::fork() } {
         -1 => Err(anyhow!("start the system: {}", std::io::Error::last_os_error())),

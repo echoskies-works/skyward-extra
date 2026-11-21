@@ -20,6 +20,7 @@
 use anyhow::Result;
 
 mod bootstate;
+mod crashlog;
 mod font;
 mod lang;
 mod liveness;
