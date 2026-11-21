@@ -181,8 +181,12 @@ fn exec(path: &str) -> Result<()> {
     use std::ffi::CString;
 
     let path = CString::new(path).map_err(|e| anyhow!("system path has a nul: {e}"))?;
-    let empty = CString::new("").unwrap();
-    let argv = [path.as_ptr(), empty.as_ptr(), std::ptr::null()];
+    // The array ends at the first null pointer. Putting an empty string in
+    // that place would not be "no arguments": it would be one argument, an
+    // empty one, and the system reads everything after its own name as a
+    // command — `skyward ""` asks it for a subcommand called nothing. The
+    // system is started with its name and no words after it.
+    let argv = [path.as_ptr(), std::ptr::null()];
     // SAFETY: `path` and `argv` outlive the call and are nul-terminated. On
     // success execv does not return; on failure the errno says why.
     unsafe { libc::execv(path.as_ptr(), argv.as_ptr()) };

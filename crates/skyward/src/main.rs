@@ -228,17 +228,29 @@ enum Cmd {
     },
 }
 
+/// Whether this invocation is the recovery service, rather than a command
+/// line someone asked for.
+///
+/// Only the bare name is the service. That is how the watcher starts it: it
+/// exec's this binary as `/system/bin/skyward` and puts nothing after the
+/// name. A word after the name is a person at a shell — `skyward ui --unlock`
+/// to drive the panel by hand, `skyward update` to run a step of an update —
+/// and the name cannot be asked to tell those apart.
+fn serves(name: &std::ffi::OsStr, args: &[std::ffi::OsString]) -> bool {
+    name == "skyward" && args.is_empty()
+}
+
 fn main() -> Result<()> {
     // The system is exec'd by the watcher under its own name, with no
     // arguments. init never starts this binary directly: it starts the
     // watcher as `recovery`, and the watcher exec's this as `skyward`.
     let started_as = std::env::args_os().next().unwrap_or_default();
     let name = Path::new(&started_as).file_name().unwrap_or_default();
-    if name == "skyward" {
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    if serves(name, &args) {
         return recovery();
     }
     // Install scripts run the commands linked to this binary by their names.
-    let args: Vec<_> = std::env::args_os().skip(1).collect();
     if let Some(code) = skyward_install::commands::run(name, &args) {
         std::process::exit(code);
     }
@@ -1009,4 +1021,36 @@ fn modules(source: &str) -> Result<()> {
         println!("  {m}");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::serves;
+    use std::ffi::{OsStr, OsString};
+
+    /// The service is the bare name; anything after it is a command line.
+    ///
+    /// This is the whole difference between the watcher starting the system
+    /// and a person at a shell: the watcher puts nothing after the name, so a
+    /// word there can only have been asked for.
+    #[test]
+    fn only_the_bare_name_is_the_service() {
+        let none: Vec<OsString> = Vec::new();
+        assert!(serves(OsStr::new("skyward"), &none), "what the watcher starts");
+        for words in [
+            vec!["ui".to_string()],
+            vec!["ui".to_string(), "--unlock".to_string()],
+            vec!["update".to_string()],
+            vec!["--help".to_string()],
+            // Not "no arguments": an empty string is still the first word of
+            // a command line, which is how a watcher that passed one by
+            // mistake would look from here.
+            vec![String::new()],
+        ] {
+            let args: Vec<OsString> = words.into_iter().map(OsString::from).collect();
+            assert!(!serves(OsStr::new("skyward"), &args), "a word after the name asks for a command");
+        }
+        assert!(!serves(OsStr::new("recovery"), &none), "the watcher's own name is not the system's");
+        assert!(!serves(OsStr::new("7za"), &none), "a linked command is not the service");
+    }
 }
