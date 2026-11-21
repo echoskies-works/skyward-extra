@@ -663,12 +663,70 @@ mod tests {
         assert!(app.tick(CHORD_MS).is_empty());
         assert!(app.keys, "then lights a control on its own");
         assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Search))));
-        assert!(app.key(Key::Power, CHORD_MS + 10).is_empty(), "the power key came too late");
+        // The volume key is let go before power comes down: there is no pair
+        // of keys held together any more, so power works the lit control.
         assert!(app.key_up(Key::VolumeDown, CHORD_MS + 20).is_empty());
+        assert!(app.key(Key::Power, CHORD_MS + 30).is_empty(), "the power key came too late");
         assert!(app.tick(CHORD_MS * 2 + 10).is_empty());
         assert_eq!(app.screen(), Screen::Home, "the power key waits on the control lit until it comes up");
         app.key_up(Key::Power, CHORD_MS * 3);
         assert_eq!(app.screen(), Screen::Search, "and then works it");
+    }
+
+    /// With the keys steering the page, a volume key is often still held
+    /// while the other hand reaches for power — long past the little window
+    /// for two fresh presses. It is still the same two-key chord: volume
+    /// down and power take a picture, volume up and power bring the menu.
+    #[test]
+    fn a_held_cursor_key_and_power_take_a_chord() {
+        let (f, i) = (fonts(), info());
+        // Volume down held, then power: a screenshot.
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.state.vibrate = false;
+        app.state.volume_keys = true;
+        app.frame(&f, &i);
+        assert!(app.key(Key::VolumeDown, 0).is_empty());
+        assert!(app.tick(CHORD_MS).is_empty(), "the held key lands on the light");
+        assert!(app.keys);
+        assert_eq!(
+            app.key(Key::Power, 1000),
+            vec![Effect::Screenshot { storage: false }],
+            "power with the volume key still down takes a picture"
+        );
+        assert!(app.key_up(Key::Power, 1100).is_empty());
+        assert!(app.key_up(Key::VolumeDown, 1110).is_empty());
+        assert_eq!(app.screen(), Screen::Home, "neither key works a control");
+
+        // Volume up held, then power: the menu.
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.state.vibrate = false;
+        app.state.volume_keys = true;
+        app.frame(&f, &i);
+        assert!(app.key(Key::VolumeUp, 0).is_empty());
+        assert!(app.tick(CHORD_MS).is_empty());
+        assert_eq!(app.key(Key::Power, 1000), Vec::new());
+        assert!(app.power_menu.is_some(), "power with volume up held brings the menu");
+        assert!(app.key_up(Key::Power, 1100).is_empty());
+        assert!(app.key_up(Key::VolumeUp, 1110).is_empty());
+        assert!(app.power_menu.is_some(), "the keys let go do not close it");
+
+        // Power held on a lit control, then volume down: the same picture,
+        // and power coming up must not work the control it went down on.
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.state.vibrate = false;
+        app.state.volume_keys = true;
+        app.frame(&f, &i);
+        press(&mut app, Key::VolumeDown, 0);
+        assert!(app.keys && app.lit().is_some());
+        assert!(app.key(Key::Power, 1000).is_empty());
+        assert!(app.tick(1000 + CHORD_MS).is_empty(), "power lands on the lit control");
+        assert_eq!(
+            app.key(Key::VolumeDown, 1200),
+            vec![Effect::Screenshot { storage: false }]
+        );
+        assert!(app.key_up(Key::Power, 1300).is_empty());
+        assert!(app.key_up(Key::VolumeDown, 1310).is_empty());
+        assert_eq!(app.screen(), Screen::Home, "power did not take the lit control");
     }
 
     #[test]
@@ -1022,6 +1080,28 @@ mod tests {
 
     /// The power key held on a dark panel lights it and goes on to the power
     /// menu, the hold timed from the press that lit it.
+    /// Holding power always brings the menu up, even when the keys have
+    /// left a control lit: a short press takes that control, a long one
+    /// reaches past it to the menu.
+    #[test]
+    fn a_long_press_brings_the_menu_up_with_a_control_lit() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.state.volume_keys = true;
+        app.frame(&f, &i);
+        press(&mut app, Key::VolumeDown, 0);
+        assert!(app.keys && app.lit().is_some(), "the light is on a control");
+        assert!(app.key(Key::Power, 1000).is_empty());
+        assert_eq!(app.deadline(1000), Some(1000 + CHORD_MS), "it waits for volume down first");
+        assert!(app.tick(1000 + CHORD_MS).is_empty(), "the power key lands on the control");
+        assert_eq!(app.deadline(1000 + CHORD_MS), Some(1000 + LONG_PRESS_MS), "the hold is timed");
+        assert!(app.tick(1000 + LONG_PRESS_MS - 1).is_empty());
+        assert_eq!(app.tick(1000 + LONG_PRESS_MS), vec![Effect::Haptic]);
+        assert!(app.power_menu.is_some(), "held long enough, the menu comes up");
+        assert!(app.key_up(Key::Power, 1500).is_empty(), "and the key does not take the control too");
+        assert_eq!(app.screen(), Screen::Home);
+    }
+
     #[test]
     fn the_power_key_held_on_a_dark_panel_brings_the_menu_up() {
         let (f, i) = (fonts(), info());

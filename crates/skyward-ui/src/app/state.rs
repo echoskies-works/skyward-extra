@@ -38,8 +38,11 @@ pub struct State {
     pub vibration: f32,
     /// The volume keys move the light from control to control when on, and
     /// turn the volume up and down when off. Off by default: almost nobody
-    /// steers with them here, and on they keep the power menu from coming
-    /// up. Turned on in Settings by whoever wants it.
+    /// steers with them here. Turned on in Settings by whoever wants it.
+    /// The power menu is always reachable — a short press takes the lit
+    /// control, a long press brings the menu, and the two-key chords work
+    /// whichever way the keys are set. Fastboot is its own exception: it
+    /// always takes the keys, whatever this says.
     pub volume_keys: bool,
     /// The system volume (the ringtone and the sound effects), in steps of
     /// a fifteen-step span.

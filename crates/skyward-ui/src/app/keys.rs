@@ -68,8 +68,10 @@ impl App {
         }
         // With the volume keys turned to the volume, they turn the media
         // volume up and down and put up the panel, instead of moving the
-        // light from control to control.
-        if !self.state.volume_keys {
+        // light from control to control. Fastboot is the exception: its
+        // touchscreen may be out, so its page is always worked with the
+        // keys, whatever the setting says — no volume card over its menu.
+        if !self.state.volume_keys && self.screen() != Screen::Fastboot {
             let step = if down { -1 } else { 1 };
             self.state.media_volume = (self.state.media_volume as i16 + step).clamp(0, VOLUME_STEPS as i16) as u8;
             // They are on the media volume, and the phone sounds again once

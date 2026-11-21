@@ -1727,8 +1727,10 @@ impl App {
         };
         let repeat = match self.button {
             Some((_, Press::Volume { next, .. })) => Some(next),
-            Some((_, Press::Power { spot: Spot { stop: Stop::Hit(Action::OpenEntry(_)), .. }, at })) => Some(at + LONG_PRESS_MS),
-            Some((_, Press::PowerIdle { at } | Press::PowerWake { at })) => Some(at + LONG_PRESS_MS),
+            // A power key on the light wakes a file's entry with a long
+            // press, and anywhere else it brings up the power menu: both
+            // need the tick at the hold's end, so all of them wake here.
+            Some((_, Press::Power { at, .. } | Press::PowerIdle { at } | Press::PowerWake { at })) => Some(at + LONG_PRESS_MS),
             _ => None,
         };
         let blink = self.blink_at(now).filter(|_| self.display_on).map(|(_, next)| next);
@@ -1911,9 +1913,11 @@ impl App {
             self.button = Some((key, Press::Spent));
             fx.extend(self.held_entry(i));
         }
-        // The power key held with nothing lit brings the power menu up,
-        // whether it found the panel lit or lit it itself.
-        if let Some((key, Press::PowerIdle { at } | Press::PowerWake { at })) = self.button
+        // The power key held brings the power menu up, with nothing lit or
+        // on a control — a short press still takes the control, but holding
+        // it is always the menu. A file's entry above is the one exception:
+        // its own long press opens what can be done with the entry.
+        if let Some((key, Press::Power { at, .. } | Press::PowerIdle { at } | Press::PowerWake { at })) = self.button
             && now >= at + LONG_PRESS_MS
         {
             self.button = Some((key, Press::Spent));

@@ -663,14 +663,19 @@ impl App {
                 return Vec::new();
             }
         }
-        if let Some((first, at)) = self.chord
-            && now < at + CHORD_MS
-        {
+        if let Some(first) = self.chord_partner(key, now) {
             // The two together do what neither does alone, whichever went
             // down first.
             match (first, key) {
                 (Key::Power, Key::VolumeDown) | (Key::VolumeDown, Key::Power) => return self.screenshot(key, now),
-                (Key::Power, Key::VolumeUp) | (Key::VolumeUp, Key::Power) => return self.show_power_menu(now),
+                (Key::Power, Key::VolumeUp) | (Key::VolumeUp, Key::Power) => {
+                    // The key held from before comes to nothing now the menu
+                    // has the screen: a power key must not work the control
+                    // it went down on, and a volume key must not go on moving
+                    // the light under the menu.
+                    self.button = Some((key, Press::Spent));
+                    return self.show_power_menu(now);
+                }
                 _ => {}
             }
         }
@@ -711,6 +716,25 @@ impl App {
         }
         fx.extend(self.key_down(key, now));
         fx
+    }
+
+    /// The key waiting to make a two-key chord with `key`: the one that went
+    /// down inside [`CHORD_MS`], or one still held down while the light is
+    /// moved with it. With the volume keys steering the page the first key
+    /// is often kept down while reaching for power, well past the little
+    /// window, and that must still take the picture or bring the menu up.
+    fn chord_partner(&self, key: Key, now: u64) -> Option<Key> {
+        if let Some((first, at)) = self.chord
+            && now < at + CHORD_MS
+        {
+            return Some(first);
+        }
+        match (key, self.button?) {
+            (Key::Power, (Key::VolumeDown, Press::Volume { .. })) => Some(Key::VolumeDown),
+            (Key::Power, (Key::VolumeUp, Press::Volume { .. })) => Some(Key::VolumeUp),
+            (Key::VolumeDown | Key::VolumeUp, (Key::Power, Press::Power { .. } | Press::PowerIdle { .. } | Press::PowerWake { .. })) => Some(Key::Power),
+            _ => None,
+        }
     }
 
     /// The power key and volume down went down together: what the panel

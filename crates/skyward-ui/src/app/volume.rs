@@ -57,6 +57,22 @@ mod tests {
     use super::*;
     use crate::app::testing::*;
 
+    /// Fastboot is worked with the keys whatever the setting says: a volume
+    /// key moves the light over its choices, never puts the volume card up
+    /// over them.
+    #[test]
+    fn the_fastboot_page_takes_the_keys_and_shows_no_panel() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Fastboot, W, H, PPD);
+        assert!(!app.state.volume_keys, "the setting is off");
+        app.frame(&f, &i);
+        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(super::super::reboot::FASTBOOT_CHOICES[0].1)));
+        press(&mut app, Key::VolumeDown, 0);
+        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(super::super::reboot::FASTBOOT_CHOICES[1].1)), "the key moved the light");
+        assert!(app.volume_bar.is_none(), "and no volume panel came up");
+        assert_eq!(app.state.media_volume, 8, "nor did the volume turn");
+    }
+
     /// The panel stands in the middle of the screen, a track for each
     /// volume and the switch's row under them.
     #[test]

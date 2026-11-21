@@ -126,7 +126,8 @@ mod tests {
     fn the_fastboot_page_is_worked_with_the_keys() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Fastboot, W, H, PPD);
-        app.state.volume_keys = true;
+        // The page is worked with the keys whatever the setting says.
+        assert!(!app.state.volume_keys);
         let choice = |k: usize| Some(Stop::Hit(FASTBOOT_CHOICES[k].1));
         assert_eq!(lit(&mut app, &f, &i), choice(0), "the first choice is lit as the page opens");
         assert!(press(&mut app, Key::VolumeDown, 0).is_empty());
