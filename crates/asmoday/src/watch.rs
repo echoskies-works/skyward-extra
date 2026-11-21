@@ -19,8 +19,16 @@
 //! leaves is silence, and silence is what the parent watches for: the child
 //! writes the time to a file while it runs, and a file that has not moved for
 //! a few seconds is a system that is not going to move again.
+//!
+//! Silence is asked twice, because a file can stop moving for a reason that is
+//! not the system's death: it lives on the same memory filesystem an update
+//! unpacks itself into, and a full or read-only one breaks the file while the
+//! process goes on working. So the second question goes to the kernel — has it
+//! spent any processor time, has it moved any bytes — and only a system that
+//! has answered neither is stopped. See [`crate::liveness`].
 
 use crate::backlight::Backlight;
+use crate::liveness::Still;
 use crate::verdict::{self, End, KILLED};
 use crate::{Choice, Crash};
 use anyhow::{anyhow, Result};
@@ -202,6 +210,7 @@ fn exec(path: &str) -> Result<()> {
 /// can say.
 fn wait(pid: libc::pid_t, forked: Instant) -> End {
     let mut status = 0;
+    let mut still = Still::default();
     loop {
         let waited = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
         if waited == pid {
@@ -216,11 +225,25 @@ fn wait(pid: libc::pid_t, forked: Instant) -> End {
             eprintln!("asmoday: waiting for the system: {}", std::io::Error::last_os_error());
             return End::Clean;
         }
-        // It is still running. Whether it is still there is another question,
-        // and the only one that silence can answer.
-        if let Some(crash) = silent(forked) {
-            eprintln!("asmoday: nothing from the system for {} s", verdict::SILENCE.as_secs());
-            return stuck(pid, &mut status, crash);
+        // It is still running. Silence is the first question and movement the
+        // second: a system that cannot write its beat is not a system that has
+        // stopped, and stopping one that is still working is the failure this
+        // parent exists to prevent. Only a system that has done neither for
+        // long enough is believed gone.
+        match silent(forked) {
+            Some(crash) => {
+                if still.believes(pid, Instant::now()) {
+                    eprintln!(
+                        "asmoday: the system has said nothing for {} s and moved nothing for {} s",
+                        verdict::SILENCE.as_secs(),
+                        crate::liveness::STILL.as_secs()
+                    );
+                    return stuck(pid, &mut status, crash);
+                }
+            }
+            // It beat again: whatever quiet there was is over, and the next
+            // one is counted from nothing.
+            None => still.forget(),
         }
         std::thread::sleep(LOOK);
     }
@@ -238,10 +261,15 @@ fn silent(forked: Instant) -> Option<Crash> {
 
 /// Stop a system that has gone quiet, and report it as stopped.
 ///
-/// The signal is asked for before it is forced. A system that is only slow
-/// still takes it and closes the display on its way out, which is what lets
-/// the parent open the panel again; one that is truly stopped never hears
-/// either signal and is killed.
+/// Only called once the system has failed both questions: it stopped writing
+/// its beat, and the kernel agrees it has spent nothing since. A system that
+/// is merely slow is not here at all.
+///
+/// The signal is asked for before it is forced, because a signal a program
+/// handles is a chance to put the display down and leave; this one handles
+/// none today, so in practice the first signal is already the last. That is
+/// why the second is still sent after the grace: it costs nothing to try, and
+/// a system that has hung in the kernel never hears either.
 fn stuck(pid: libc::pid_t, status: &mut i32, crash: Crash) -> End {
     unsafe { libc::kill(pid, libc::SIGTERM) };
     let asked_at = Instant::now();
@@ -260,7 +288,19 @@ fn stuck(pid: libc::pid_t, status: &mut i32, crash: Crash) -> End {
     }
     if !gone {
         unsafe { libc::kill(pid, libc::SIGKILL) };
-        unsafe { libc::waitpid(pid, status, 0) };
+        // A process that ignored SIGTERM for five seconds may be waiting on a
+        // disk that will never answer, and one in that state takes no signal
+        // at all — not this one either. Waiting for it without a limit would
+        // take the panel down with it, which is the one thing the parent is
+        // here to prevent, so this wait has a limit too. A process that
+        // outlasts it is left where it is rather than waited on for ever.
+        let killed_at = Instant::now();
+        while killed_at.elapsed() < GRACE {
+            if unsafe { libc::waitpid(pid, status, libc::WNOHANG) } == pid {
+                break;
+            }
+            std::thread::sleep(LOOK);
+        }
     }
     End::Stopped { code: KILLED, crash, reason: None }
 }

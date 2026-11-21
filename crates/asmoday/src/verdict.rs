@@ -22,9 +22,11 @@ use std::time::Duration;
 ///
 /// The cost is at the other end: before the first frame, the system is busy
 /// with the port and the partitions and says nothing for as long as that
-/// takes. A slow start can outlast ten seconds and be killed here. That is
-/// why this is a number to revisit if a phone ever reports a crash while it
-/// was only coming up.
+/// takes. A slow start can outlast ten seconds — but it is not stopped for
+/// that alone. This is the first of two questions; the second, in
+/// [`crate::liveness`], asks the kernel whether the process is still spending
+/// anything, and a start waiting on a disk is still spending. Only a system
+/// that has neither spoken nor moved is stopped.
 pub(crate) const SILENCE: Duration = Duration::from_secs(10);
 
 /// The code reported for a system that was stopped for being silent.

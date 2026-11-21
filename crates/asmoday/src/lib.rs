@@ -22,6 +22,7 @@ use anyhow::Result;
 mod bootstate;
 mod font;
 mod lang;
+mod liveness;
 mod menu;
 mod paint;
 mod screen;
