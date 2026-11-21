@@ -145,6 +145,11 @@ fn light_panel(light: &mut Option<Backlight>) {
 /// nothing of the parent's state does any work in it. exec, rather than a call
 /// into this program, is the whole point: the two binaries stay independent.
 fn start() -> Result<libc::pid_t> {
+    // The system makes this folder when it comes up, which is later than the
+    // first beat below. Without it that beat is written into nothing, and the
+    // parent would go back to counting silence from the fork — the one number
+    // this window exists to stop it counting.
+    let _ = std::fs::create_dir_all(skyward_sys::RUN);
     // A note or a beat from a previous life would be read as this one's: an
     // empty panel would come up saying the browser is not built yet, having
     // never been asked for the browser, and a stale beat would make a system

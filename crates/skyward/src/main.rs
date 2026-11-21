@@ -751,6 +751,22 @@ fn adopt_installed_version(props: &std::collections::HashMap<String, String>) ->
 /// goes on stays in misc until the work is done; any other is cleared at
 /// once, so that any reboot from here boots the system. Failures go to the
 /// kernel log and still end the process, which init then starts again.
+/// Say that the system is still there, on the way to the first frame.
+///
+/// The pages beat once a second, but nothing beats between the fork and the
+/// first frame — and that gap is where the port, the partitions and the
+/// programs they carry are brought up, any of which can take longer than the
+/// parent waits before it believes silence. A beat at each step that may take
+/// its time is what keeps a slow start from being reported as a stop.
+#[cfg(target_os = "android")]
+fn beat() {
+    let _ = crate::supervise::beat();
+}
+
+/// A desk build has no parent watching it and no folder to write to.
+#[cfg(not(target_os = "android"))]
+fn beat() {}
+
 fn recovery() -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let run = || -> Result<()> {
@@ -760,12 +776,16 @@ fn recovery() -> Result<()> {
         std::fs::set_permissions(skyward_sys::RUN, std::fs::Permissions::from_mode(0o755))
             .with_context(|| format!("open {} to the recovery's other users", skyward_sys::RUN))?;
         skyward_sys::keep_log(Path::new(skyward_sys::LOG))?;
+        // The folder the parent watches is there now, so the first thing to
+        // do with it is say that this is a system that came up.
+        beat();
         // A recovery that ended with a function of its own in the port took
         // the port with it; going through "none" takes that function off.
         if skyward_sys::prop("sys.usb.state").is_some_and(|s| s != "adb") {
             skyward_sys::usb::set("none", std::time::Duration::from_secs(5))?;
         }
         skyward_sys::set_prop("sys.usb.config", "adb")?;
+        beat();
         let misc = bcb::misc();
         let message = bcb::read(&misc)?;
         let request = message.request();
@@ -829,6 +849,9 @@ fn recovery() -> Result<()> {
             if !matches!(request.work, bcb::Work::Fastboot | bcb::Work::WipeAb { .. } | bcb::Work::UnshareBlocks) {
                 programs.extend(prepare(&cfg, booted_slot()?)?);
             }
+            // Mounting super and starting what runs from it is the longest
+            // stretch before the pages take over the beat.
+            beat();
             let root = Path::new("/");
             ui::run(
                 &cfg,
@@ -858,6 +881,10 @@ fn recovery() -> Result<()> {
 /// reason goes to the kernel log instead.
 #[cfg(target_os = "android")]
 fn prepare(cfg: &DeviceConfig, slot: skyward_vab::Slot) -> Result<Vec<skyward_config::Service>> {
+    // Mapping super and mounting what is in it is one call that can take a
+    // while and says nothing while it does: the beat on either side is what
+    // tells the parent this is a system working, not a system stuck.
+    beat();
     match skyward_vab::mount_partitions(slot) {
         Ok(mounts) => {
             for d in &mounts.damaged {
@@ -874,10 +901,12 @@ fn prepare(cfg: &DeviceConfig, slot: skyward_vab::Slot) -> Result<Vec<skyward_co
             if let Err(e) = bring_up(cfg, slot, found) {
                 skyward_sys::kmsg(&format!("devices not brought up: {e:#}"))?;
             }
+            beat();
             Ok(programs)
         }
         Err(e) => {
             skyward_sys::kmsg(&format!("partitions not mounted: {e:#}"))?;
+            beat();
             Ok(Vec::new())
         }
     }
