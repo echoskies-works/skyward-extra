@@ -288,8 +288,8 @@ mod tests {
     const W: u32 = 1080;
     const H: u32 = 2400;
     const PPD: f32 = 2.625;
-    const TITLE: Text = ["一声", "一聲", "A word"];
-    const OK: Text = ["确定", "確定", "OK"];
+    const TITLE: Text = tri("一声", "一聲", "A word");
+    const OK: Text = tri("确定", "確定", "OK");
 
     fn geom(app: &App, t: &Theme, f: &Fonts) -> SheetGeom {
         let s = app.sheet.as_ref().unwrap();

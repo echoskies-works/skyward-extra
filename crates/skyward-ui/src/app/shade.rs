@@ -8,6 +8,7 @@
 //! put away, one all the way — and the finger moves it one for one, as the
 //! lock is moved up.
 
+use crate::tr;
 use super::*;
 use crate::icons::{self, Icon};
 use crate::theme::Palette;
@@ -74,14 +75,14 @@ pub enum ShadeKey {
 }
 
 pub(super) const SHADE_KEYS: [(ShadeKey, Icon, Text); 8] = [
-    (ShadeKey::Wlan, Icon::Wlan, ["无线网络", "無線網路", "Wi-Fi"]),
-    (ShadeKey::Theme, Icon::Moon, ["深色模式", "深色模式", "Dark mode"]),
-    (ShadeKey::Mute, Icon::Bell, ["静音", "靜音", "Silence"]),
-    (ShadeKey::Vibrate, Icon::Phone, ["振动", "振動", "Vibrate"]),
-    (ShadeKey::Shot, Icon::Screenshot, ["截图", "截圖", "Screenshot"]),
-    (ShadeKey::Sleep, Icon::Lock, ["熄屏", "熄屏", "Screen off"]),
-    (ShadeKey::Restart, Icon::Replay, ["重启", "重啟", "Restart"]),
-    (ShadeKey::PowerOff, Icon::Power, ["关机", "關機", "Power off"]),
+    (ShadeKey::Wlan, Icon::Wlan, tri("无线网络", "無線網路", "Wi-Fi")),
+    (ShadeKey::Theme, Icon::Moon, tri("深色模式", "深色模式", "Dark mode")),
+    (ShadeKey::Mute, Icon::Bell, tri("静音", "靜音", "Silence")),
+    (ShadeKey::Vibrate, Icon::Phone, tri("振动", "振動", "Vibrate")),
+    (ShadeKey::Shot, Icon::Screenshot, tri("截图", "截圖", "Screenshot")),
+    (ShadeKey::Sleep, Icon::Lock, tri("熄屏", "熄屏", "Screen off")),
+    (ShadeKey::Restart, Icon::Replay, tri("重启", "重啟", "Restart")),
+    (ShadeKey::PowerOff, Icon::Power, tri("关机", "關機", "Power off")),
 ];
 
 /// Where the panel's parts stand on this screen, in pixels.

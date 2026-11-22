@@ -2,7 +2,7 @@
 //! watch keeps, and how often the page has to be told to draw again while
 //! either count runs. The page that shows it is in `pages`.
 
-use super::{Action, App};
+use super::{Action, App, tri};
 use crate::lang::Text;
 use crate::tr;
 
@@ -441,8 +441,8 @@ impl Clock {
     }
 }
 
-const TIMER_DONE_TITLE: Text = ["计时结束", "計時結束", "Timer done"];
-const TIMER_DONE_OK: Text = ["确定", "確定", "OK"];
+const TIMER_DONE_TITLE: Text = tri("计时结束", "計時結束", "Timer done");
+const TIMER_DONE_OK: Text = tri("确定", "確定", "OK");
 
 impl App {
     /// The timer ran out: write what finished into the common sheet and

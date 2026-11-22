@@ -17,9 +17,9 @@ pub const CLOCK_APP: &str = "clock";
 
 /// What the clock says while one of its counts runs with its page left
 /// behind: one notice each, and a tap goes back to it.
-const STOPWATCH_RUNNING: Text = ["秒表仍在运行中", "碼錶仍在執行中", "Stopwatch still running"];
-const TIMER_RUNNING: Text = ["计时器仍在运行中", "計時器仍在執行中", "Timer still running"];
-const BACK_TO_CLOCK: Text = ["点击此处以返回时钟", "點擊此處以返回時鐘", "Tap to go back to the clock"];
+const STOPWATCH_RUNNING: Text = tri("秒表仍在运行中", "碼錶仍在執行中", "Stopwatch still running");
+const TIMER_RUNNING: Text = tri("计时器仍在运行中", "計時器仍在執行中", "Timer still running");
+const BACK_TO_CLOCK: Text = tri("点击此处以返回时钟", "點擊此處以返回時鐘", "Tap to go back to the clock");
 
 /// Where one of the clock's counts stands with the panel.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

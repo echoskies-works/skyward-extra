@@ -26,20 +26,20 @@ pub const TARGETS: [Target; 6] = [Target::System, Target::Recovery, Target::Fast
 /// left out — too much to set off with a thumb by accident. Suspend is
 /// listed last because it is the one entry that does not restart anything.
 pub const POWER_MENU: [(Target, Text); 5] = [
-    (Target::PowerOff, ["关机", "關機", "Power off"]),
-    (Target::System, ["重启", "重啟", "Restart"]),
-    (Target::Recovery, ["重启到 Recovery", "重啟到 Recovery", "Restart to recovery"]),
-    (Target::Bootloader, ["重启到 Bootloader", "重啟到 Bootloader", "Restart to bootloader"]),
-    (Target::Suspend, ["挂起", "掛起", "Suspend"]),
+    (Target::PowerOff, tri("关机", "關機", "Power off")),
+    (Target::System, tri("重启", "重啟", "Restart")),
+    (Target::Recovery, tri("重启到 Recovery", "重啟到 Recovery", "Restart to recovery")),
+    (Target::Bootloader, tri("重启到 Bootloader", "重啟到 Bootloader", "Restart to bootloader")),
+    (Target::Suspend, tri("挂起", "掛起", "Suspend")),
 ];
 
 /// Where the fastboot page goes, in the order it lists them: the volume
 /// keys move between them and the power key takes one.
 pub const FASTBOOT_CHOICES: [(Text, Action); 4] = [
-    (["重启到系统", "重新啟動到系統", "Reboot to system"], Action::RebootTo(Target::System)),
-    (["进入恢复模式", "進入復原模式", "Enter recovery"], Action::EnterRecovery),
-    (["重启到 Bootloader", "重新啟動到 Bootloader", "Reboot to bootloader"], Action::RebootTo(Target::Bootloader)),
-    (["关机", "關機", "Power off"], Action::RebootTo(Target::PowerOff)),
+    (texts::installed::REBOOT_TO_SYSTEM, Action::RebootTo(Target::System)),
+    (texts::afterwards::ENTER_RECOVERY, Action::EnterRecovery),
+    (texts::fastboot::REBOOT_TO_BOOTLOADER, Action::RebootTo(Target::Bootloader)),
+    (texts::reboot::target::POWER_OFF, Action::RebootTo(Target::PowerOff)),
 ];
 
 /// How far a computer has the USB port.

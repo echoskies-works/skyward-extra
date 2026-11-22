@@ -185,7 +185,7 @@ impl App {
         // step heavier than the pages' own text, as the stock lock sets it.
         sheet.text_center(&f.regular, today, w / 2.0, h * LOCK_CLOCK_AT + m.dp(LOCK_DAY_AT), m.dp(LOCK_DAY_PX), soft);
         sheet.text_center(&f.lock_clock, clock, w / 2.0, h * LOCK_CLOCK_AT, m.dp(LOCK_CLOCK_PX), ink);
-        let said = self.state.lang.pick(["上滑解锁", "上滑解鎖", "Swipe up to open"]);
+        let said = self.state.lang.among("上滑解锁", "上滑解鎖", "Swipe up to open");
         sheet.text_center(&f.label, said, w / 2.0, h * LOCK_WORDS_AT, m.sub_px, soft);
         sheet
     }

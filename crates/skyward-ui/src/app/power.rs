@@ -48,12 +48,12 @@ pub(super) fn black_level(ms: u64, span: u64) -> f32 {
     dialog::DIM * (1.0 - dialog::eased(ms, span))
 }
 
-const POWER_TITLE: Text = ["电源选项", "電源選項", "Power options"];
+const POWER_TITLE: Text = tri("电源选项", "電源選項", "Power options");
 const POWER_CHOICES: [(PowerChoice, Text); 4] = [
-    (PowerChoice::PowerOff, ["关机", "關機", "Power off"]),
-    (PowerChoice::Restart, ["重新启动", "重新啟動", "Restart"]),
-    (PowerChoice::Suspend, ["挂起", "掛起", "Suspend"]),
-    (PowerChoice::Cancel, ["取消", "取消", "Cancel"]),
+    (PowerChoice::PowerOff, tri("关机", "關機", "Power off")),
+    (PowerChoice::Restart, tri("重新启动", "重新啟動", "Restart")),
+    (PowerChoice::Suspend, tri("挂起", "掛起", "Suspend")),
+    (PowerChoice::Cancel, tri("取消", "取消", "Cancel")),
 ];
 
 /// The menu's keys as a sheet's rows: a whole row for each of the four.
@@ -66,30 +66,26 @@ fn power_rows() -> dialog::SheetRows {
 /// `PowerExit` stands for; suspend is not wired up, so its 确定 does no more
 /// than its 取消.
 pub(super) fn power_confirm(choice: PowerChoice, lang: crate::lang::Lang) -> (Text, String, dialog::SheetRows) {
-    let ok: Text = ["确定", "確定", "OK"];
-    let cancel: Text = ["取消", "取消", "Cancel"];
+    let ok: Text = tri("确定", "確定", "OK");
+    let cancel: Text = tri("取消", "取消", "Cancel");
     match choice {
         PowerChoice::PowerOff => (
-            ["关机", "關機", "Power off"],
-            lang.pick(["您的手机将会关机。", "您的手機將會關機。", "Your phone will power off."]).to_string(),
+            tri("关机", "關機", "Power off"),
+            lang.among("您的手机将会关机。", "您的手機將會關機。", "Your phone will power off.").to_string(),
             vec![vec![(ok, Action::PowerExit(Target::PowerOff)), (cancel, Action::SheetCancel)]],
         ),
         PowerChoice::Restart => (
-            ["重新启动", "重新啟動", "Restart"],
-            lang.pick(["您的手机将会重新启动。", "您的手機將會重新啟動。", "Your phone will restart."]).to_string(),
+            tri("重新启动", "重新啟動", "Restart"),
+            lang.among("您的手机将会重新启动。", "您的手機將會重新啟動。", "Your phone will restart.").to_string(),
             vec![
                 vec![(ok, Action::PowerExit(Target::System)), (cancel, Action::SheetCancel)],
-                vec![(["重启到Recovery", "重啟到Recovery", "Restart to recovery"], Action::PowerExit(Target::Recovery))],
-                vec![(["重启到Bootloader", "重啟到Bootloader", "Restart to bootloader"], Action::PowerExit(Target::Bootloader))],
+                vec![(tri("重启到Recovery", "重啟到Recovery", "Restart to recovery"), Action::PowerExit(Target::Recovery))],
+                vec![(tri("重启到Bootloader", "重啟到Bootloader", "Restart to bootloader"), Action::PowerExit(Target::Bootloader))],
             ],
         ),
         PowerChoice::Suspend => (
-            ["确定要挂起吗？", "確定要掛起嗎？", "Suspend?"],
-            lang.pick([
-                "挂起后，Skyward-Extra当前状态将保留，随后您可以启动至其他操作系统，只要不关机再启动回Skyward-Extra，就会恢复挂起之前的状态。",
-                "掛起後，Skyward-Extra當前狀態將保留，隨後您可以啟動至其他操作系統，只要不關機再啟動回Skyward-Extra，就會恢復掛起之前的狀態。",
-                "Once suspended, Skyward-Extra keeps its current state. Start another system, then return to Skyward-Extra without powering off and the state before suspending is restored.",
-            ]).to_string(),
+            tri("确定要挂起吗？", "確定要掛起嗎？", "Suspend?"),
+            lang.among("挂起后，Skyward-Extra当前状态将保留，随后您可以启动至其他操作系统，只要不关机再启动回Skyward-Extra，就会恢复挂起之前的状态。", "掛起後，Skyward-Extra當前狀態將保留，隨後您可以啟動至其他操作系統，只要不關機再啟動回Skyward-Extra，就會恢復掛起之前的狀態。", "Once suspended, Skyward-Extra keeps its current state. Start another system, then return to Skyward-Extra without powering off and the state before suspending is restored.").to_string(),
             vec![vec![(ok, Action::SheetCancel), (cancel, Action::SheetCancel)]],
         ),
         PowerChoice::Cancel => unreachable!("cancel never opens a sheet"),
@@ -391,7 +387,7 @@ mod tests {
         assert!(app.touch(Touch::Down(x, y), &f, dialog::RISE_MS).is_empty(), "power off asks first");
         assert!(app.power_menu.is_none(), "the menu went");
         let sheet = app.sheet.as_ref().unwrap();
-        assert_eq!(sheet.title, ["关机", "關機", "Power off"]);
+        assert_eq!(sheet.title, tri("关机", "關機", "Power off"));
         assert_eq!(sheet.body, "您的手机将会关机。");
         let _ = i;
     }
@@ -502,7 +498,7 @@ mod tests {
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.act(Action::PowerMenuChoice(PowerChoice::Restart), 0);
         let sheet = app.sheet.as_ref().unwrap();
-        assert_eq!(sheet.title, ["重新启动", "重新啟動", "Restart"]);
+        assert_eq!(sheet.title, tri("重新启动", "重新啟動", "Restart"));
         assert_eq!(sheet.body, "您的手机将会重新启动。");
         let rows = sheet.rows.clone();
         assert_eq!(rows.len(), 3, "确定/取消, then two whole rows");
@@ -575,7 +571,7 @@ mod tests {
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.act(Action::PowerMenuChoice(PowerChoice::Suspend), 0);
         let sheet = app.sheet.as_ref().unwrap();
-        assert_eq!(sheet.title, ["确定要挂起吗？", "確定要掛起嗎？", "Suspend?"]);
+        assert_eq!(sheet.title, tri("确定要挂起吗？", "確定要掛起嗎？", "Suspend?"));
         assert!(sheet.rows[0].iter().all(|(_, a)| *a == Action::SheetCancel), "both keys only close it");
         let rows = sheet.rows.clone();
         let body = sheet.body.clone();

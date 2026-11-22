@@ -8,6 +8,7 @@
 //! taken away, and the step already said stays said until the battery is
 //! back above [`RECOVERED`].
 
+use crate::tr;
 use super::*;
 
 /// The levels a battery running down is said at, from the least short of
@@ -23,8 +24,8 @@ pub(super) const BATTERY_LEVELS: [u8; 3] = [20, 10, 3];
 pub(super) const RECOVERED: u8 = 22;
 
 /// The card's heading, and the one key that puts it away.
-const LOW_BATTERY: Text = ["电量不足", "電量不足", "Battery low"];
-const OK: Text = ["确定", "確定", "OK"];
+const LOW_BATTERY: Text = tri("电量不足", "電量不足", "Battery low");
+const OK: Text = tri("确定", "確定", "OK");
 
 /// What the card says of a battery at `level`.
 fn words(l: Lang, level: u8) -> String {
