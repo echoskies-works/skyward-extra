@@ -6,7 +6,7 @@
 //!
 //! Views: `list`, `confirm`, `yes`, `fail` (never started), `crash` (died
 //! while running), `stop` (stopped on purpose, for an app not built yet).
-//! Languages: `zh` (the default), `en`.
+//! Languages: `en` (the default), `zh`.
 
 use asmoday::{render, Action, Crash, Lang, Reason, View};
 use std::io::Write;
@@ -28,10 +28,10 @@ fn main() {
         }
     };
     let lang = match args.next().as_deref() {
-        Some("en") => Lang::En,
-        Some("zh") | None => Lang::Zh,
+        Some("zh") => Lang::Zh,
+        Some("en") | None => Lang::En,
         Some(other) => {
-            eprintln!("unknown language {other:?}: zh or en");
+            eprintln!("unknown language {other:?}: en or zh");
             std::process::exit(2);
         }
     };

@@ -216,7 +216,7 @@ fn kind(view: View) -> u8 {
 pub fn run() -> Result<Choice> {
     use menu::Step;
 
-    let lang = Lang::from_env();
+    let lang = Lang::chosen();
     let mut panel = Panel::open()?;
     let mut menu = menu::Menu::new();
     panel.present(menu.view(), lang)?;
@@ -269,7 +269,7 @@ pub fn run() -> Result<Choice> {
 /// — where it stopped on purpose — which of its own apps it stopped for.
 #[cfg(target_os = "android")]
 pub fn show_crash(crash: Crash, code: i32, reason: Option<Reason>) -> Result<()> {
-    let lang = Lang::from_env();
+    let lang = Lang::chosen();
     let mut panel = Panel::open()?;
     let view = View::Failure { crash, code, reason };
     panel.present(view, lang)?;
