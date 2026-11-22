@@ -35,12 +35,24 @@ mod matcher;
 
 const CLOCK: &str = "23:46";
 
+/// The moment the lock's day is taken at: 2026-11-16 13:40 UTC, which is
+/// half past nine in the evening in Shanghai and a Monday, so every shot's
+/// day is the same day and only the words of it change with the language.
+const SHOT_UNIX: i64 = 1_794_836_400;
+
 /// The language the pages are drawn in, as `--lang` names its locale;
 /// simplified Chinese where it names none.
 static LANG: OnceLock<Lang> = OnceLock::new();
 
 fn lang() -> Lang {
     *LANG.get().expect("the language is chosen before any page is drawn")
+}
+
+/// The day the lock stands over the time, in the language the shots are
+/// drawn in: the words of it are the one thing on the lock that a language
+/// changes, so a shot taken in English must not show the Chinese.
+fn shot_date() -> String {
+    skyward_ui::fmt::lock_date(lang(), SHOT_UNIX, 0)
 }
 
 /// What a shell in the recovery writes for a few commands, colours and all.
@@ -404,7 +416,7 @@ fn main() -> Result<()> {
             // timer's notice is an overlay that only `compose` puts on top.
             // This one shot has to go through the panel's own path.
             let now = app.now();
-            app.compose(&mut page, &fonts, &info, CLOCK, "11月16日 周一", now);
+            app.compose(&mut page, &fonts, &info, CLOCK, &shot_date(), now);
         }
         write_png(&path, &page)?;
         println!("wrote {}", path.display());
@@ -454,7 +466,7 @@ fn main() -> Result<()> {
         // chip then stands where a phone's would a moment after it opened.
         let _ = app.tick(0);
         let mut c = Canvas::new(w, h);
-        app.compose(&mut c, &fonts, &info, "21:40", "11月16日 周一", 200);
+        app.compose(&mut c, &fonts, &info, "21:40", &shot_date(), 200);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &c)?;
         println!("wrote {}", path.display());
@@ -465,7 +477,7 @@ fn main() -> Result<()> {
     app.state.calc_face = CalcFace::Convert;
     let _ = app.tick(0);
     let mut c = Canvas::new(w, h);
-    app.compose(&mut c, &fonts, &info, "21:40", "11月16日 周一", 200);
+    app.compose(&mut c, &fonts, &info, "21:40", &shot_date(), 200);
     let path = out.join("00-02-calculator-convert-light.png");
     write_png(&path, &c)?;
     println!("wrote {}", path.display());
@@ -485,7 +497,7 @@ fn main() -> Result<()> {
         app.state.dark = dark;
         let _ = app.tick(0);
         let mut c = Canvas::new(w, h);
-        app.compose(&mut c, &fonts, &info, "21:40", "11月16日 周一", 200);
+        app.compose(&mut c, &fonts, &info, "21:40", &shot_date(), 200);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &c)?;
         println!("wrote {}", path.display());
@@ -506,10 +518,10 @@ fn main() -> Result<()> {
         app.state.dark = dark;
         app.state.data = Data::Open;
         let mut behind = Canvas::new(w, h);
-        app.compose(&mut behind, &fonts, &info, "21:40", "11月16日 周一", 0);
+        app.compose(&mut behind, &fonts, &info, "21:40", &shot_date(), 0);
         app.lock_now();
         let mut shot = Canvas::new(w, h);
-        app.compose(&mut shot, &fonts, &info, "21:40", "11月16日 周一", 0);
+        app.compose(&mut shot, &fonts, &info, "21:40", &shot_date(), 0);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &shot)?;
         println!("wrote {}", path.display());
@@ -544,7 +556,7 @@ fn main() -> Result<()> {
         app.shade_down();
         app.shade_pull(open);
         let mut shot = Canvas::new(w, h);
-        app.compose(&mut shot, &fonts, &info, "21:40", "11月16日 周一", 1000);
+        app.compose(&mut shot, &fonts, &info, "21:40", &shot_date(), 1000);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &shot)?;
         println!("wrote {}", path.display());
@@ -576,7 +588,7 @@ fn main() -> Result<()> {
         app.state.data = Data::Open;
         app.state.dark = true;
         let mut behind = Canvas::new(w, h);
-        app.compose(&mut behind, &fonts, &info, "21:40", "11月16日 周一", 0);
+        app.compose(&mut behind, &fonts, &info, "21:40", &shot_date(), 0);
         app.lock_now();
         let m = app.theme().m;
         let foot = m.h as f32 - m.dp(24.0) + 2.0;
@@ -586,7 +598,7 @@ fn main() -> Result<()> {
         app.touch(Touch::Down(600.0, foot), &fonts, 0);
         app.touch(Touch::Move(600.0, foot - by), &fonts, 200);
         let mut shot = Canvas::new(w, h);
-        app.compose(&mut shot, &fonts, &info, "21:40", "11月16日 周一", 0);
+        app.compose(&mut shot, &fonts, &info, "21:40", &shot_date(), 0);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &shot)?;
         println!("wrote {}", path.display());
@@ -1677,7 +1689,7 @@ fn main() -> Result<()> {
             }
             app.tick(now);
             let mut c = Canvas::new(w, h);
-            app.compose(&mut c, &fonts, &info, CLOCK, "11月16日 周一", now);
+            app.compose(&mut c, &fonts, &info, CLOCK, &shot_date(), now);
             let path = out.join(format!("{name}.png"));
             write_png(&path, &c)?;
             println!("wrote {}", path.display());
@@ -1708,7 +1720,7 @@ fn main() -> Result<()> {
         app.state.data = Data::Open;
         app.notify(Notification::progress(Origin::System, "flash", "正在刷入 system", "skyward-extra-fuxi.img", 42, 100));
         let mut shot = Canvas::new(w, h);
-        app.compose(&mut shot, &fonts, &info, "21:40", "11月16日 周一", ms);
+        app.compose(&mut shot, &fonts, &info, "21:40", &shot_date(), ms);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &shot)?;
         println!("wrote {}", path.display());
@@ -1730,7 +1742,7 @@ fn main() -> Result<()> {
         app.shade_down();
         app.shade_pull(1.0);
         let mut shot = Canvas::new(w, h);
-        app.compose(&mut shot, &fonts, &info, "21:40", "11月16日 周一", 1_000);
+        app.compose(&mut shot, &fonts, &info, "21:40", &shot_date(), 1_000);
         let path = out.join("00-14-clock-away-light.png");
         write_png(&path, &shot)?;
         println!("wrote {}", path.display());
@@ -1762,7 +1774,7 @@ fn main() -> Result<()> {
         app.battery(down.battery.as_ref());
         let _ = app.tick(800);
         let mut shot = Canvas::new(w, h);
-        app.compose(&mut shot, &fonts, &down, "21:40", "11月16日 周一", 800);
+        app.compose(&mut shot, &fonts, &down, "21:40", &shot_date(), 800);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &shot)?;
         println!("wrote {}", path.display());
@@ -1783,7 +1795,7 @@ fn main() -> Result<()> {
         let (x, y) = tile.centre();
         app.touch(Touch::Down(x, y), &fonts, 0);
         let mut shot = Canvas::new(w, h);
-        app.compose(&mut shot, &fonts, &info, "21:40", "11月16日 周一", 600);
+        app.compose(&mut shot, &fonts, &info, "21:40", &shot_date(), 600);
         let path = out.join("00-16-icon-hold-light.png");
         write_png(&path, &shot)?;
         println!("wrote {}", path.display());
@@ -1812,7 +1824,7 @@ fn main() -> Result<()> {
         let mut c = Canvas::new(w, h);
         // The desktop has to have been on screen before a page can leave
         // it: a page leaves whatever was last drawn.
-        app.compose(&mut c, &fonts, &info, CLOCK, "11月16日 周一", 0);
+        app.compose(&mut c, &fonts, &info, CLOCK, &shot_date(), 0);
         let tile = {
             let fr = app.frame(&fonts, &info);
             fr.launches.iter().find(|(s, _)| *s == Screen::Clock).map(|(_, r)| *r).expect("the clock is on the desktop")
@@ -1821,20 +1833,20 @@ fn main() -> Result<()> {
         app.touch(Touch::Down(x, y), &fonts, 1000);
         app.touch(Touch::Up, &fonts, 1000);
         // The first frame of the move sets its spring going.
-        app.compose(&mut c, &fonts, &info, CLOCK, "11月16日 周一", 1000);
+        app.compose(&mut c, &fonts, &info, CLOCK, &shot_date(), 1000);
         let now = if back {
             // Let it open all the way, then go home by the key.
-            app.compose(&mut c, &fonts, &info, CLOCK, "11月16日 周一", 3000);
+            app.compose(&mut c, &fonts, &info, CLOCK, &shot_date(), 3000);
             app.frame(&fonts, &info);
             app.key(Key::Back, 4000);
             app.key_up(Key::Back, 4000);
-            app.compose(&mut c, &fonts, &info, CLOCK, "11月16日 周一", 4000);
+            app.compose(&mut c, &fonts, &info, CLOCK, &shot_date(), 4000);
             4000 + ms
         } else {
             1000 + ms
         };
         let mut shot = Canvas::new(w, h);
-        app.compose(&mut shot, &fonts, &info, CLOCK, "11月16日 周一", now);
+        app.compose(&mut shot, &fonts, &info, CLOCK, &shot_date(), now);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &shot)?;
         println!("wrote {}", path.display());
@@ -1943,7 +1955,7 @@ fn frames(app: &mut App, f: &Fonts, info: &DeviceInfo, from: u64, to: u64) {
     let mut c = Canvas::new(t.m.w, t.m.h);
     for ms in (from..=to).step_by(8) {
         app.tick(ms);
-        app.compose(&mut c, f, info, CLOCK, "11月16日 周一", ms);
+        app.compose(&mut c, f, info, CLOCK, &shot_date(), ms);
     }
 }
 

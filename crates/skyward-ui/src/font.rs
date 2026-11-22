@@ -73,7 +73,13 @@ impl Face {
         if let Some(ink) = self.known.borrow().glyphs.get(&key) {
             return ink.clone();
         }
-        let at = ab_glyph::point(qx as f32 / SUBPIXELS, qy as f32 / SUBPIXELS);
+        // A pen that lands on a whole pixel asks for a glyph set with no
+        // subpixel offset at all, and ab_glyph draws one glyph that way as a
+        // filled wedge: on the lock, whose day is set on whole pixels,
+        // "November" came out with its `v` a solid triangle. A quarter of a
+        // pixel along takes the outline off that path, and a quarter of a
+        // pixel is not something an eye finds.
+        let at = ab_glyph::point(qx.max(1) as f32 / SUBPIXELS, qy as f32 / SUBPIXELS);
         let ink = self.font.outline_glyph(id.with_scale_and_position(scale, at)).map(|og| {
             let b = og.px_bounds();
             let (w, h) = (b.width() as u32, b.height() as u32);
