@@ -96,8 +96,9 @@ fn of_settings(text: &str) -> Lang {
 /// The file is JSON, and this reads the one shape it is written in: a quoted
 /// key, a colon, a quoted value, one such pair per line. That is enough for
 /// the two fields the panel wants, and a JSON parser would be a dependency
-/// this program will not take. A key the file does not hold, or one holding
-/// something that is not a string, reads as nothing.
+/// this program will not take. A key the file does not hold, one holding
+/// something that is not a string, and one holding nothing at all all read as
+/// nothing: a language the file does not name is a language not chosen.
 fn field<'a>(text: &'a str, key: &str) -> Option<&'a str> {
     for line in text.lines() {
         let Some(rest) = line.trim_start().strip_prefix('"') else { continue };
@@ -107,7 +108,7 @@ fn field<'a>(text: &'a str, key: &str) -> Option<&'a str> {
         }
         let Some(rest) = rest.trim_start().strip_prefix(':') else { continue };
         let Some(rest) = rest.trim_start().strip_prefix('"') else { continue };
-        return rest.split('"').next();
+        return rest.split('"').next().filter(|value| !value.is_empty());
     }
     None
 }
@@ -171,5 +172,9 @@ mod tests {
         assert_eq!(of_settings(text), Lang::En);
         // A key holding something other than a string is nothing.
         assert_eq!(field("{\n  \"language\": null\n}\n", "language"), None);
+        // An empty one is nothing too, and the next field is still read.
+        let empty = "{\n  \"language\": \"\",\n  \"spoken\": \"zh-Hans\"\n}\n";
+        assert_eq!(field(empty, "language"), None);
+        assert_eq!(of_settings(empty), Lang::Zh);
     }
 }
