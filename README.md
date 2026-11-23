@@ -8,11 +8,11 @@ Skyward-Extra is an extension built on Skyward, a from-scratch Rust Android reco
 It includes all of Skyward's features, plus some additional extensions.
 
 <p align="center">
-  <img src="assets/desktop.png" width="19%" alt="Desktop">
-  <img src="assets/home.png" width="19%" alt="Home">
-  <img src="assets/stopwatch.png" width="19%" alt="Stopwatch">
-  <img src="assets/settings-dark.png" width="19%" alt="Settings in dark mode">
-  <img src="assets/about.png" width="19%" alt="About">
+  <img src="assets/desktop-en.png" width="19%" alt="Desktop">
+  <img src="assets/home-en.png" width="19%" alt="Home">
+  <img src="assets/stopwatch-en.png" width="19%" alt="Stopwatch">
+  <img src="assets/settings-en.png" width="19%" alt="Settings in dark mode">
+  <img src="assets/about-en.png" width="19%" alt="About">
 </p>
 
 ## Features
