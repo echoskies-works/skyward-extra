@@ -1493,13 +1493,17 @@ fn main() -> Result<()> {
             let _ = app.key(Key::VolumeUp, 1100);
             1400
         }),
-        // The same menu with the light moved down to 挂起, to show a later
-        // row lit and the soft ground standing a little longer.
+        // The same menu with the volume keys turned to the light, moved down
+        // to 挂起: the first press puts the ring on the first row, the two
+        // after move it on. A menu just come up has no row ringed at all —
+        // that is the light above.
         ("00-07-power-menu-dark", Screen::Desktop, true, &|app, _| {
+            app.state.volume_keys = true;
             let _ = app.key(Key::Power, 1000);
             let _ = app.key(Key::VolumeUp, 1100);
             let _ = app.key(Key::VolumeDown, 1200);
             let _ = app.key(Key::VolumeDown, 1260);
+            let _ = app.key(Key::VolumeDown, 1320);
             1500
         }),
         // The three confirmations the menu opens, each a dark sheet over the
@@ -1513,17 +1517,21 @@ fn main() -> Result<()> {
             1700
         }),
         ("00-07-power-restart-confirm-light", Screen::Desktop, false, &|app, _| {
-            let _ = app.key(Key::Power, 1000);
-            let _ = app.key(Key::VolumeUp, 1100);
-            let _ = app.key(Key::VolumeDown, 1200);
-            let _ = app.key(Key::Power, 1300);
-            1800
-        }),
-        ("00-07-power-suspend-confirm-light", Screen::Desktop, false, &|app, _| {
+            app.state.volume_keys = true;
             let _ = app.key(Key::Power, 1000);
             let _ = app.key(Key::VolumeUp, 1100);
             let _ = app.key(Key::VolumeDown, 1200);
             let _ = app.key(Key::VolumeDown, 1260);
+            let _ = app.key(Key::Power, 1300);
+            1800
+        }),
+        ("00-07-power-suspend-confirm-light", Screen::Desktop, false, &|app, _| {
+            app.state.volume_keys = true;
+            let _ = app.key(Key::Power, 1000);
+            let _ = app.key(Key::VolumeUp, 1100);
+            let _ = app.key(Key::VolumeDown, 1200);
+            let _ = app.key(Key::VolumeDown, 1260);
+            let _ = app.key(Key::VolumeDown, 1320);
             let _ = app.key(Key::Power, 1360);
             1860
         }),

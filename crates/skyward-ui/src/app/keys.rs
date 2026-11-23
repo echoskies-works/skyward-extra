@@ -80,6 +80,11 @@ impl App {
             self.dirty = true;
             return Vec::new();
         }
+        // A card over the page takes the keys for its own: what stands under
+        // it is out of reach, so a light moving on that would be lost.
+        if self.sheet_volume(down, now) {
+            return Vec::new();
+        }
         if self.adjusting {
             if let Some(Spot { stop: Stop::Hit(Action::Slider(which)), rect, .. }) = self.lit() {
                 let level = self.level(which) + if down { -SLIDER_STEP } else { SLIDER_STEP };

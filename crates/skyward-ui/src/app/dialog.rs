@@ -13,26 +13,39 @@ pub(super) const FALL_MS: u64 = 180;
 /// white page to 179 of 255. The power menu keeps its own, softer ground.
 pub(super) const DIM: f32 = 0.70;
 
-// The stock sheet, measured on a 1080 by 2400 panel: 33 px at either side,
-// a 44 dp top corner, its contents 30 dp in and the keys 20 dp off the foot.
-const SIDE: f32 = 13.0;
-const FOOT: f32 = 30.0;
-const RADIUS: f32 = 40.0;
-const PAD_X: f32 = 30.0;
+// The stock sheet, measured off a 1080 by 2400 panel: 33 px at either side,
+// a 109 px corner, its words 77 px in, its keys 66 px in, the card's foot
+// 78 px off the panel's, and the card 508 px tall for a title, one line
+// and one row of keys.
+const SIDE: f32 = 12.6;
+const FOOT: f32 = 29.7;
+const RADIUS: f32 = 41.5;
+const PAD_X: f32 = 29.5;
+/// The keys stand a little further out than the words, as the stock sheet's
+/// do: 66 px from the card's edge against the words' 77.
+const BTN_PAD_X: f32 = 25.0;
 const TITLE_CY: f32 = 38.0;
-const TITLE_PX: f32 = 20.0;
-const BODY_CY: f32 = 82.0;
-const BODY_PX: f32 = 15.0;
-const LINE: f32 = 23.0;
-const BODY_TO_KEYS: f32 = 61.0;
+/// The title's words come out 48.5 px apiece at 1080 wide, the body's 42.
+const TITLE_PX: f32 = 18.5;
+const BODY_CY: f32 = 71.0;
+const BODY_PX: f32 = 16.0;
+const LINE: f32 = 23.5;
+const BODY_TO_KEYS: f32 = 44.0;
 /// The keys start this far below the card's top when there is no body, as
 /// on the power menu, which is only a title and a stack of whole-row keys.
 const KEYS_NO_BODY: f32 = 72.0;
 const BTN_H: f32 = 53.0;
-const BTN_BOTTOM: f32 = 20.0;
+/// The keys are oblongs with rounded corners, not pills: 138 px tall with a
+/// 39 px corner, as the stock sheet draws them.
+const BTN_RADIUS: f32 = 15.0;
+const BTN_BOTTOM: f32 = 25.5;
 /// The gap between the two keys of one row, and between whole rows.
-const BTN_BETWEEN: f32 = 12.0;
+const BTN_BETWEEN: f32 = 12.5;
 const BTN_ROW_GAP: f32 = 12.0;
+/// The ring the keys put round the one the volume keys are on: the light
+/// the pages shine is a wash, but a key is too small for one to be seen
+/// under its word, so here the light is its edge.
+const CURSOR_DP: f32 = 2.0;
 
 /// How far a motion has come at `ms` into `span`, easing out as it goes: the
 /// card's rise, and the page going black behind it on the way down.
@@ -79,17 +92,17 @@ pub(super) fn sheet_geom(t: &Theme, f: &Fonts, body: &str, rows: &SheetRows) -> 
     let keys_h = count as f32 * m.dp(BTN_H) + (count as f32 - 1.0) * m.dp(BTN_ROW_GAP);
     let h = keys_top + keys_h + m.dp(BTN_BOTTOM);
     let y = m.h as f32 - m.dp(FOOT) - h;
-    let inner = w - 2.0 * m.dp(PAD_X);
+    let inner = w - 2.0 * m.dp(BTN_PAD_X);
     let rects = rows.iter().enumerate().map(|(ri, row)| {
         let ry = y + keys_top + ri as f32 * (m.dp(BTN_H) + m.dp(BTN_ROW_GAP));
         if row.len() >= 2 {
             let each = (inner - m.dp(BTN_BETWEEN)) / 2.0;
             vec![
-                Rect::new(x + m.dp(PAD_X), ry, each, m.dp(BTN_H)),
-                Rect::new(x + m.dp(PAD_X) + each + m.dp(BTN_BETWEEN), ry, each, m.dp(BTN_H)),
+                Rect::new(x + m.dp(BTN_PAD_X), ry, each, m.dp(BTN_H)),
+                Rect::new(x + m.dp(BTN_PAD_X) + each + m.dp(BTN_BETWEEN), ry, each, m.dp(BTN_H)),
             ]
         } else {
-            vec![Rect::new(x + m.dp(PAD_X), ry, inner, m.dp(BTN_H))]
+            vec![Rect::new(x + m.dp(BTN_PAD_X), ry, inner, m.dp(BTN_H))]
         }
     }).collect();
     SheetGeom { card: Rect::new(x, y, w, h), lines, rows: rects }
@@ -110,15 +123,20 @@ pub(super) fn paint_sheet(
     let cx = geom.card.x + geom.card.w / 2.0;
     out.text_center(&f.heading, lang.pick(title), cx, y + m.dp(TITLE_CY), m.dp(TITLE_PX), t.pal.text);
     for (i, line) in geom.lines.iter().enumerate() {
-        out.text_top(&f.label, line, geom.card.x + m.dp(PAD_X), y + m.dp(BODY_CY + i as f32 * LINE), m.dp(BODY_PX), t.pal.subtitle, None);
+        out.text_top(&f.label, line, geom.card.x + m.dp(PAD_X), y + m.dp(BODY_CY + i as f32 * LINE), m.dp(BODY_PX), t.pal.info, None);
     }
     let mut k = 0usize;
     for (rects, labels) in geom.rows.iter().zip(rows.iter()) {
         for (rect, (label, _)) in rects.iter().zip(labels.iter()) {
             let at = Rect::new(rect.x, rect.y + off, rect.w, rect.h);
-            let ink = if chosen == Some(k) { t.pal.row_press } else { t.pal.track };
-            out.fill_round_rect(at.x, at.y, at.w, at.h, m.dp(BTN_H / 2.0), ink);
-            out.text_center(&f.label, lang.pick(*label), at.x + at.w / 2.0, at.y + at.h / 2.0, m.row_title_px, t.pal.text);
+            out.fill_round_rect(at.x, at.y, at.w, at.h, m.dp(BTN_RADIUS), t.pal.track);
+            // The key the volume keys are on is ringed, not darkened: a wash
+            // over a key already paler than the card reads as a key pressed
+            // by a finger, which is another thing entirely.
+            if chosen == Some(k) {
+                out.stroke_round_rect(at.x, at.y, at.w, at.h, m.dp(BTN_RADIUS), m.dp(CURSOR_DP), t.pal.accent);
+            }
+            out.text_center(&f.label, lang.pick(*label), at.x + at.w / 2.0, at.y + at.h / 2.0, m.row_title_px, t.pal.info);
             k += 1;
         }
     }
@@ -168,13 +186,22 @@ pub(super) struct Sheet {
     pub(super) title: Text,
     pub(super) body: String,
     pub(super) rows: SheetRows,
+    /// The key the volume keys are on, once they have been pressed. None
+    /// while the card is the finger's: a light on it before anyone asked
+    /// for one reads as a key already chosen.
+    pub(super) chosen: Option<usize>,
     since: u64,
     pub(super) closing: Option<u64>,
 }
 
 impl Sheet {
     pub(super) fn new(title: Text, body: String, rows: SheetRows, now: u64) -> Self {
-        Self { title, body, rows, since: now, closing: None }
+        Self { title, body, rows, chosen: None, since: now, closing: None }
+    }
+
+    /// How many keys the card offers, a row at a time.
+    fn keys(&self) -> usize {
+        self.rows.iter().map(Vec::len).sum()
     }
 
     fn shown(&self, now: u64) -> f32 {
@@ -236,17 +263,51 @@ impl App {
         self.act(action, now)
     }
 
-    /// Back and power answer the sheet's first key, as they answer the
-    /// timer's 确定 today; other keys do nothing while the card stands.
+    /// Back and power answer the sheet's keys: power takes the one the
+    /// volume keys are on, or the first when they have not been pressed,
+    /// and back always the first, as it answers the timer's 确定 today.
+    /// Other keys do nothing while the card stands.
     pub(super) fn sheet_key(&mut self, key: Key, now: u64) -> Vec<Effect> {
         if !matches!(key, Key::Back | Key::Power) {
             return Vec::new();
         }
-        let Some(action) = self.sheet.as_ref().and_then(|s| s.rows.first().and_then(|r| r.first()).map(|(_, a)| *a)) else {
+        let chosen = self.sheet.as_ref().and_then(|s| s.chosen);
+        let Some(action) = self.sheet.as_ref().and_then(|s| {
+            let pick = if key == Key::Power { chosen.unwrap_or(0) } else { 0 };
+            s.rows.iter().flatten().nth(pick).map(|(_, a)| *a)
+        }) else {
             return Vec::new();
         };
         self.close_sheet(now);
         self.act(action, now)
+    }
+
+    /// A volume key while a sheet stands: the first press puts the light on
+    /// the first key, each after moves it down the rows or up them, round
+    /// from end to end. It answers whether it took the key, so the page
+    /// under the card does not move its own light instead.
+    pub(super) fn sheet_volume(&mut self, down: bool, now: u64) -> bool {
+        let Some(sheet) = self.sheet.as_mut() else { return false };
+        if sheet.closing.is_some() {
+            return false;
+        }
+        let n = sheet.keys();
+        if n == 0 {
+            return false;
+        }
+        sheet.chosen = Some(match sheet.chosen {
+            None => 0,
+            Some(k) => {
+                if down {
+                    (k + 1) % n
+                } else {
+                    (k + n - 1) % n
+                }
+            }
+        });
+        self.dirty = true;
+        self.stir(now);
+        true
     }
 
     /// The sheet over everything else: the page darkens as the card rises and
@@ -267,7 +328,8 @@ impl App {
         }
         let geom = sheet_geom(&t, f, &sheet.body, &sheet.rows);
         let off = sheet_off(&t, shown);
-        paint_sheet(out, &t, f, lang, sheet.title, &sheet.rows, &geom, off, None);
+        let chosen = sheet.chosen;
+        paint_sheet(out, &t, f, lang, sheet.title, &sheet.rows, &geom, off, chosen);
     }
 
     /// When the card has reached the foot again it is gone and the page is
@@ -307,7 +369,7 @@ mod tests {
         app.show_sheet(TITLE, "时长为1分钟的计时已结束".to_string(), vec![vec![(OK, Action::TimerDoneOk)]], 0);
         let g = geom(&app, &t, &f);
         assert_eq!(g.card.x, t.m.dp(SIDE), "the stock sheet's side margin");
-        assert_eq!(g.card.x + g.card.w, W as f32 - t.m.dp(SIDE));
+        assert!((g.card.x + g.card.w - (W as f32 - t.m.dp(SIDE))).abs() < 0.01, "and the same at the other");
         assert!(g.card.y + g.card.h < H as f32, "the card leaves the gesture bar clear");
         assert_eq!(g.rows.len(), 1, "one row");
         assert_eq!(g.rows[0].len(), 1, "one key in it");
@@ -357,6 +419,65 @@ mod tests {
         assert_eq!(g.rows[0].len(), 2);
         assert!(g.rows[0][0].x + g.rows[0][0].w < g.rows[0][1].x, "a gap between them");
         assert!(g.rows[0][1].x + g.rows[0][1].w < g.card.x + g.card.w, "and a margin at the card's edge");
+    }
+
+    /// The card is the stock one, to the pixel, on a 1080 by 2400 panel: 508
+    /// px of it for a line of words, its foot 78 px off the panel's, its keys
+    /// 139 px tall and 66 px in from its edge, their feet 67 px above its own.
+    #[test]
+    fn the_card_keeps_the_stock_sheets_measurements() {
+        let f = fonts();
+        let t = crate::Theme::light(W, H, PPD);
+        let mut app = App::new(Screen::Clock, W, H, PPD);
+        app.show_sheet(TITLE, "时长为1分钟的计时已结束".to_string(), vec![vec![(OK, Action::TimerDoneOk), (OK, Action::ClockGo)]], 0);
+        let g = geom(&app, &t, &f);
+        assert_eq!(g.lines.len(), 1, "one line of words");
+        assert!((g.card.h - 508.0).abs() < 0.5, "the card is 508 px tall, not {}", g.card.h);
+        assert!((g.card.y + g.card.h - 2322.0).abs() < 0.5, "its foot sits 78 px off the panel's, not {}", g.card.y + g.card.h);
+        let key = g.rows[0][0];
+        assert!((key.x - g.card.x - 65.6).abs() < 0.5, "the key stands 66 px in, not {}", key.x - g.card.x);
+        assert!((key.h - 139.1).abs() < 0.5, "and is 139 px tall, not {}", key.h);
+        let foot = g.card.y + g.card.h - (key.y + key.h);
+        assert!((foot - 66.9).abs() < 0.6, "its foot is 67 px above the card's, not {foot}");
+        let gap = g.rows[0][1].x - (key.x + key.w);
+        assert!((gap - 32.8).abs() < 0.6, "33 px stand between the two keys, not {gap}");
+    }
+
+    /// The light the volume keys put on a key is its ring, and there is none
+    /// until a key has been pressed: a card come up with one of its keys
+    /// ringed reads as one already answered.
+    #[test]
+    fn a_key_is_ringed_only_once_the_keys_have_asked_for_it() {
+        let f = fonts();
+        let i = info();
+        let t = crate::Theme::light(W, H, PPD);
+        let mut app = App::new(Screen::Clock, W, H, PPD);
+        app.state.volume_keys = true;
+        app.show_sheet(TITLE, "先说清楚再做".to_string(), vec![vec![(OK, Action::TimerDoneOk), (OK, Action::ClockGo)]], 0);
+        assert_eq!(app.sheet.as_ref().unwrap().chosen, None, "nothing is lit as the card comes up");
+        let g = geom(&app, &t, &f);
+        // The key's own left edge at its middle: the ring, when there is one,
+        // is blue there; the card's white and the key's grey are not.
+        let edge = |app: &mut App, k: usize| {
+            let mut c = Canvas::new(W, H);
+            app.compose(&mut c, &f, &i, "15:25", "11月18日 周二", RISE_MS);
+            let r = g.rows[0][k];
+            let o = (((r.y + r.h / 2.0) as u32 * c.w + (r.x + 1.0) as u32) * 4) as usize;
+            (c.data[o], c.data[o + 2])
+        };
+        let (r, b) = edge(&mut app, 0);
+        assert!(b as i16 <= r as i16 + 20, "no ring before a key is pressed: {r},{b}");
+        // A volume key puts it on the first, the next moves it to the second.
+        app.volume(true, RISE_MS);
+        assert_eq!(app.sheet.as_ref().unwrap().chosen, Some(0));
+        let (r, b) = edge(&mut app, 0);
+        assert!(b as i16 > r as i16 + 20, "the first key wears the ring: {r},{b}");
+        app.volume(true, RISE_MS);
+        assert_eq!(app.sheet.as_ref().unwrap().chosen, Some(1));
+        let (r, b) = edge(&mut app, 0);
+        assert!(b as i16 <= r as i16 + 20, "and the first gives it up: {r},{b}");
+        let (r, b) = edge(&mut app, 1);
+        assert!(b as i16 > r as i16 + 20, "the second wears it now: {r},{b}");
     }
 
     /// A confirmation's keys can stack: a row of two, then whole rows below,

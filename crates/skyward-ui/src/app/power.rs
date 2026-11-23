@@ -3,12 +3,17 @@
 
 use super::*;
 
-/// The power menu as it shows: the entry lit, and when it came up, for the
-/// soft ground and the card to rise with. Its card is the common sheet's —
-/// the same shape, the same keys — but its ground is softened, not darkened.
-/// That is the one thing that tells it from the confirmations it opens.
+/// The power menu as it shows: the entry the volume keys are on, once they
+/// have been pressed, and when it came up, for the soft ground and the card
+/// to rise with. Its card is the common sheet's — the same shape, the same
+/// keys — but its ground is softened, not darkened. That is the one thing
+/// that tells it from the confirmations it opens.
 pub(super) struct PowerMenu {
     pub(super) chosen: usize,
+    /// Whether the volume keys have been pressed while it stands. A menu
+    /// that comes up with one entry already lit looks like one already
+    /// answered; the light waits for a key to ask for it.
+    pub(super) lit: bool,
     pub(super) since: u64,
 }
 
@@ -244,7 +249,7 @@ impl App {
     /// tap of the motor.
     pub(super) fn show_power_menu(&mut self, now: u64) -> Vec<Effect> {
         self.chord = None;
-        self.power_menu = Some(PowerMenu { chosen: 0, since: now });
+        self.power_menu = Some(PowerMenu { chosen: 0, lit: false, since: now });
         self.power_blur = None;
         // The volume panel goes with it: the menu's ground is a blurred copy
         // of the page, and a second card left on it would be blurred too.
@@ -303,13 +308,27 @@ pub(super) fn power_menu_touch(&mut self, ev: Touch, f: &Fonts, now: u64) -> Vec
 /// menu away. Taking a key hands the choice to `act`, which puts the menu
 /// away and opens the sheet that asks for the word.
 pub(super) fn power_menu_key(&mut self, key: Key, now: u64) -> Vec<Effect> {
+    let volume = matches!(key, Key::VolumeUp | Key::VolumeDown);
+    // Turned to the volume, the volume keys are the volume's: they neither
+    // light an entry nor move the light on one, as they move nothing on a
+    // page either.
+    if volume && !self.state.volume_keys {
+        return Vec::new();
+    }
     let Some(menu) = self.power_menu.as_mut() else { return Vec::new() };
-    let last = POWER_CHOICES.len() - 1;
-    menu.chosen = match key {
-        Key::VolumeUp => menu.chosen.checked_sub(1).unwrap_or(last),
-        Key::VolumeDown => (menu.chosen + 1) % POWER_CHOICES.len(),
-        _ => menu.chosen,
-    };
+    if volume && !menu.lit {
+        // The first press only puts the light on the entry the menu opens
+        // with, as the first key on a page lights the first control in view.
+        // Each after moves it on.
+        menu.lit = true;
+    } else if volume {
+        let last = POWER_CHOICES.len() - 1;
+        menu.chosen = if key == Key::VolumeUp {
+            menu.chosen.checked_sub(1).unwrap_or(last)
+        } else {
+            (menu.chosen + 1) % POWER_CHOICES.len()
+        };
+    }
     let chosen = menu.chosen;
     self.dirty = true;
     match key {
@@ -332,7 +351,9 @@ pub(super) fn power_menu_key(&mut self, key: Key, now: u64) -> Vec<Effect> {
 pub(super) fn compose_power_menu(&mut self, out: &mut Canvas, f: &Fonts, now: u64) {
     let Some(menu) = self.power_menu.as_ref() else { return };
     let since = menu.since;
-    let chosen = menu.chosen;
+    // The entry is ringed only once the volume keys have asked for a light:
+    // a menu just come up is a menu nothing is chosen on yet.
+    let chosen = menu.lit.then_some(menu.chosen);
     let t = self.theme();
     let lang = self.state.lang;
     let m = &t.m;
@@ -351,7 +372,7 @@ pub(super) fn compose_power_menu(&mut self, out: &mut Canvas, f: &Fonts, now: u6
     let rows = power_rows();
     let geom = dialog::sheet_geom(&t, f, "", &rows);
     let off = dialog::sheet_off(&t, along);
-    dialog::paint_sheet(out, &t, f, lang, POWER_TITLE, &rows, &geom, off, Some(chosen));
+    dialog::paint_sheet(out, &t, f, lang, POWER_TITLE, &rows, &geom, off, chosen);
 }
 }
 
