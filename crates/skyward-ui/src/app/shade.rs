@@ -1,6 +1,6 @@
 //! The panel a finger pulls down from the status bar: the control centre in
-//! a solid card at the top, and the notices under it on a thin veil that
-//! lets the page behind show through.
+//! a solid card at the top, and the notices under it, both floating on the
+//! page as it stands.
 //!
 //! It is an overlay, not a page: it stands over whatever is shown without
 //! taking the page away, and the status bar stays where it is, whole, over
@@ -21,11 +21,6 @@ pub(super) const SHADE_SWIPE: f32 = 0.30;
 const SHADE_FLICK_DP: f32 = 800.0;
 /// How long the panel takes to settle once the finger lifts.
 const SHADE_PERIOD: f32 = 0.34;
-
-/// The veil over the page under the notices, as the alpha of a black layer:
-/// a little over a quarter of the page's light goes, so its colour still
-/// reads behind the cards. 71 of 255 is 0.28.
-const VEIL: u8 = 71;
 
 /// The control centre is a card of the pages' own kind — the same white, the
 /// same corners, the same soft shadow, the same room from the screen's edges
@@ -100,9 +95,9 @@ pub(super) const SHADE_KEYS: [(ShadeKey, Icon, Text); 8] = [
 /// Where the panel's parts stand on this screen, in pixels.
 #[derive(Clone, Debug)]
 pub(super) struct ShadeGeom {
-    /// The status bar's foot: where the veil begins.
+    /// The status bar's foot: where the panel begins.
     pub top: f32,
-    /// The control centre's card, floating on that veil: the same kind of
+    /// The control centre's card, floating on the page: the same kind of
     /// card the notices below it stand in, the same room from the screen's
     /// edges.
     pub card: Rect,
@@ -135,7 +130,7 @@ pub(super) struct Shade {
     /// the finger moves it, which is a copy rather than a mix.
     pub(super) head: Option<Canvas>,
     /// The notices drawn once and kept, see-through where no card stands:
-    /// laid as a layer over the page, so the veil lets it show through.
+    /// laid as a layer over the page, so the page shows through.
     pub(super) body: Option<Canvas>,
 }
 
@@ -344,8 +339,8 @@ impl App {
     }
 
     /// The panel over the page: the control centre's card, and the notices
-    /// under it, both on the veil. Its top edge is the status bar's foot, so
-    /// the bar stays whole over it however far it is pulled.
+    /// under it, both on the page as it stands. Its top edge is the status
+    /// bar's foot, so the bar stays whole over it however far it is pulled.
     pub(super) fn compose_shade(&mut self, out: &mut Canvas, f: &Fonts, now: u64) {
         if self.shade.is_none() {
             return;
@@ -369,9 +364,9 @@ impl App {
         if let Some(head) = self.shade.as_ref().and_then(|s| s.head.as_ref()) {
             let rows = seen.min(geom.head_h as i32);
             if rows > 0 {
-                // Laid rather than put: the veil is see-through and the card
-                // rounds away from its corners, so what is behind both has to
-                // show through where they are not.
+                // Laid rather than put: the card rounds away from its corners
+                // and its shadow falls outside them, so the page has to show
+                // through where the card is not.
                 let part = head.crop(0, 0, head.w, rows as u32);
                 out.lay(&part, 0, top, 1.0);
             }
@@ -399,10 +394,9 @@ impl App {
 
         let w = m.w;
         let mut head = Canvas::new(w, geom.head_h as u32);
-        // The veil runs behind the card as it does behind the notices, so the
-        // page stays where it is and only its light goes: the card floats on
-        // that, the way one of the notices does.
-        head.fill_rect(0.0, 0.0, w as f32, geom.head_h, Rgba { r: 0, g: 0, b: 0, a: VEIL });
+        // The card floats straight on the page, as the notices below do:
+        // no sheet of dark under either, only their own shadows. A veil here
+        // showed as one dark rectangle on the wallpaper behind it.
         // The card itself, on all four corners and the same room from the
         // edges as the notices below it: the control centre is one of them,
         // with the shadow that makes it stand off the page.
@@ -450,7 +444,6 @@ impl App {
         }
 
         let mut body = Canvas::new(w, geom.body_h as u32);
-        body.fill_rect(0.0, 0.0, w as f32, geom.body_h, Rgba { r: 0, g: 0, b: 0, a: VEIL });
         let body_top = top + geom.head_h;
         let margin = m.margin;
         let card_w = w as f32 - 2.0 * margin;
@@ -459,9 +452,9 @@ impl App {
         let mut y = m.dp(BODY_TOP_DP) - scroll;
 
         if self.notifier.is_empty() {
-            // On the veil rather than a card, so the page's own ink would be
+            // On the page rather than a card, so the page's own ink would be
             // the wrong one in either theme: white, softer than a notice's
-            // title, is what reads on everything the veil lets through.
+            // title, is what reads on the wallpaper behind it.
             body.text_center(
                 &f.body,
                 &tr!(lang, "暂无通知", "暫無通知", "No notifications"),
