@@ -27,11 +27,22 @@ const SHADE_PERIOD: f32 = 0.34;
 /// reads behind the cards. 71 of 255 is 0.28.
 const VEIL: u8 = 71;
 
-const HANDLE_W_DP: f32 = 36.0;
-const HANDLE_H_DP: f32 = 4.0;
-const HANDLE_TOP_DP: f32 = 12.0;
+/// The control centre is a card of the pages' own kind — the same white, the
+/// same corners, the same soft shadow, the same room from the screen's edges
+/// as the notices below it. How far below the status bar it floats, how much
+/// room it keeps from its own edges, and how far its last row stands above
+/// its foot.
+const CARD_TOP_DP: f32 = 12.0;
+const CARD_PAD_DP: f32 = 12.0;
+const CARD_FOOT_DP: f32 = 16.0;
+/// The blur of that card's shadow, in dp: about the gap above it, so none of
+/// it is cut off by the status bar.
+const CARD_SHADOW_DP: f32 = 12.0;
+
 const BRIGHT_H_DP: f32 = 16.0;
-const BRIGHT_TOP_DP: f32 = 26.0;
+/// The brightness bar's top, and the keys' first row, down from the card's
+/// own top rather than from the screen's.
+const BRIGHT_TOP_DP: f32 = 22.0;
 const SUN_DP: f32 = 18.0;
 const SUN_GAP_DP: f32 = 10.0;
 const DOT_DP: f32 = 9.0;
@@ -42,7 +53,8 @@ const TILE_GLYPH_DP: f32 = 26.0;
 const TILE_LABEL_DP: f32 = 11.0;
 const TILE_LABEL_GAP_DP: f32 = 8.0;
 const TILE_LABEL_H_DP: f32 = 15.0;
-const HEAD_FOOT_DP: f32 = 16.0;
+/// The card's foot to the first notice's top.
+const HEAD_FOOT_DP: f32 = 10.0;
 
 const CARD_H_DP: f32 = 66.0;
 const CARD_R_DP: f32 = 14.0;
@@ -88,9 +100,12 @@ pub(super) const SHADE_KEYS: [(ShadeKey, Icon, Text); 8] = [
 /// Where the panel's parts stand on this screen, in pixels.
 #[derive(Clone, Debug)]
 pub(super) struct ShadeGeom {
-    /// The top edge of the panel when it is all the way out: the status
-    /// bar's own foot, so the bar is never covered.
+    /// The status bar's foot: where the veil begins.
     pub top: f32,
+    /// The control centre's card, floating on that veil: the same kind of
+    /// card the notices below it stand in, the same room from the screen's
+    /// edges.
+    pub card: Rect,
     pub head_h: f32,
     pub body_h: f32,
     pub bright: Rect,
@@ -256,20 +271,25 @@ impl App {
         self.shade.as_ref().map_or(0.0, |s| s.scroll)
     }
 
-    /// Scroll the notices by `delta` pixels, as far as they go. The panel's
-    /// own key stays where it is: only the notices move under it.
-    fn shade_scroll_by(&mut self, delta: f32) {
+    /// Scroll the notices by `delta` pixels, as far as they go, and answer
+    /// how far they went: the pull that asked for more than they had left is
+    /// the pull that takes the panel away. The panel's own key stays where it
+    /// is: only the notices move under it.
+    fn shade_scroll_by(&mut self, delta: f32) -> f32 {
         let max = self.shade_max_scroll();
-        let Some(shade) = self.shade.as_mut() else { return };
+        let Some(shade) = self.shade.as_mut() else { return 0.0 };
+        let before = shade.scroll;
         let next = (shade.scroll + delta).clamp(0.0, max);
-        if (next - shade.scroll).abs() < 0.5 {
-            return;
+        let moved = next - before;
+        if moved.abs() < 0.5 {
+            return 0.0;
         }
         shade.scroll = next;
         // The notices are drawn with their scroll in them: drawn again
         // rather than moved, since the cards come and go at the edges.
         shade.body = None;
         self.dirty = true;
+        moved
     }
 
     /// How far the notices may be scrolled: all of them, less the room the
@@ -324,8 +344,8 @@ impl App {
     }
 
     /// The panel over the page: the control centre's card, and the notices
-    /// under it on a veil. Its top edge is the status bar's foot, so the
-    /// bar stays whole over it however far it is pulled.
+    /// under it, both on the veil. Its top edge is the status bar's foot, so
+    /// the bar stays whole over it however far it is pulled.
     pub(super) fn compose_shade(&mut self, out: &mut Canvas, f: &Fonts, now: u64) {
         if self.shade.is_none() {
             return;
@@ -341,15 +361,19 @@ impl App {
         // The panel hangs from the status bar's foot and grows down from it:
         // how much of it is out is how tall the window it shows through is.
         // Its parts stand where they always stand, so pulling it down shows
-        // the top of it first — the handle, the brightness, the keys — and
-        // the notices only once there is room for them.
+        // the top of it first — the card's own top edge, the brightness, the
+        // keys — and the notices only once there is room for them.
         let top = geom.top.round() as i32;
         let seen = (geom.panel_h() * open).round() as i32;
 
         if let Some(head) = self.shade.as_ref().and_then(|s| s.head.as_ref()) {
             let rows = seen.min(geom.head_h as i32);
             if rows > 0 {
-                out.put_rows(head, 0, rows, top);
+                // Laid rather than put: the veil is see-through and the card
+                // rounds away from its corners, so what is behind both has to
+                // show through where they are not.
+                let part = head.crop(0, 0, head.w, rows as u32);
+                out.lay(&part, 0, top, 1.0);
             }
         }
         if seen > geom.head_h as i32
@@ -375,18 +399,24 @@ impl App {
 
         let w = m.w;
         let mut head = Canvas::new(w, geom.head_h as u32);
-        // The card's top corners round on the screen's own radius; its foot
-        // is square, where the notices begin.
-        head.fill_round_rect(0.0, 0.0, w as f32, geom.head_h + m.card_radius, m.card_radius, pal.card);
-        let cx = w as f32 / 2.0;
-        head.fill_round_rect(
-            cx - m.dp(HANDLE_W_DP) / 2.0,
-            m.dp(HANDLE_TOP_DP),
-            m.dp(HANDLE_W_DP),
-            m.dp(HANDLE_H_DP),
-            m.dp(HANDLE_H_DP) / 2.0,
-            pal.track,
+        // The veil runs behind the card as it does behind the notices, so the
+        // page stays where it is and only its light goes: the card floats on
+        // that, the way one of the notices does.
+        head.fill_rect(0.0, 0.0, w as f32, geom.head_h, Rgba { r: 0, g: 0, b: 0, a: VEIL });
+        // The card itself, on all four corners and the same room from the
+        // edges as the notices below it: the control centre is one of them,
+        // with the shadow that makes it stand off the page.
+        let card = geom.card;
+        head.shadow_round_rect(
+            card.x,
+            card.y - top,
+            card.w,
+            card.h,
+            m.card_radius,
+            m.dp(CARD_SHADOW_DP),
+            pal.shadow,
         );
+        head.fill_round_rect(card.x, card.y - top, card.w, card.h, m.card_radius, pal.card);
         icons::glyph(&mut head, Icon::Sun, geom.sun.0, geom.sun.1 - top, m.dp(SUN_DP), pal.subtitle);
         let b = geom.bright;
         let (bx, by, bw, bh) = (b.x, b.y - top, b.w, b.h);
@@ -429,13 +459,16 @@ impl App {
         let mut y = m.dp(BODY_TOP_DP) - scroll;
 
         if self.notifier.is_empty() {
+            // On the veil rather than a card, so the page's own ink would be
+            // the wrong one in either theme: white, softer than a notice's
+            // title, is what reads on everything the veil lets through.
             body.text_center(
                 &f.body,
                 &tr!(lang, "暂无通知", "暫無通知", "No notifications"),
                 w as f32 / 2.0,
                 m.dp(BODY_TOP_DP) + m.dp(CARD_H_DP) / 2.0,
                 m.dp(CARD_BODY_DP),
-                pal.subtitle,
+                Rgba { r: 255, g: 255, b: 255, a: 200 },
             );
         }
         for notice in self.notifier.iter() {
@@ -515,10 +548,20 @@ impl App {
                 self.tracker.clear();
                 self.tracker.add(now, y);
                 self.stir(now);
+                let open = self.shade_open(now);
+                // Short of out whole, the panel covers only the top of the
+                // screen: a finger below where it ends is a finger on the page
+                // meant for putting it away, as one on the page of a sheet is.
+                if open < 1.0 && y > geom.top + geom.panel_h() * open {
+                    self.shade_away(now);
+                    return fx;
+                }
                 // The bar the panel comes from still begins a pull with the
-                // panel out: a finger there drags it on down or back up.
-                if y < geom.top {
-                    self.drag = Drag::Shade { from: y, last: y };
+                // panel out: a finger there drags it on down or back up, and
+                // nowhere else does a finger on the bar mean the list.
+                let bar = y < geom.top;
+                if bar {
+                    self.drag = Drag::Shade { last: y, bar };
                     return fx;
                 }
                 if let Some(i) = geom.tiles.iter().position(|(r, _)| r.contains(x, y)) {
@@ -541,22 +584,32 @@ impl App {
                     fx.extend(self.act(action, now));
                     return fx;
                 }
-                self.drag = Drag::Shade { from: y, last: y };
+                self.drag = Drag::Shade { last: y, bar: false };
             }
             Touch::Move(x, y) => match std::mem::replace(&mut self.drag, Drag::Idle) {
-                Drag::Shade { from, last } => {
+                Drag::Shade { last, bar } => {
                     // Out whole, the panel is a list: a finger on it scrolls
-                    // what it holds, and only a pull down on a list already
-                    // at its top takes the panel away.
-                    let whole = self.shade_open(now) >= 1.0;
-                    if whole && (y < last || self.shade_scrolled() > 0.0) {
-                        self.shade_scroll_by(last - y);
+                    // what it holds until there is no more of it, and a pull
+                    // past that — or any pull from the bar itself — moves the
+                    // panel. So the way it was pulled out is the way it goes
+                    // back, and a list with no room left to scroll does not
+                    // hold the panel out.
+                    let pulled = y - last;
+                    let open = self.shade_open(now);
+                    let push = if bar {
+                        pulled
+                    } else if open >= 1.0 && (pulled < 0.0 || self.shade_scrolled() > 0.0) {
+                        let want = -pulled;
+                        let moved = self.shade_scroll_by(want);
+                        -(want - moved)
                     } else {
-                        let open = (y - from) / geom.panel_h().max(1.0);
-                        self.shade_pull(open);
+                        pulled
+                    };
+                    if push != 0.0 {
+                        self.shade_pull(open + push / geom.panel_h().max(1.0));
                     }
                     self.tracker.add(now, y);
-                    self.drag = Drag::Shade { from, last: y };
+                    self.drag = Drag::Shade { last: y, bar };
                 }
                 Drag::Slider(which, track) => {
                     self.set_slider(&t, which, track, x);
@@ -707,35 +760,41 @@ fn shade_geom(t: &Theme) -> ShadeGeom {
     let m = &t.m;
     let top = m.status_cy * 2.0;
     let margin = m.margin;
+    let card_x = margin;
+    let card_w = m.w as f32 - 2.0 * margin;
+    let card_top = top + m.dp(CARD_TOP_DP);
+    // The card keeps its own room from its edges, so the keys sit a little
+    // inside it rather than on its rim.
+    let pad = m.dp(CARD_PAD_DP);
+    let inner_x = card_x + pad;
+    let inner_w = card_w - 2.0 * pad;
     let gap = m.dp(TILE_GAP_DP);
-    let tile = (m.w as f32 - 2.0 * margin - 3.0 * gap) / 4.0;
+    let tile = (inner_w - 3.0 * gap) / 4.0;
     let pitch = tile + gap;
-    let row1 = top + m.dp(TILE_TOP_DP);
+    let row1 = card_top + m.dp(TILE_TOP_DP);
     let row2 = row1 + tile + m.dp(TILE_LABEL_GAP_DP) + m.dp(TILE_LABEL_H_DP) + gap;
+    let card_h = row2 + tile + m.dp(TILE_LABEL_GAP_DP) + m.dp(TILE_LABEL_H_DP) + m.dp(CARD_FOOT_DP) - card_top;
+    let head_foot = card_top + card_h + m.dp(HEAD_FOOT_DP);
+    let body_h = (m.h as f32 - head_foot).max(0.0);
+    let bright_x = inner_x + m.dp(SUN_DP) + m.dp(SUN_GAP_DP);
+    let bright_y = card_top + m.dp(BRIGHT_TOP_DP);
     let mut tiles = Vec::with_capacity(SHADE_KEYS.len());
     for (i, _) in SHADE_KEYS.iter().enumerate() {
         let (row, col) = (i / 4, i % 4);
-        let x = margin + col as f32 * pitch;
+        let x = inner_x + col as f32 * pitch;
         let y = if row == 0 { row1 } else { row2 };
         tiles.push((
             Rect::new(x, y, tile, tile),
             Rect::new(x, y + tile + m.dp(TILE_LABEL_GAP_DP), tile, m.dp(TILE_LABEL_H_DP)),
         ));
     }
-    let head_foot = row2 + tile + m.dp(TILE_LABEL_GAP_DP) + m.dp(TILE_LABEL_H_DP) + m.dp(HEAD_FOOT_DP);
-    let body_h = (m.h as f32 - head_foot).max(0.0);
-    let bright_x = margin + m.dp(SUN_DP) + m.dp(SUN_GAP_DP);
     ShadeGeom {
         top,
+        card: Rect::new(card_x, card_top, card_w, card_h),
         head_h: head_foot - top,
         body_h,
-        bright: Rect::new(
-            bright_x,
-            top + m.dp(BRIGHT_TOP_DP),
-            m.w as f32 - bright_x - margin,
-            m.dp(BRIGHT_H_DP),
-        ),
-        sun: (margin + m.dp(SUN_DP) / 2.0, top + m.dp(BRIGHT_TOP_DP) + m.dp(BRIGHT_H_DP) / 2.0),
+        bright: Rect::new(bright_x, bright_y, inner_x + inner_w - bright_x, m.dp(BRIGHT_H_DP)),
+        sun: (inner_x + m.dp(SUN_DP) / 2.0, bright_y + m.dp(BRIGHT_H_DP) / 2.0),
         tiles,
         clear: Rect::new(
             margin,
@@ -931,5 +990,103 @@ mod tests {
         app.touch(Touch::Up, &f, 1_200);
         app.tick(2_000);
         assert_eq!(app.shade_open(2_000), 1.0, "and the panel is still out");
+    }
+
+    /// Twelve notices, more than the panel holds, so the list has somewhere
+    /// to scroll.
+    fn crowded(app: &mut App) {
+        for i in 0..12u32 {
+            let mut notice = Notification::event(Origin::System, "row", "标题", "正文");
+            notice.id = i;
+            app.notifier.post(notice);
+        }
+    }
+
+    /// A list with nowhere left to scroll does not hold the panel out: the
+    /// pull goes on into the panel, and the panel comes away.
+    #[test]
+    fn a_pull_past_the_end_of_the_list_takes_the_panel_with_it() {
+        let f = crate::font::bundled();
+        let mut app = App::new(Screen::Desktop, 400, 800, 2.0);
+        crowded(&mut app);
+        pulled(&mut app, &f);
+        // The list is already at its end; a finger pulling up from there has
+        // only the panel left to move.
+        let max = app.shade_max_scroll();
+        app.shade.as_mut().expect("the panel is out").scroll = max;
+        app.touch(Touch::Down(200.0, 700.0), &f, 1_100);
+        app.touch(Touch::Move(200.0, 60.0), &f, 1_150);
+        assert!(app.shade_open(1_150) < 1.0, "past the list's end the panel comes back");
+        assert_eq!(app.shade_scrolled(), max, "and the list stays where it was");
+        app.touch(Touch::Up, &f, 1_200);
+        app.tick(2_000);
+        assert!(app.shade.is_none(), "a quick pull takes it away whole");
+    }
+
+    /// A finger on the status bar works the panel rather than the list,
+    /// whichever way it goes: pulled out from the bar, pushed back to it.
+    #[test]
+    fn a_pull_from_the_bar_pushes_the_panel_back_over_any_list() {
+        let f = crate::font::bundled();
+        let mut app = App::new(Screen::Desktop, 400, 800, 2.0);
+        crowded(&mut app);
+        pulled(&mut app, &f);
+        let max = app.shade_max_scroll();
+        app.shade.as_mut().expect("the panel is out").scroll = max / 2.0;
+        let top = app.shade_geom().top;
+        app.touch(Touch::Down(200.0, top - 4.0), &f, 1_100);
+        app.touch(Touch::Move(200.0, top - 44.0), &f, 1_150);
+        assert!(app.shade_open(1_150) < 1.0, "the bar pushes the panel back");
+        assert_eq!(app.shade_scrolled(), max / 2.0, "and leaves the list alone");
+    }
+
+    /// Short of out whole, the panel covers only the top of the screen: a
+    /// finger on the page below it is meant for putting it away.
+    #[test]
+    fn a_finger_below_a_half_pulled_panel_puts_it_away() {
+        let f = crate::font::bundled();
+        let mut app = App::new(Screen::Desktop, 400, 800, 2.0);
+        app.shade_down();
+        app.shade_pull(0.5);
+        let geom = app.shade_geom();
+        let below = geom.top + geom.panel_h() * 0.5 + 40.0;
+        app.touch(Touch::Down(200.0, below), &f, 10);
+        app.touch(Touch::Up, &f, 20);
+        app.tick(1_000);
+        assert!(app.shade.is_none(), "the panel is put away whole");
+    }
+
+    /// The panel stands over the page, not on it: back puts it away first,
+    /// rather than leaving the page under it.
+    #[test]
+    fn the_back_key_puts_the_panel_away_first() {
+        let f = crate::font::bundled();
+        let mut app = App::new(Screen::Desktop, 400, 800, 2.0);
+        pulled(&mut app, &f);
+        let before = app.screen();
+        app.key(Key::Back, 1_100);
+        app.tick(2_000);
+        assert!(app.shade.is_none(), "the panel goes first");
+        assert_eq!(app.screen(), before, "and the page under it is left where it was");
+    }
+
+    /// The control centre is a card of the pages' own kind: the same room
+    /// from the screen's edges as the notices below it, floating below the
+    /// bar rather than hanging from it, with its own room inside.
+    #[test]
+    fn the_control_centre_is_a_card_of_the_pages_own_kind() {
+        let app = App::new(Screen::Desktop, 400, 800, 2.0);
+        let t = app.theme();
+        let geom = app.shade_geom();
+        assert_eq!(geom.card.x, t.m.margin, "inset from the left edge");
+        assert_eq!(geom.card.x + geom.card.w, t.m.w as f32 - t.m.margin, "and the right");
+        assert!(geom.card.y > geom.top, "it floats below the bar");
+        assert_eq!(geom.card.w, t.m.w as f32 - 2.0 * t.m.margin, "as wide as a notice");
+        let (first, _) = geom.tiles[0];
+        assert!(first.x > geom.card.x, "the keys keep the card's own room");
+        assert!(
+            geom.card.y + geom.card.h + t.m.dp(HEAD_FOOT_DP) <= geom.top + geom.head_h,
+            "the notices begin below its foot"
+        );
     }
 }

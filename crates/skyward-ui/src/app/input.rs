@@ -150,7 +150,7 @@ impl App {
             self.tracker.add(now, y);
             self.stir(now);
             self.shade_down();
-            self.drag = Drag::Shade { from: y, last: y };
+            self.drag = Drag::Shade { last: y, bar: true };
             return Vec::new();
         }
         let scroll = self.top().1;
@@ -431,11 +431,11 @@ impl App {
                 // A finger on the panel, which is moved by its own path in
                 // `shade_touch`; here only for a pull that began on the bar
                 // and has not yet shown the panel at all.
-                Drag::Shade { from, .. } => {
-                    let open = (y - from) / self.shade_geom().panel_h().max(1.0);
+                Drag::Shade { last, .. } => {
+                    let open = self.shade_open(now) + (y - last) / self.shade_geom().panel_h().max(1.0);
                     self.shade_pull(open);
                     self.tracker.add(now, y);
-                    self.drag = Drag::Shade { from, last: y };
+                    self.drag = Drag::Shade { last: y, bar: true };
                 }
                 Drag::Idle => {}
             },
@@ -768,6 +768,12 @@ impl App {
         match key {
             Key::Back => {
                 self.button = Some((key, Press::Spent));
+                // The panel stands over the page rather than on it: back puts
+                // it away first, as it puts away a sheet and the power menu.
+                if self.shade_shows(at) {
+                    self.shade_away(at);
+                    return Vec::new();
+                }
                 self.act(Action::Back, at)
             }
             Key::VolumeUp | Key::VolumeDown => {
