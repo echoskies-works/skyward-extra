@@ -44,6 +44,10 @@ pub struct Frame {
     /// A strip held at the bottom of the screen over the page; the page
     /// scrolls far enough for nothing to stay under it.
     pub dock: Option<Dock>,
+    /// The bar held at the foot of the page, floating clear of its edges:
+    /// the faces it names, frosted from the page under it. It takes no room
+    /// of its own — the page shows under and behind it.
+    pub foot: Option<FootBar>,
     /// A text field's blinking cursor, in page coordinates.
     pub caret: Option<widgets::Caret>,
     /// The round button at the right end of the bar: what it shows, and
@@ -77,6 +81,24 @@ pub struct Dock {
     pub canvas: Canvas,
     /// In the strip's own coordinates.
     pub hits: Vec<Hit>,
+}
+
+/// The bar held at the foot of a page over it: the faces the page names
+/// along the bottom, the one shown, and what touching each does.
+///
+/// It is not a [`Dock`]: that one is drawn whole before the page is, since
+/// its ground is its own. This one is frosted from whatever lies under it,
+/// so it can only be laid once the page is.
+pub struct FootBar {
+    pub faces: &'static [FootFace],
+    pub shown: usize,
+}
+
+/// One face of such a bar: its mark, its word, and what touching it does.
+pub struct FootFace {
+    pub icon: crate::icons::Icon,
+    pub name: Text,
+    pub action: Action,
 }
 
 /// The rows of a list drawn as they come into view, the way a list view
@@ -228,6 +250,7 @@ impl Frame {
             fold: None,
             scrollback: None,
             dock: None,
+            foot: None,
             caret: None,
             button: None,
             button_still: false,

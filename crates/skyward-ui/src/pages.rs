@@ -2,7 +2,7 @@ use crate::app::{
     Action, BackupAt, BackupEnd, BackupJob, CalcFace, CalcKey, CalcOp, Check, ClashChoice, ClockFace, Confirm, Damage, Data, Dock,
     DownloadEnd,
     EraseStop, Field, FileKind,
-    FileOp, FileTask, Fold, Folder, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, MusicFace, MusicFilter, Pick, Place, Rows,
+    FileOp, FileTask, Fold, Folder, FootBar, FootFace, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, MusicFace, MusicFilter, Pick, Place, Rows,
     Screen,
     SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, StoreFace, Switch, SystemsWork, Target, TasksFace, UsbDrive, UsbLink, Wipe, ADDABLE,
     BACKUP_PARTS, CLOCK_MOST, DATA_PARTITION, DEFAULT_TIMER_SOUND, DOWNLOADS, FASTBOOT_CHOICES, RULER_MINUTE_DP, SCREEN_OFF, TARGETS, TIME_ZONES,
@@ -718,13 +718,14 @@ pub fn tasks(cx: &Ctx) -> Frame {
     }
 }
 
-/// The Aether store's three faces, in the order it names them across its
-/// top: what it puts in front, everything it lists, and what the phone
-/// already has.
-const STORE_FACES: [(StoreFace, Text); 3] = [
-    (StoreFace::Home, tri("首页", "首頁", "Home")),
-    (StoreFace::All, tri("全部", "全部", "All")),
-    (StoreFace::Mine, tri("我的", "我的", "Mine")),
+/// The Aether store's three faces, in the order the bar at its foot names
+/// them: what it puts in front, everything it lists, and what the phone
+/// already has. Each carries the placeholder mark it answers to until it
+/// has a sign of its own.
+const STORE_FOOT: [FootFace; 3] = [
+    FootFace { icon: Icon::Dot, name: tri("首页", "首頁", "Home"), action: Action::StoreFace(StoreFace::Home) },
+    FootFace { icon: Icon::Square, name: tri("全部", "全部", "All"), action: Action::StoreFace(StoreFace::All) },
+    FootFace { icon: Icon::Ring, name: tri("我的", "我的", "Mine"), action: Action::StoreFace(StoreFace::Mine) },
 ];
 
 /// The Aether store the desktop opens: what it puts in front, all it lists
@@ -732,34 +733,37 @@ const STORE_FACES: [(StoreFace, Text); 3] = [
 /// it yet — nothing is fetched — so each says where it stands rather than
 /// standing empty, as the tasks page does.
 ///
-/// It keeps the shape the clock, the calculator, the player and the tasks
-/// page take: the words across the top, no `<` and no large title, the gear
-/// at the top right and a finger dragged level across the page stepping to
-/// the face beside the one shown.
+/// It opens with its title in large type, as the recovery's own pages do,
+/// and names its three faces along the bar at its foot, which stays where
+/// it is while a face turns over or a finger pulls one aside.
 pub fn store(cx: &Ctx) -> Frame {
     let (t, f, l) = (cx.t, cx.f, cx.state.lang);
     let m = &t.m;
     let mut c = page(cx);
-    let mut out = Vec::new();
-
-    out.extend(face_tabs(&mut c, t, f, l, &STORE_FACES, cx.state.store_face, Action::StoreFace));
 
     let said = match cx.state.store_face {
         StoreFace::Home => l.among("还没有推荐", "還沒有推薦", "Nothing is recommended yet"),
         StoreFace::All => l.among("还没有应用", "還沒有應用", "No apps are listed yet"),
         StoreFace::Mine => l.among("还没有安装", "還沒有安裝", "Nothing is installed yet"),
     };
-    c.text_center(&f.body, said, m.w as f32 / 2.0, m.h as f32 / 2.0, m.sub_px, t.pal.subtitle);
+    // The middle of the room the title and the bar leave, not of the screen:
+    // a word set at the screen's middle would sit low in what is left.
+    let cy = (m.content_top + m.h as f32 - widgets::foot_height(t)) / 2.0;
+    c.text_center(&f.body, said, m.w as f32 / 2.0, cy, m.sub_px, t.pal.subtitle);
 
-    // As on the tasks page: no `<` and no large title, the clock's own gear
-    // at the right end, and nothing behind it yet.
+    // No `<`: an app opened from the desktop leaves it the way the desktop's
+    // own apps do. The button at the right end is the clock's own gear, so
+    // the apps carry one band of controls; this page has no settings behind
+    // it yet, so it answers a touch with nothing.
+    let shown = StoreFace::ALL.iter().position(|face| *face == cx.state.store_face).unwrap_or(0);
     Frame {
         back: false,
-        header: false,
+        header: true,
         bg: t.pal.bg,
         button: Some((widgets::Glyph::Gear, Action::Idle)),
         button_still: true,
-        ..Frame::new(t, c, out, "", m.content_top)
+        foot: Some(FootBar { faces: &STORE_FOOT, shown }),
+        ..Frame::new(t, c, Vec::new(), l.pick(tri("商店", "商店", "Store")), m.content_top)
     }
 }
 

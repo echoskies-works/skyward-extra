@@ -5,6 +5,7 @@
 //! wallpaper covers the screen until the finger drags it off.
 
 use super::*;
+use crate::canvas::soften;
 
 /// Where the clock stands down the screen, as a share of its height. High
 /// enough to leave the middle of the screen to the wallpaper, as the lock's
@@ -320,53 +321,6 @@ pub(super) fn soft_ground(picture: &Canvas, w: u32, h: u32) -> Canvas {
     let mut out = Canvas::new(w, h);
     out.blit_scaled(&small, w as f32, h as f32);
     out
-}
-
-/// `c` with every pixel the mean of the `reach` pixels either side of it,
-/// past an edge counting the edge pixel again, three times over, which is
-/// close to a Gaussian of that spread.
-pub(super) fn soften(c: &mut Canvas, reach: usize) {
-    if reach == 0 || c.w == 0 || c.h == 0 {
-        return;
-    }
-    let (w, h) = (c.w as usize, c.h as usize);
-    let width = (2 * reach + 1) as u32;
-    let mut a = c.data.clone();
-    let mut b = vec![0u8; a.len()];
-    for _ in 0..3 {
-        // Along each row, then down each column: the running sum of the
-        // window either side of the pixel.
-        for y in 0..h {
-            let row = y * w * 4;
-            for ch in 0..4 {
-                let mut sum = a[row + ch] as u32 * (reach as u32 + 1);
-                for k in 1..=reach {
-                    sum += a[row + k.min(w - 1) * 4 + ch] as u32;
-                }
-                for x in 0..w {
-                    b[row + x * 4 + ch] = ((sum + width / 2) / width) as u8;
-                    let gone = a[row + x.saturating_sub(reach) * 4 + ch] as u32;
-                    let come = a[row + (x + reach + 1).min(w - 1) * 4 + ch] as u32;
-                    sum = sum - gone + come;
-                }
-            }
-        }
-        for x in 0..w {
-            for ch in 0..4 {
-                let mut sum = b[x * 4 + ch] as u32 * (reach as u32 + 1);
-                for k in 1..=reach {
-                    sum += b[k.min(h - 1) * w * 4 + x * 4 + ch] as u32;
-                }
-                for y in 0..h {
-                    a[y * w * 4 + x * 4 + ch] = ((sum + width / 2) / width) as u8;
-                    let gone = b[y.saturating_sub(reach) * w * 4 + x * 4 + ch] as u32;
-                    let come = b[(y + reach + 1).min(h - 1) * w * 4 + x * 4 + ch] as u32;
-                    sum = sum - gone + come;
-                }
-            }
-        }
-    }
-    c.data = a;
 }
 
 /// Whether `picture` is dark enough that light ink reads on it: the mean

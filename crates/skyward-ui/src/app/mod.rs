@@ -45,6 +45,7 @@ mod draw;
 mod desktop;
 mod entry;
 mod filesystem;
+mod foot;
 mod frame;
 mod input;
 mod install;
@@ -81,6 +82,7 @@ pub use decrypt::*;
 use desktop::*;
 pub use entry::*;
 pub use filesystem::*;
+pub use foot::*;
 pub use frame::*;
 pub use install::*;
 pub use manager::*;
@@ -1516,6 +1518,9 @@ pub struct App {
     /// Faces drawn whole under a finger and moved with it, on the pages
     /// whose top words are tabs.
     face_swipe: Option<FaceSwipe>,
+    /// The pill of the bar at the foot of a page, on its way from the face
+    /// it was behind to the one just touched.
+    foot_slide: Option<FootSlide>,
     /// A finger at the foot of the screen pulling, and what it pulls.
     foot: Option<Foot>,
     /// While a page slides: the page shown drawn on its own, and how it
@@ -1618,6 +1623,7 @@ impl App {
             face_turn: None,
             face_page: None,
             face_swipe: None,
+            foot_slide: None,
             foot: None,
             layer: None,
             stale: Vec::new(),
@@ -1785,6 +1791,7 @@ impl App {
             // clock: it is drawn frame after frame until it has gone.
             || self.banner.is_some()
             || self.face_moving(now)
+            || self.foot_moving(now)
     }
 
     /// Whether a clock face is giving way to the other. The frame it lands

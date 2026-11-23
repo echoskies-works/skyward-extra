@@ -498,6 +498,15 @@ impl App {
             out.clear(t.pal.bg);
             out.lay(&swipe.left, shift, 0, 1.0);
             out.lay(&swipe.right, neighbor_at, 0, 1.0);
+        }
+        if self.face_swipe.is_some() {
+            // The controls at the top and the bar at the foot keep their
+            // place while the faces move. The strip was drawn from the pages
+            // alone — neither the `<`, the round button and the titles nor
+            // the bar are in a page's canvas — so all of them are laid over
+            // both halves here.
+            self.paint_chrome(out, t, view);
+            self.paint_foot(out, t, f, now);
             return;
         }
         let along = match &self.face_turn {
@@ -506,7 +515,9 @@ impl App {
         };
         if along >= 1.0 {
             self.face_turn = None;
-            return self.paint_page(out, t, Some((f, info)), view);
+            self.paint_page(out, t, Some((f, info)), view);
+            self.paint_foot(out, t, f, now);
+            return;
         }
         let (w, h) = (out.w, out.h);
         let mut page = match self.face_page.take() {
@@ -520,6 +531,8 @@ impl App {
         let dx = ((1.0 - along) * t.m.dp(FACE_SLIDE_DP)).round() as i32;
         out.lay(&page, dx, 0, along);
         self.face_page = Some(page);
+        // The foot stays put while the face slides in over it.
+        self.paint_foot(out, t, f, now);
     }
 
     pub(super) fn paint_page(&mut self, out: &mut Canvas, t: &Theme, fresh: Option<(&Fonts, &DeviceInfo)>, view: &View) {
@@ -536,7 +549,6 @@ impl App {
             }
         };
         let frame = self.frame.as_ref().expect("a page is drawn from its frame");
-        let (_, big, small) = self.titles.as_mut().expect("a page's titles are drawn with it");
         // The row a finger holds darkens as part of the page, under what is
         // laid over the page.
         let press_row = |out: &mut Canvas| {
@@ -620,10 +632,6 @@ impl App {
                 let (_, words) = self.search_words.as_ref().expect("a folding search bar's words are made with its page");
                 fold.draw(out, t, words, offset);
             }
-            if frame.header {
-                let level = (1.0 - frame.title_lift(scroll) / m.dp(TITLE_FADE_DP)).clamp(0.0, 1.0);
-                draw_faded(out, big, 0.0, -frame.title_lift(offset), t.pal.text, level, (1.0 - level) * m.dp(TITLE_BLUR_DP));
-            }
         }
         // The search page's round button and the home page's search bar
         // darken at once under a finger.
@@ -660,6 +668,28 @@ impl App {
             out.put(&d.canvas, (out.h - d.canvas.h) as i32);
             shine(out, Group::Dock);
         }
+        // A page's `<`, its round button and its titles are laid over the
+        // page rather than drawn into it, so they keep their place while
+        // anything on the page moves.
+        self.paint_chrome(out, t, view);
+    }
+
+    /// The controls a page keeps at its top — the `<`, the round button at
+    /// the right end — and the titles that scroll away over them: the large
+    /// one while it stands, and the small one that takes its place.
+    ///
+    /// They lie over the page rather than in it, which is what keeps them in
+    /// place while a finger pulls a face aside: the strip is drawn from the
+    /// pages alone, and this is laid over it after.
+    fn paint_chrome(&mut self, out: &mut Canvas, t: &Theme, view: &View) {
+        let m = t.m;
+        let (scroll, offset, bar, pressing) = (view.scroll, view.offset, view.bar, view.pressing);
+        let (_, big, small) = self.titles.as_mut().expect("a page's titles are drawn with it");
+        let frame = self.frame.as_ref().expect("a page is drawn from its frame");
+        if frame.header {
+            let level = (1.0 - frame.title_lift(scroll) / m.dp(TITLE_FADE_DP)).clamp(0.0, 1.0);
+            draw_faded(out, big, 0.0, -frame.title_lift(offset), t.pal.text, level, (1.0 - level) * m.dp(TITLE_BLUR_DP));
+        }
         if frame.back {
             let (_, chip, x, y) = self.chip.as_ref().expect("a page's `<` is drawn with it");
             out.lay(chip, *x, *y, bar);
@@ -681,8 +711,11 @@ impl App {
                 widgets::button_glyph(out, t, glyph, t.pal.text);
             }
         }
-        if frame.back || frame.button.is_some() {
-            shine(out, Group::Fixed);
+        if (frame.back || frame.button.is_some())
+            && let Some((g, r, radius, tint)) = view.light
+            && g == Group::Fixed
+        {
+            out.fill_round_rect(r.x, r.y, r.w, r.h, radius, tint);
         }
         let level = view.title;
         let blur = if frame.hero.is_some() { 0.0 } else { (1.0 - level) * m.dp(TITLE_BLUR_DP) };

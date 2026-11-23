@@ -200,10 +200,25 @@ impl App {
                 let dock = self.frame.as_ref().and_then(|fr| fr.dock.as_ref()).map(|d| (d, self.h as f32 - d.canvas.h as f32));
                 let on_dock = dock.filter(|&(_, top)| y >= top);
                 let button = self.frame.as_ref().and_then(|fr| fr.button).map(|(_, a)| (a, widgets::button_rect(&t)));
+                // The bar at the foot floats over the page: it answers
+                // before anything under it does, and by its own cells.
+                let foot = self
+                    .frame
+                    .as_ref()
+                    .and_then(|fr| fr.foot.as_ref())
+                    .map(|ft| widgets::foot_geom(&t, ft.faces.len(), ft.shown as f32));
+                let on_foot = foot.as_ref().filter(|g| g.bar.contains(x, y)).and_then(|g| {
+                    g.cells.iter().position(|c| c.contains(x, y)).map(|k| {
+                        let ft = self.frame.as_ref().and_then(|fr| fr.foot.as_ref()).expect("the bar holds its faces");
+                        (ft.faces[k].action, g.cells[k])
+                    })
+                });
                 let hit = if self.frame.as_ref().is_some_and(|fr| fr.back) && back.contains(x, y) {
                     Some((Action::Back, back))
                 } else if let Some(button) = button.filter(|(_, r)| r.contains(x, y)) {
                     Some(button)
+                } else if let Some(foot) = on_foot {
+                    Some(foot)
                 } else if let Some((d, top)) = on_dock {
                     d.hits.iter().find(|h| h.rect.contains(x, y - top)).map(|h| (h.action, Rect { y: h.rect.y + top, ..h.rect }))
                 } else if let Some((p, top)) = on_strip {
@@ -269,6 +284,13 @@ impl App {
                 Drag::Press { x: x0, y: y0, action, edge: at_edge, at } => {
                     self.tracker.add(now, y);
                     let (dx, dy) = (x - x0, y - y0);
+                    // A finger that came down on the bar at the foot is
+                    // working the bar: pulled sideways it does not turn the
+                    // faces, which the bar itself is for.
+                    let theme = self.theme();
+                    let on_foot = self.frame.as_ref().and_then(|fr| fr.foot.as_ref()).is_some_and(|ft| {
+                        widgets::foot_geom(&theme, ft.faces.len(), ft.shown as f32).bar.contains(x0, y0)
+                    });
                     self.drag = match at_edge {
                         Some(from_left) if dx.abs() > slop && dx.abs() > dy.abs() => {
                             self.dirty = true;
@@ -294,7 +316,7 @@ impl App {
                             self.dirty = true;
                             Drag::Page { start: x0 }
                         }
-                        _ if self.face_slots().is_some() && dx.abs() > slop && dx.abs() > dy.abs() => {
+                        _ if !on_foot && self.face_slots().is_some() && dx.abs() > slop && dx.abs() > dy.abs() => {
                             // Dragged level across a page whose top words are
                             // tabs, its faces come along with the finger —
                             // the way the words name them, a pull to the left

@@ -1577,6 +1577,80 @@ pub fn dock_bar(t: &Theme, f: &Fonts, bg: Rgba, labels: &[&str]) -> (Canvas, Vec
     (c, rects)
 }
 
+/// The bar held at the foot of a page, floating clear of the screen's
+/// edges: how tall it is, how far its sides and its foot keep from them,
+/// and the sizes of what it holds, in dp. The foot's keep is the gesture
+/// strip's, so a pull up from the bottom edge still finds the page.
+const FOOT_H: f32 = 52.0;
+const FOOT_SIDE: f32 = 12.0;
+/// The gesture strip's own height, so a pull up from the screen's foot finds
+/// the page rather than the bar.
+const FOOT_BOTTOM: f32 = 24.0;
+const FOOT_ICON: f32 = 21.0;
+const FOOT_PX: f32 = 11.0;
+/// The pill behind the face shown: a little shorter than the bar, and a
+/// little clear of the cell's sides.
+const FOOT_PILL_H: f32 = 40.0;
+const FOOT_PILL_SIDE: f32 = 5.0;
+
+/// Where the bar at the foot of a page stands, and where each of its cells
+/// and the pill behind the one shown do, on screen.
+pub struct FootGeom {
+    pub bar: Rect,
+    pub cells: Vec<Rect>,
+    /// The pill behind the cell at `shown`.
+    pub pill: Rect,
+}
+
+/// How much of the screen's foot the bar takes, from the bottom edge up:
+/// what a page keeps clear of so nothing lies under it.
+pub fn foot_height(t: &Theme) -> f32 {
+    t.m.dp(FOOT_H + FOOT_BOTTOM)
+}
+
+/// The bar's shape for `count` faces with the pill standing at `shown`,
+/// counted in cells from the left: a whole number for the face shown, and
+/// a fraction while the pill is on its way to another.
+pub fn foot_geom(t: &Theme, count: usize, shown: f32) -> FootGeom {
+    let m = &t.m;
+    let side = m.dp(FOOT_SIDE);
+    let h = m.dp(FOOT_H);
+    let bar = Rect::new(side, m.h as f32 - m.dp(FOOT_BOTTOM) - h, m.w as f32 - side * 2.0, h);
+    let count = count.max(1);
+    let w = bar.w / count as f32;
+    let cells: Vec<Rect> = (0..count).map(|k| Rect::new(bar.x + w * k as f32, bar.y, w, h)).collect();
+    let at = shown.clamp(0.0, (count - 1) as f32);
+    let inset = m.dp(FOOT_PILL_SIDE);
+    let pill = Rect::new(
+        bar.x + w * at + inset,
+        bar.y + (h - m.dp(FOOT_PILL_H)) / 2.0,
+        w - inset * 2.0,
+        m.dp(FOOT_PILL_H),
+    );
+    FootGeom { bar, cells, pill }
+}
+
+/// What the bar holds: the pill behind the face shown, then each face's
+/// mark over its word, the one shown in the accent colour and the rest
+/// quiet. The bar itself — its frosted ground and the shadow under it —
+/// is laid by the page before this, since only the screen knows what lies
+/// under the bar to be frosted.
+pub fn foot_marks(c: &mut Canvas, t: &Theme, f: &Fonts, cells: &[Rect], marks: &[(Icon, &str)], shown: usize, pill: Rect) {
+    let m = &t.m;
+    // The pill is a colour of its own rather than a hole in the bar: taken
+    // all but whole, so the frosting under it still shows faintly.
+    c.fill_round_rect(pill.x, pill.y, pill.w, pill.h, pill.h / 2.0, t.pal.switch_off.with_alpha(216));
+    let icon = m.dp(FOOT_ICON);
+    let px = m.dp(FOOT_PX);
+    for (k, (mark, word)) in marks.iter().enumerate() {
+        let Some(cell) = cells.get(k) else { continue };
+        let cx = cell.x + cell.w / 2.0;
+        let ink = if k == shown { t.pal.accent } else { t.pal.subtitle };
+        icons::glyph(c, *mark, cx, cell.y + m.dp(17.5), icon, ink);
+        c.text_center(&f.body, word, cx, cell.y + m.dp(37.0), px, ink);
+    }
+}
+
 /// A card holding text being typed, with the cursor after it; text too long
 /// for the card shows its end, where the cursor is. Returns where the card
 /// ends, and the cursor.

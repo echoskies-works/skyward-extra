@@ -79,6 +79,13 @@ pub enum Icon {
     Store,
     /// A sun behind a cloud: what a weather page shows.
     Weather,
+    /// A filled disc: a face's mark in a bar at the foot of a page until
+    /// the face has a drawn sign of its own.
+    Dot,
+    /// A filled square, the same.
+    Square,
+    /// A ring, the same.
+    Ring,
     /// A triangle: the stopwatch's key that sets the count going.
     Play,
     /// Two bars: the stopwatch's key that stops the count where it is.
@@ -514,6 +521,16 @@ const STORE: &[Part] = &[
     )),
 ];
 
+/// A filled disc, a filled square and a ring: the marks a face answers to
+/// in the bar at the foot of a page until its own sign is drawn. They are
+/// placeholders and nothing else — the store's three faces, the clock's
+/// two, all of them wait for a sign that says what they are.
+const DOT: &[Part] = &[add(Shape::Fill("M6.2,14A7.8,7.8 0 1 1 21.8,14A7.8,7.8 0 1 1 6.2,14Z"))];
+const SQUARE: &[Part] = &[add(Shape::Fill("M7.4,7.4H20.6V20.6H7.4Z"))];
+const RING: &[Part] = &[add(Shape::EvenOdd(
+    "M5.6,14A8.4,8.4 0 1 1 22.4,14A8.4,8.4 0 1 1 5.6,14Z M9.4,14A4.6,4.6 0 1 0 18.6,14A4.6,4.6 0 1 0 9.4,14Z",
+))];
+
 /// A sun behind a cloud: what a weather page shows. Drawn the stock way
 /// rather than copied, since the stock Settings has no weather of its own:
 /// the sun's disc and the four rays it throws, then the cloud in front of
@@ -664,6 +681,9 @@ fn outline(icon: Icon) -> (&'static [Part], f32) {
         Icon::Tasks => (TASKS, 1.0),
         Icon::Store => (STORE, 1.0),
         Icon::Weather => (WEATHER, 1.0),
+        Icon::Dot => (DOT, 1.0),
+        Icon::Square => (SQUARE, 1.0),
+        Icon::Ring => (RING, 1.0),
         Icon::Play => (PLAY, PLAY_SCALE),
         Icon::Pause => (PAUSE, PAUSE_SCALE),
         Icon::Flag => (FLAG, FLAG_SCALE),
@@ -856,7 +876,7 @@ fn path(d: &str) -> tiny_skia::Path {
 mod tests {
     use super::*;
 
-    const ALL: [Icon; 29] = [
+    const ALL: [Icon; 32] = [
         Icon::Install,
         Icon::Backup,
         Icon::Restore,
@@ -885,6 +905,9 @@ mod tests {
         Icon::Tasks,
         Icon::Store,
         Icon::Weather,
+        Icon::Dot,
+        Icon::Square,
+        Icon::Ring,
         Icon::Settings,
     ];
 

@@ -29,6 +29,8 @@ pub enum Group {
     Page,
     /// On the strip held at the bottom of the screen.
     Dock,
+    /// On the bar that floats at the foot of a page over it.
+    Foot,
 }
 
 /// A stop and where it is: in screen coordinates for the `<`, and in its
@@ -42,7 +44,8 @@ pub struct Spot {
 
 /// The stops of `frame` in the order the keys go through them: the `<` and
 /// the bar's round button, the strip's from left to right, the page's own
-/// from the top down and left to right, then the bottom strip's.
+/// from the top down and left to right, then the bottom strip's, and the
+/// foot's bar last of all.
 pub fn spots(t: &Theme, frame: &Frame) -> Vec<Spot> {
     let mut out = Vec::new();
     if frame.back {
@@ -83,6 +86,17 @@ pub fn spots(t: &Theme, frame: &Frame) -> Vec<Spot> {
         let mut dock: Vec<Spot> = d.hits.iter().map(|h| Spot { stop: Stop::Hit(h.action), group: Group::Dock, rect: h.rect }).collect();
         dock.sort_by(across);
         out.extend(dock);
+    }
+    if let Some(bar) = &frame.foot {
+        let geom = widgets::foot_geom(t, bar.faces.len(), bar.shown as f32);
+        let mut foot: Vec<Spot> = geom
+            .cells
+            .iter()
+            .enumerate()
+            .map(|(k, r)| Spot { stop: Stop::Hit(bar.faces[k].action), group: Group::Foot, rect: *r })
+            .collect();
+        foot.sort_by(across);
+        out.extend(foot);
     }
     out
 }

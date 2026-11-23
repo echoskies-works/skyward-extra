@@ -126,7 +126,7 @@ impl App {
         let (max, n) = (self.max_scroll(), spots.len());
         let page = |k: usize| spots[k].group == Group::Page;
         let held = |k: usize| matches!(spots[k].group, Group::Fixed | Group::Strip);
-        let docked = |k: usize| spots[k].group == Group::Dock;
+        let docked = |k: usize| matches!(spots[k].group, Group::Dock | Group::Foot);
         // The page's own controls not wholly above the band, or below it.
         let from_top = |k: usize| page(k) && self.place(&spots[k], scroll).is_some_and(|r| r.y + r.h > top);
         let from_bottom = |k: usize| page(k) && self.place(&spots[k], scroll).is_some_and(|r| r.y < bottom);
@@ -261,6 +261,9 @@ impl App {
             Group::Strip => pinned_top(&self.theme(), fr.pinned.as_ref().expect("the strip holds its controls"), offset),
             Group::Page => return fr.shown(s.rect, offset),
             Group::Dock => self.h as f32 - fr.dock.as_ref().expect("the dock holds its controls").canvas.h as f32,
+            // The bar at the foot stands where it is drawn: its cells are
+            // already in the screen's own terms.
+            Group::Foot => 0.0,
         };
         Some(Rect { y: s.rect.y + dy, ..s.rect })
     }

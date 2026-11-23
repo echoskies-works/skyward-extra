@@ -1814,6 +1814,140 @@ fn erfc(x: f32) -> f32 {
     poly * (-x * x).exp()
 }
 
+/// `c` with every pixel the mean of the `reach` pixels either side of it,
+/// past an edge counting the edge pixel again, three times over, which is
+/// close to a Gaussian of that spread.
+pub fn soften(c: &mut Canvas, reach: usize) {
+    if reach == 0 || c.w == 0 || c.h == 0 {
+        return;
+    }
+    let (w, h) = (c.w as usize, c.h as usize);
+    let width = (2 * reach + 1) as u32;
+    let mut a = c.data.clone();
+    let mut b = vec![0u8; a.len()];
+    for _ in 0..3 {
+        // Along each row, then down each column: the running sum of the
+        // window either side of the pixel.
+        for y in 0..h {
+            let row = y * w * 4;
+            for ch in 0..4 {
+                let mut sum = a[row + ch] as u32 * (reach as u32 + 1);
+                for k in 1..=reach {
+                    sum += a[row + k.min(w - 1) * 4 + ch] as u32;
+                }
+                for x in 0..w {
+                    b[row + x * 4 + ch] = ((sum + width / 2) / width) as u8;
+                    let gone = a[row + x.saturating_sub(reach) * 4 + ch] as u32;
+                    let come = a[row + (x + reach + 1).min(w - 1) * 4 + ch] as u32;
+                    sum = sum - gone + come;
+                }
+            }
+        }
+        for x in 0..w {
+            for ch in 0..4 {
+                let mut sum = b[x * 4 + ch] as u32 * (reach as u32 + 1);
+                for k in 1..=reach {
+                    sum += b[k.min(h - 1) * w * 4 + x * 4 + ch] as u32;
+                }
+                for y in 0..h {
+                    a[y * w * 4 + x * 4 + ch] = ((sum + width / 2) / width) as u8;
+                    let gone = b[y.saturating_sub(reach) * w * 4 + x * 4 + ch] as u32;
+                    let come = b[(y + reach + 1).min(h - 1) * w * 4 + x * 4 + ch] as u32;
+                    sum = sum - gone + come;
+                }
+            }
+        }
+    }
+    c.data = a;
+}
+
+impl Canvas {
+    /// The rounded rectangle at (`x`, `y`) of size `w` by `h` and radius `r`,
+    /// blurred: what lies under it taken one pixel in `step`, softened `blur`
+    /// either side three times over, and stretched back over the rectangle at
+    /// `fill` of its strength, so what is under reads through as its colours
+    /// without its edges.
+    ///
+    /// Nothing is written outside the rectangle: its corners keep the page as
+    /// it was, which is what lets a rounded bar stand over a page.
+    #[allow(clippy::too_many_arguments)]
+    pub fn frost_round_rect(&mut self, x: f32, y: f32, w: f32, h: f32, r: f32, step: u32, blur: usize, fill: f32) {
+        if fill <= 0.0 || w < 1.0 || h < 1.0 {
+            return;
+        }
+        let step = step.max(1);
+        // The samples come from a little beyond the rectangle, so the blur has
+        // something to reach past its edge for: without it the edge pixel
+        // smears along it.
+        let pad = (step * (blur as u32 + 1)) as f32;
+        let rx = (x - pad).max(0.0) as u32;
+        let ry = (y - pad).max(0.0) as u32;
+        let rx1 = ((x + w + pad).ceil() as u32).min(self.w);
+        let ry1 = ((y + h + pad).ceil() as u32).min(self.h);
+        if rx1 <= rx || ry1 <= ry {
+            return;
+        }
+        let (rw, rh) = (rx1 - rx, ry1 - ry);
+        let (sw, sh) = (rw.div_ceil(step), rh.div_ceil(step));
+        let mut small = Canvas::new(sw, sh);
+        for j in 0..sh {
+            let sy = (ry + (j * step).min(rh - 1)) as usize;
+            for i in 0..sw {
+                let sx = (rx + (i * step).min(rw - 1)) as usize;
+                let from = (sy * self.w as usize + sx) * 4;
+                let to = ((j * sw + i) * 4) as usize;
+                small.data[to..to + 4].copy_from_slice(&self.data[from..from + 4]);
+            }
+        }
+        soften(&mut small, blur);
+        let sample = |i: u32, j: u32| {
+            let k = ((j * sw + i) * 4) as usize;
+            [small.data[k], small.data[k + 1], small.data[k + 2], small.data[k + 3]]
+        };
+
+        let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+        let (hx, hy) = (w / 2.0, h / 2.0);
+        let r = r.min(hx).min(hy).max(0.0);
+        // The rows and columns wholly inside the straight edges: everything on
+        // them is covered, and only the four corners are a shape.
+        let (straight_top, straight_bottom) = (y + r, y + h - r);
+        let (straight_left, straight_right) = (x + r, x + w - r);
+        let (px0, px1) = self.columns(x.floor() as i32, (x + w).ceil() as i32);
+        let (py0, py1) = self.rows(y.floor() as i32, (y + h).ceil() as i32);
+        for py in py0..py1 {
+            let fy = py as f32 + 0.5;
+            let across = fy >= straight_top && fy <= straight_bottom;
+            for px in px0..px1 {
+                let fx = px as f32 + 0.5;
+                let cover = if across || (fx >= straight_left && fx <= straight_right) {
+                    1.0
+                } else {
+                    (0.5 - rr_sdf(fx, fy, cx, cy, hx, hy, r)).clamp(0.0, 1.0)
+                };
+                if cover <= 0.0 {
+                    continue;
+                }
+                // Where the sample falls between the small copy's pixels, and
+                // which four those are.
+                let u = ((fx - rx as f32) / step as f32 - 0.5).clamp(0.0, (sw - 1) as f32);
+                let v = ((fy - ry as f32) / step as f32 - 0.5).clamp(0.0, (sh - 1) as f32);
+                let (i0, j0) = (u.floor() as u32, v.floor() as u32);
+                let (i1, j1) = ((i0 + 1).min(sw - 1), (j0 + 1).min(sh - 1));
+                let (fu, fv) = (u - i0 as f32, v - j0 as f32);
+                let (a, b, c, d) = (sample(i0, j0), sample(i1, j0), sample(i0, j1), sample(i1, j1));
+                let mut out = [0u8; 4];
+                for ch in 0..4 {
+                    let top = a[ch] as f32 + (b[ch] as f32 - a[ch] as f32) * fu;
+                    let bottom = c[ch] as f32 + (d[ch] as f32 - c[ch] as f32) * fu;
+                    out[ch] = (top + (bottom - top) * fv).round().clamp(0.0, 255.0) as u8;
+                }
+                let color = Rgba { r: out[0], g: out[1], b: out[2], a: 255 };
+                self.blend(px, py, color, cover * fill);
+            }
+        }
+    }
+}
+
 fn rr_sdf(px: f32, py: f32, cx: f32, cy: f32, hx: f32, hy: f32, r: f32) -> f32 {
     let dx = (px - cx).abs() - (hx - r);
     let dy = (py - cy).abs() - (hy - r);
@@ -1825,6 +1959,35 @@ fn rr_sdf(px: f32, py: f32, cx: f32, cy: f32, hx: f32, hy: f32, r: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_frost_smears_what_lies_under_it_and_leaves_the_corners() {
+        let (w, h) = (60, 60);
+        // Upright stripes, two pixels of ink and two of paper: what a bar
+        // standing over a page of text is, at its simplest.
+        let mut c = Canvas::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                let v = if (x / 2) % 2 == 0 { 0 } else { 255 };
+                c.fill_rect(x as f32, y as f32, 1.0, 1.0, Rgba::rgb(v, v, v));
+            }
+        }
+        let before = c.data.clone();
+        let at = |c: &Canvas, x: usize, y: usize| c.data[(y * w as usize + x) * 4] as i32;
+        let step = |c: &Canvas, y: usize| (10..50).map(|x| (at(c, x, y) - at(c, x + 1, y)).abs()).max().unwrap_or(0);
+        let was = step(&c, 30);
+
+        c.frost_round_rect(10.0, 10.0, 40.0, 40.0, 20.0, 2, 2, 1.0);
+
+        assert!(step(&c, 30) < was / 2, "the stripes under the bar are smeared into one another");
+        // The corners of the rectangle are outside its round: they keep the
+        // page as it was, which is what lets the bar stand over it.
+        let corner = (11 * w as usize + 11) * 4;
+        assert_eq!(&c.data[corner..corner + 4], &before[corner..corner + 4], "a corner is left alone");
+        // And nothing beyond the rectangle was touched.
+        let outside = (5 * w as usize + 5) * 4;
+        assert_eq!(&c.data[outside..outside + 4], &before[outside..outside + 4], "outside the bar is left alone");
+    }
 
     #[test]
     fn a_picture_holds_the_colors_the_panel_shows() {

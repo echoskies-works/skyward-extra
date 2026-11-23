@@ -27,6 +27,7 @@ mod tests {
     use super::*;
     use crate::app::testing::*;
     use crate::app::{Action, App, Screen, Touch};
+    use crate::Canvas;
 
     // A panel as wide as the phone's, in dp: three words plus the gear need
     // room, as on the tasks page.
@@ -34,15 +35,16 @@ mod tests {
     const H: u32 = 800;
     const PPD: f32 = 2.0;
 
-    /// The three words across the top are the page's three faces, in the
-    /// order the page names them: the front, everything, and the phone's
-    /// own. A touch turns to the face it names and leaves the page there.
+    /// The three faces are named along the bar at the foot, in the order the
+    /// page names them: the front, everything, and the phone's own. A touch
+    /// turns to the face it names and leaves the page there.
     #[test]
-    fn the_three_words_across_the_top_turn_the_page_to_each_face() {
+    fn the_three_faces_along_the_foot_turn_the_page_to_each() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Store, W, H, PPD);
         let acts = |app: &mut App| -> Vec<Action> {
-            app.frame(&f, &i).hits.iter().map(|h| h.action).filter(|a| matches!(a, Action::StoreFace(_))).collect()
+            let frame = app.frame(&f, &i);
+            frame.foot.as_ref().expect("the store names its faces at the foot").faces.iter().map(|fc| fc.action).collect()
         };
         assert_eq!(
             acts(&mut app),
@@ -69,6 +71,49 @@ mod tests {
         tap_at(&mut app, &f, &i, Action::StoreFace(StoreFace::Home), 3_000);
         assert_eq!(app.state.store_face, StoreFace::Home);
         assert_eq!(app.frame(&f, &i).canvas.data, front, "the front says what it said");
+    }
+
+    /// The pill behind the face shown moves to the one just touched, and a
+    /// frame into the move it is between the two rather than on either.
+    #[test]
+    fn the_pill_moves_to_the_face_just_touched() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Store, W, H, PPD);
+        let at = |app: &mut App, now: u64| {
+            let shown = StoreFace::ALL.iter().position(|face| *face == app.state.store_face).unwrap_or(0);
+            app.foot_at(now, shown)
+        };
+        assert_eq!(at(&mut app, 0), 0.0, "it opens under the front");
+        tap_at(&mut app, &f, &i, Action::StoreFace(StoreFace::Mine), 1_000);
+        assert_eq!(app.state.store_face, StoreFace::Mine);
+        assert_eq!(at(&mut app, 1_000), 0.0, "the move starts from where it was");
+        let between = at(&mut app, 1_000 + 90);
+        assert!(between > 0.0 && between < 2.0, "half way it is between the two faces, not on either");
+        assert_eq!(at(&mut app, 1_000 + 5_000), 2.0, "and it comes to rest under the phone's own");
+    }
+
+    /// A finger that comes down on the bar and pulls sideways is working the
+    /// bar: it does not turn the page, which is what the bar is for.
+    #[test]
+    fn a_finger_pulled_along_the_bar_does_not_turn_the_page() {
+        let f = fonts();
+        let mut app = App::new(Screen::Store, W, H, PPD);
+        // A page is drawn before a finger lands on it; so is one here.
+        let _ = app.frame(&f, &info());
+        let t = app.theme();
+        let g = crate::widgets::foot_geom(&t, 3, 0.0);
+        let (x, y) = g.cells[0].centre();
+        app.touch(Touch::Down(x, y), &f, 0);
+        app.touch(Touch::Move(x - 600.0, y + 4.0), &f, 10);
+        app.touch(Touch::Up, &f, 20);
+        app.tick(10_000);
+        assert_eq!(app.state.store_face, StoreFace::Home, "the face stays where it was");
+        // And a pull across the page itself still turns it.
+        app.touch(Touch::Down(700.0, 600.0), &f, 20_000);
+        app.touch(Touch::Move(100.0, 605.0), &f, 20_010);
+        app.touch(Touch::Up, &f, 20_020);
+        app.tick(30_000);
+        assert_eq!(app.state.store_face, StoreFace::All, "a pull across the middle shows everything");
     }
 
     /// The same steps by finger: a pull to the left moves one face to the
@@ -116,27 +161,68 @@ mod tests {
         assert!(app.toast.is_none(), "and says nothing about a page it does not have");
     }
 
-    /// Three words have to sit side by side under the gear, on the widest
-    /// panel as well as the narrowest page the tests draw. None may cover
-    /// another and none may run under the button, or a tap on it is eaten.
+    /// The page's own top lies over the strip rather than in the pages: the
+    /// large title and the gear keep their place, and their ink, while a
+    /// finger pulls one face aside. Without them laid over the strip the top
+    /// of the screen would empty out for the length of the pull.
     #[test]
-    fn three_words_keep_their_own_space_clear_of_the_gear() {
-        use crate::app::testing::{H as PH, PPD as PPPD, W as PW};
-        use crate::widgets::button_rect;
-
+    fn the_title_and_the_gear_stay_while_a_face_is_pulled_aside() {
         let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Store, W, H, PPD);
+        let mut still = Canvas::new(W, H);
+        app.compose(&mut still, &f, &i, "12:00", "", 0);
+        // A finger across the middle of the page, well past the slop.
+        app.touch(Touch::Down(700.0, 400.0), &f, 0);
+        app.touch(Touch::Move(400.0, 404.0), &f, 16);
+        let mut moved = Canvas::new(W, H);
+        app.compose(&mut moved, &f, &i, "12:00", "", 16);
+
+        // Every dark pixel across the page's top — the title's strokes and
+        // the gear's — stands where it stood, at the grey it was.
+        let ink: Vec<(u32, u32, u8)> = (0..H / 3)
+            .flat_map(|y| (0..W).map(move |x| (x, y)))
+            .filter_map(|(x, y)| {
+                let v = grey_at(&still, x as f32, y as f32);
+                (v < 128).then_some((x, y, v))
+            })
+            .collect();
+        assert!(!ink.is_empty(), "the page's top carries the title and the gear");
+        for (x, y, v) in ink {
+            assert_eq!(grey_at(&moved, x as f32, y as f32), v, "pixel ({x}, {y}) of the page's top moved");
+        }
+    }
+
+    /// The three cells have to sit side by side on the widest panel as well
+    /// as the narrowest page the tests draw. None may cover another, none may
+    /// reach the gear, and the bar keeps clear of the screen's foot so the
+    /// pull up to the desktop still finds it.
+    #[test]
+    fn the_three_cells_keep_their_own_space_clear_of_the_gear() {
+        use crate::app::testing::{H as PH, PPD as PPPD, W as PW};
+        use crate::widgets::{button_rect, foot_geom};
+
+        let f = fonts();
         let mut app = App::new(Screen::Store, PW, PH, PPPD);
-        let frame = app.frame(&f, &i);
+        let t = app.theme();
+        let g = foot_geom(&t, 3, 0.0);
         let overlap = |a: crate::geom::Rect, b: crate::geom::Rect| {
             a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
         };
-        let tab_rects: Vec<_> = frame.hits.iter().filter(|h| matches!(h.action, Action::StoreFace(_))).map(|h| h.rect).collect();
-        assert_eq!(tab_rects.len(), 3, "three words on the page");
-        for k in 0..tab_rects.len() {
-            for j in (k + 1)..tab_rects.len() {
-                assert!(!overlap(tab_rects[k], tab_rects[j]), "word {k} and word {j} must not overlap");
+        assert_eq!(g.cells.len(), 3, "three cells on the bar");
+        for k in 0..g.cells.len() {
+            for j in (k + 1)..g.cells.len() {
+                assert!(!overlap(g.cells[k], g.cells[j]), "cell {k} and cell {j} must not overlap");
             }
-            assert!(!overlap(tab_rects[k], button_rect(&app.theme())), "word {k} must stay clear of the gear");
+            assert!(!overlap(g.cells[k], button_rect(&t)), "cell {k} must stay clear of the gear");
         }
+        // The pill sits within the cell it marks, and within no other.
+        assert!(g.pill.x >= g.cells[0].x && g.pill.x + g.pill.w <= g.cells[0].x + g.cells[0].w, "the pill marks one cell");
+        assert!(g.pill.w < g.cells[0].w, "and leaves the cell's sides visible either side of it");
+        // The bar floats: the gesture strip at the very foot stays the
+        // screen's own.
+        assert!(g.bar.y + g.bar.h <= PH as f32 - t.m.dp(24.0), "the bar leaves the gesture strip clear");
+        // The faces answer on the bar, and nowhere else on the page.
+        let frame = app.frame(&f, &info());
+        assert!(!frame.hits.iter().any(|h| matches!(h.action, Action::StoreFace(_))), "the page itself carries no face controls");
     }
 }

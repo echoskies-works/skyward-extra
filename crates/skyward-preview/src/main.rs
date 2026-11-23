@@ -523,6 +523,35 @@ fn main() -> Result<()> {
         println!("wrote {}", path.display());
     }
 
+    // The same page half way through a change: a word touched, so the face
+    // is turning over, and a finger pulling one aside. The bar at the foot
+    // keeps its place in both — only the pill behind it moves.
+    for (name, pull) in [("00-17-store-turn-mid", false), ("00-17-store-swipe-mid", true)] {
+        let mut app = opened(Screen::Store, w, h, ppd);
+        let _ = app.tick(0);
+        // The bar answers a touch by its own cells, which are read off the
+        // page drawn last: without one, a touch would land on nothing.
+        let _ = app.frame(&fonts, &info);
+        let geom = widgets::foot_geom(&app.theme(), 3, 1.0);
+        let (cx, cy) = geom.cells[1].centre();
+        let now = if pull {
+            let y = h as f32 / 2.0;
+            app.touch(Touch::Down(700.0, y), &fonts, 0);
+            app.touch(Touch::Move(240.0, y + 4.0), &fonts, 16);
+            16
+        } else {
+            app.touch(Touch::Down(cx, cy), &fonts, 1_000);
+            app.touch(Touch::Up, &fonts, 1_000);
+            1_090
+        };
+        let _ = app.tick(now);
+        let mut c = Canvas::new(w, h);
+        app.compose(&mut c, &fonts, &info, "21:40", &shot_date(), now);
+        let path = out.join(format!("{name}.png"));
+        write_png(&path, &c)?;
+        println!("wrote {}", path.display());
+    }
+
     // The lock screen, the page under it kept soft: over a page of the
     // recovery, in both themes, since the veil lightens a light page and
     // darkens a dark one. Each is composed twice — once for the picture the

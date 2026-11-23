@@ -78,8 +78,13 @@ impl App {
             }
             Action::StoreFace(face) => {
                 if self.state.store_face != face {
+                    let from = StoreFace::ALL.iter().position(|f| *f == self.state.store_face).unwrap_or(0);
+                    let to = StoreFace::ALL.iter().position(|f| *f == face).unwrap_or(0);
                     self.face_turn = self.face_snapshot(now);
                     self.state.store_face = face;
+                    // The pill goes to the face just touched at the pace the
+                    // page turns at, so the two read as one move.
+                    self.slide_foot(now, from, to);
                     self.refresh();
                 }
             }
