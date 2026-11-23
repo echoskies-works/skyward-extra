@@ -75,6 +75,8 @@ pub enum Icon {
     Browser,
     /// A monitor on its foot, as a tasks page shows one.
     Tasks,
+    /// A shopping bag, its handles over its mouth: the Aether store's own.
+    Store,
     /// A sun behind a cloud: what a weather page shows.
     Weather,
     /// A triangle: the stopwatch's key that sets the count going.
@@ -498,6 +500,20 @@ const TASKS: &[Part] = &[add(Shape::EvenOdd(
      A0.864,0.864 0 0 1 21.773,7.955L21.773,16.591Z",
 ))];
 
+/// A shopping bag with its handles over its mouth: the Aether store's own
+/// mark, drawn in the stock manner. The handles are laid first, so the bag's
+/// face covers where they meet it and the two read as one object rather than
+/// as a ring stood on a box.
+const STORE: &[Part] = &[
+    add(Shape::Line(
+        "M10.6,10.6V8.9C10.6,6.9 12.1,5.3 14,5.3C15.9,5.3 17.4,6.9 17.4,8.9V10.6",
+        1.9,
+    )),
+    add(Shape::Fill(
+        "M6.9,10.4H21.1L19.5,21.7C19.4,22.75 18.5,23.5 17.5,23.5H10.5C9.5,23.5 8.6,22.75 8.5,21.7Z",
+    )),
+];
+
 /// A sun behind a cloud: what a weather page shows. Drawn the stock way
 /// rather than copied, since the stock Settings has no weather of its own:
 /// the sun's disc and the four rays it throws, then the cloud in front of
@@ -646,6 +662,7 @@ fn outline(icon: Icon) -> (&'static [Part], f32) {
         Icon::Music => (MUSIC, 1.0),
         Icon::Browser => (BROWSER, 1.0),
         Icon::Tasks => (TASKS, 1.0),
+        Icon::Store => (STORE, 1.0),
         Icon::Weather => (WEATHER, 1.0),
         Icon::Play => (PLAY, PLAY_SCALE),
         Icon::Pause => (PAUSE, PAUSE_SCALE),
@@ -839,7 +856,7 @@ fn path(d: &str) -> tiny_skia::Path {
 mod tests {
     use super::*;
 
-    const ALL: [Icon; 28] = [
+    const ALL: [Icon; 29] = [
         Icon::Install,
         Icon::Backup,
         Icon::Restore,
@@ -866,6 +883,7 @@ mod tests {
         Icon::Music,
         Icon::Browser,
         Icon::Tasks,
+        Icon::Store,
         Icon::Weather,
         Icon::Settings,
     ];

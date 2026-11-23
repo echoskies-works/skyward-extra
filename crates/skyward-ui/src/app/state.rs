@@ -237,6 +237,9 @@ pub struct State {
     /// Which of the tasks page's three faces the page shows: the processes,
     /// the services or the performance.
     pub tasks_face: TasksFace,
+    /// Which of the Aether store's three faces the page shows: the front,
+    /// everything it lists, or what the phone already has.
+    pub store_face: StoreFace,
     /// The clock's own state: which of its two faces the page shows.
     pub clock: Clock,
     /// The sound the timer's end makes: the key of one of the sounds the
@@ -364,6 +367,7 @@ impl Default for State {
             music_face: MusicFace::List,
             music_filter: MusicFilter::All,
             tasks_face: TasksFace::Process,
+            store_face: StoreFace::Home,
             clock: Clock::default(),
             timer_sound: DEFAULT_TIMER_SOUND.to_string(),
             clock_ticking: true,

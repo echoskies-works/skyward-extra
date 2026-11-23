@@ -18,7 +18,7 @@ use skyward_ui::app::{
     Lap,
     MountFailure, MountRow, MusicFace, MusicFilter, Notification, Origin, Part, PartKind, PartStop, Pick, Place, Screen, SkywardEnd, SkywardJob, SkywardStage, Source,
     SystemChoice,
-    SystemsWork, TasksFace, TermEnd, Touch, UsbDrive, UsbLink, SCREEN_OFF,
+    SystemsWork, StoreFace, TasksFace, TermEnd, Touch, UsbDrive, UsbLink, SCREEN_OFF,
 };
 use skyward_ui::canvas::Drawn;
 use skyward_ui::widgets::{self, Bar, Bolt, Cap, Layer};
@@ -494,6 +494,26 @@ fn main() -> Result<()> {
     for (name, face, dark) in tasks {
         let mut app = opened(Screen::Tasks, w, h, ppd);
         app.state.tasks_face = face;
+        app.state.dark = dark;
+        let _ = app.tick(0);
+        let mut c = Canvas::new(w, h);
+        app.compose(&mut c, &fonts, &info, "21:40", &shot_date(), 200);
+        let path = out.join(format!("{name}.png"));
+        write_png(&path, &c)?;
+        println!("wrote {}", path.display());
+    }
+
+    // The Aether store's three faces, none with a shelf behind it yet: what
+    // it would put in front, everything it lists, and the phone's own.
+    let store: [(&str, StoreFace, bool); 4] = [
+        ("00-17-store-home-light", StoreFace::Home, false),
+        ("00-17-store-all-light", StoreFace::All, false),
+        ("00-17-store-mine-light", StoreFace::Mine, false),
+        ("00-17-store-home-dark", StoreFace::Home, true),
+    ];
+    for (name, face, dark) in store {
+        let mut app = opened(Screen::Store, w, h, ppd);
+        app.state.store_face = face;
         app.state.dark = dark;
         let _ = app.tick(0);
         let mut c = Canvas::new(w, h);

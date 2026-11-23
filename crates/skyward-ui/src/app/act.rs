@@ -76,6 +76,13 @@ impl App {
                     self.refresh();
                 }
             }
+            Action::StoreFace(face) => {
+                if self.state.store_face != face {
+                    self.face_turn = self.face_snapshot(now);
+                    self.state.store_face = face;
+                    self.refresh();
+                }
+            }
             Action::ClockFace(face) => {
                 if self.state.clock.face != face {
                     self.face_turn = self.face_snapshot(now);
@@ -1174,7 +1181,7 @@ mod tests {
         // The recovery and the files are already rows of the tools above:
         // the second list carries the other six, and nothing twice.
         let apps: Vec<Action> = opens.iter().copied().filter(|a| {
-            matches!(a, Action::Open(Screen::Clock | Screen::Calculator | Screen::Music | Screen::Tasks))
+            matches!(a, Action::Open(Screen::Clock | Screen::Calculator | Screen::Music | Screen::Tasks | Screen::Store))
                 || matches!(a, Action::NotReady(_))
         }).collect();
         assert_eq!(apps, [
@@ -1184,6 +1191,7 @@ mod tests {
             Action::NotReady("browser"),
             Action::Open(Screen::Tasks),
             Action::NotReady("weather"),
+            Action::Open(Screen::Store),
         ]);
         assert_eq!(opens.iter().filter(|&&a| a == Action::Open(Screen::Home)).count(), 0);
         assert_eq!(opens.iter().filter(|&&a| a == Action::Open(Screen::Files)).count(), 1, "files stays once, with the tools");

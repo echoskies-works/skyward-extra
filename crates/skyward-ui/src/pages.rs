@@ -4,7 +4,7 @@ use crate::app::{
     EraseStop, Field, FileKind,
     FileOp, FileTask, Fold, Folder, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, MusicFace, MusicFilter, Pick, Place, Rows,
     Screen,
-    SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, Switch, SystemsWork, Target, TasksFace, UsbDrive, UsbLink, Wipe, ADDABLE,
+    SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, StoreFace, Switch, SystemsWork, Target, TasksFace, UsbDrive, UsbLink, Wipe, ADDABLE,
     BACKUP_PARTS, CLOCK_MOST, DATA_PARTITION, DEFAULT_TIMER_SOUND, DOWNLOADS, FASTBOOT_CHOICES, RULER_MINUTE_DP, SCREEN_OFF, TARGETS, TIME_ZONES,
     WIPES, installs, starting,
 };
@@ -78,6 +78,7 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::ClockSound => clock_sounds(cx),
         Screen::Music => music(cx),
         Screen::Tasks => tasks(cx),
+        Screen::Store => store(cx),
         Screen::Home => home(cx),
         Screen::Settings => settings(cx),
         Screen::Personalization => personalization(cx),
@@ -256,7 +257,7 @@ struct DeskApp {
 }
 
 /// The desktop's icons, laid out four to a row in the order written here.
-const DESKTOP_APPS: [DeskApp; 8] = [
+const DESKTOP_APPS: [DeskApp; 9] = [
     DeskApp {
         name: tri("恢复模式", "恢復模式", "Recovery"),
         icon: Icon::Gear,
@@ -313,6 +314,16 @@ const DESKTOP_APPS: [DeskApp; 8] = [
         icon: Icon::Weather,
         color: Rgba::rgb(0x2c, 0xa6, 0xdd),
         opens: Opens::NotYet("weather"),
+    },
+    // The store stands a page of its own with three faces and nothing on
+    // them yet, as the tasks page does: the way in is settled before there
+    // is anything to list. Its tile is the one gold on the desktop, so it
+    // is found by its colour before its name is read.
+    DeskApp {
+        name: tri("Aether 商店", "Aether 商店", "Aether Store"),
+        icon: Icon::Store,
+        color: Rgba::rgb(0xd9, 0xa2, 0x1b),
+        opens: Opens::Page(Screen::Store),
     },
 ];
 
@@ -697,6 +708,51 @@ pub fn tasks(cx: &Ctx) -> Frame {
     // The button at the right end is the clock's own gear, so the four apps
     // carry one band of controls; this page has no settings behind it yet,
     // so it answers a touch with nothing.
+    Frame {
+        back: false,
+        header: false,
+        bg: t.pal.bg,
+        button: Some((widgets::Glyph::Gear, Action::Idle)),
+        button_still: true,
+        ..Frame::new(t, c, out, "", m.content_top)
+    }
+}
+
+/// The Aether store's three faces, in the order it names them across its
+/// top: what it puts in front, everything it lists, and what the phone
+/// already has.
+const STORE_FACES: [(StoreFace, Text); 3] = [
+    (StoreFace::Home, tri("首页", "首頁", "Home")),
+    (StoreFace::All, tri("全部", "全部", "All")),
+    (StoreFace::Mine, tri("我的", "我的", "Mine")),
+];
+
+/// The Aether store the desktop opens: what it puts in front, all it lists
+/// and the apps the phone already has. None of the three has a shelf behind
+/// it yet — nothing is fetched — so each says where it stands rather than
+/// standing empty, as the tasks page does.
+///
+/// It keeps the shape the clock, the calculator, the player and the tasks
+/// page take: the words across the top, no `<` and no large title, the gear
+/// at the top right and a finger dragged level across the page stepping to
+/// the face beside the one shown.
+pub fn store(cx: &Ctx) -> Frame {
+    let (t, f, l) = (cx.t, cx.f, cx.state.lang);
+    let m = &t.m;
+    let mut c = page(cx);
+    let mut out = Vec::new();
+
+    out.extend(face_tabs(&mut c, t, f, l, &STORE_FACES, cx.state.store_face, Action::StoreFace));
+
+    let said = match cx.state.store_face {
+        StoreFace::Home => l.among("还没有推荐", "還沒有推薦", "Nothing is recommended yet"),
+        StoreFace::All => l.among("还没有应用", "還沒有應用", "No apps are listed yet"),
+        StoreFace::Mine => l.among("还没有安装", "還沒有安裝", "Nothing is installed yet"),
+    };
+    c.text_center(&f.body, said, m.w as f32 / 2.0, m.h as f32 / 2.0, m.sub_px, t.pal.subtitle);
+
+    // As on the tasks page: no `<` and no large title, the clock's own gear
+    // at the right end, and nothing behind it yet.
     Frame {
         back: false,
         header: false,

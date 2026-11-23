@@ -63,6 +63,7 @@ mod relabel;
 mod scroll;
 mod skyward;
 mod state;
+mod store;
 mod systems;
 mod tasks;
 mod terminal;
@@ -92,6 +93,7 @@ pub use reboot::*;
 pub use relabel::*;
 pub use skyward::*;
 pub use state::*;
+pub use store::*;
 pub use systems::*;
 pub use tasks::*;
 pub use terminal::*;
@@ -123,6 +125,10 @@ pub enum Screen {
     /// the performance it runs them at, one face at a time. Neither is read
     /// off the phone yet, so both say where they stand.
     Tasks,
+    /// The Aether store the desktop opens: what it puts in front, all it
+    /// lists and what the phone already has, one face at a time. Nothing is
+    /// fetched yet, so each face says where it stands.
+    Store,
     Home,
     Settings,
     /// Sound, ring and wallpaper picked the way the user likes them: a
@@ -360,6 +366,9 @@ pub enum Action {
     MusicFilter(MusicFilter),
     /// Show this face of the tasks page: the processes, or the performance.
     TasksFace(TasksFace),
+    /// Show this face of the Aether store: the front, everything it lists,
+    /// or what the phone already has.
+    StoreFace(StoreFace),
     /// Show this face of the clock: the stopwatch, or the timer.
     ClockFace(ClockFace),
     /// Start the face shown counting, or stop it where it is.
@@ -1796,6 +1805,7 @@ impl App {
             Screen::Calculator => Some((if self.state.calc_face == CalcFace::Sum { 0 } else { 1 }, 2)),
             Screen::Music => Some((if self.state.music_face == MusicFace::List { 0 } else { 1 }, 2)),
             Screen::Tasks => Some((TasksFace::ALL.iter().position(|f| *f == self.state.tasks_face).unwrap_or(0), TasksFace::ALL.len())),
+            Screen::Store => Some((StoreFace::ALL.iter().position(|f| *f == self.state.store_face).unwrap_or(0), StoreFace::ALL.len())),
             _ => None,
         }
     }
@@ -1808,6 +1818,7 @@ impl App {
             Screen::Calculator => self.state.calc_face = if at == 0 { CalcFace::Sum } else { CalcFace::Convert },
             Screen::Music => self.state.music_face = if at == 0 { MusicFace::List } else { MusicFace::Play },
             Screen::Tasks => self.state.tasks_face = TasksFace::ALL[at.min(TasksFace::ALL.len() - 1)],
+            Screen::Store => self.state.store_face = StoreFace::ALL[at.min(StoreFace::ALL.len() - 1)],
             _ => {}
         }
         self.refresh();

@@ -450,6 +450,7 @@ impl App {
             Screen::Calculator => state.calc_face = if at == 0 { CalcFace::Sum } else { CalcFace::Convert },
             Screen::Music => state.music_face = if at == 0 { MusicFace::List } else { MusicFace::Play },
             Screen::Tasks => state.tasks_face = TasksFace::ALL[at.min(TasksFace::ALL.len() - 1)],
+            Screen::Store => state.store_face = StoreFace::ALL[at.min(StoreFace::ALL.len() - 1)],
             _ => {}
         }
         let cx = Ctx { t: &t, f, info, state: &state, term: self.term.as_ref(), band: None, now, wallpaper: self.wallpaper.as_ref() };
