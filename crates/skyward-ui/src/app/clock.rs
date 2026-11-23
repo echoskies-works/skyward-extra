@@ -1007,4 +1007,23 @@ mod tests {
         assert!(!clock.timer_set());
         assert!(app.sheet.as_ref().is_some_and(|s| s.closing.is_some()), "the notice falls back");
     }
+
+    /// The sound and the two switches stand in two cards now, parted by the
+    /// same gap the Settings pages use instead of a rule drawn inside one.
+    /// Each row must still answer the touch it did while they shared a card.
+    #[test]
+    fn the_clock_settings_keep_their_hits_across_the_gap() {
+        let f = fonts();
+        let i = info();
+        let mut app = App::new(Screen::ClockSettings, W, H, PPD);
+        let fr = app.frame(&f, &i);
+        let got: Vec<_> = fr.hits.iter().map(|h| h.action).collect();
+        assert_eq!(got, vec![
+            Action::Open(Screen::ClockSound),
+            Action::Toggle(Switch::ClockTicking),
+            Action::Toggle(Switch::ClockTickingBackground),
+        ], "each row still does what it did before the split");
+        let gap = fr.hits[1].rect.y - fr.hits[0].rect.y - fr.hits[0].rect.h;
+        assert!(gap > 0.0, "the cards are parted by a gap, not a rule");
+    }
 }

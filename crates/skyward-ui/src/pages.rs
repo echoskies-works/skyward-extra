@@ -1957,36 +1957,30 @@ fn sound_name_of(l: Lang, name: &skyward_config::SoundName, key: &str) -> String
     if picked.is_empty() { key.to_string() } else { picked.clone() }
 }
 
-/// The clock's settings: the sound the timer's end makes, a rule, and the
-/// two switches that say whether the clock ticks. No icon stands before any
-/// of them — they are four words to read, not four apps.
+/// The clock's settings: the sound the timer's end makes, and the two
+/// switches that say whether the clock ticks. No icon stands before any of
+/// them — they are four words to read, not four apps. The choice and the
+/// switches stand in two cards, divided the way the Settings pages divide
+/// their entries: by the gap between cards, not by a rule inside one.
 pub fn clock_settings(cx: &Ctx) -> Frame {
     let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
     let mut c = long_page(cx);
     let mut out = Vec::new();
     let top = t.m.content_top;
     let name = timer_sound_name(s, l);
-    let rows = widgets::list(&mut c, t, f, top, &[
+    let sound = widgets::list(&mut c, t, f, top, &[
         Row::new(l.pick(TIMER_SOUND_ROW)).trail(Trail::Value(&name)),
+    ]);
+    out.extend(hits(&sound.rows, &[Action::Open(Screen::ClockSound)]));
+    let switches = widgets::list(&mut c, t, f, sound.bottom + t.m.card_gap, &[
         Row::new(l.pick(CLOCK_TICKING_ROW)).trail(Trail::Switch(s.clock_ticking)),
         Row::new(l.pick(CLOCK_BACKGROUND_ROW)).trail(Trail::Switch(s.clock_ticking_background)),
     ]);
-    out.extend(hits(&rows.rows, &[
-        Action::Open(Screen::ClockSound),
+    out.extend(hits(&switches.rows, &[
         Action::Toggle(Switch::ClockTicking),
         Action::Toggle(Switch::ClockTickingBackground),
     ]));
-    // The rule between the sound and the two switches: the card holds one
-    // choice and its consequences, and the rule sets the one off from the
-    // other the way the stock settings divide a card. It runs from where
-    // the words start to where the card's own edge is. In the dark the
-    // page's hairline is all but the card's own grey and would not show, so
-    // the rule there is a step up from the card instead.
-    let first = rows.rows[0];
-    let (x0, x1) = (t.m.margin + t.m.inner, t.m.w as f32 - t.m.margin - t.m.inner);
-    let ink = if t.dark { t.pal.round } else { t.pal.hairline };
-    c.fill_rect(x0, first.y + first.h, x1 - x0, 1.0f32.max(t.m.dp(0.5)), ink);
-    Frame::new(t, fit(c, t, rows.bottom), out, l.pick(CLOCK_SETTINGS_TITLE), top)
+    Frame::new(t, fit(c, t, switches.bottom), out, l.pick(CLOCK_SETTINGS_TITLE), top)
 }
 
 /// The sounds a timer's end can make, the one in use ticked.
