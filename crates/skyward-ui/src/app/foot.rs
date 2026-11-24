@@ -1,29 +1,32 @@
-//! The bar at the foot of a page: the ground it is made of — the page's own
-//! colours, frosted — and the pill that slides to the face just touched.
+//! The bar at the foot of a page: the translucent ground it is made of — the
+//! page's own colour with a white or a black laid over it — and the pill that
+//! slides to the face just touched.
 //!
 //! It is laid after everything else the page puts down, and outside the
-//! page's canvas, for two reasons at once: the frost has to reach what lies
-//! under the bar, and the bar has to stay put while the faces move. The
-//! pages themselves never draw it.
+//! page's canvas, for two reasons at once: its translucency has to go over
+//! what lies under the bar, and the bar has to stay put while the faces move.
+//! The pages themselves never draw it.
 
 use super::*;
 
-/// What the frosted ground is made of: one pixel of the page in `STEP`
-/// kept, softened `BLUR` pixels either side three times over, and laid back
-/// at one of the two fills below.
+/// What the frosted ground is made of, read only while `FOOT_FROST` is on:
+/// one pixel of the page in `STEP` kept, softened `BLUR` pixels either side
+/// three times over, and laid back at one of the two fills below.
 const FOOT_STEP: u32 = 10;
 const FOOT_BLUR: usize = 2;
 
-/// How much of what lies under the bar reads through it. Above half, so the
-/// bar takes its colour from the page it stands on and still lifts off it.
+/// How much of the frosted page the bar keeps, again only while `FOOT_FROST`
+/// is on. Above half, so the bar takes its colour from the page it stands on
+/// and still lifts off it.
 const FOOT_FILL_LIGHT: f32 = 0.82;
 const FOOT_FILL_DARK: f32 = 0.84;
 
-/// What the bar adds over the frost: white, at the amount that lifts it off
-/// the page it stands on. A light page has little room above it, so the bar
+/// What the bar adds over the page: white, at the amount that lifts it off
+/// the ground it stands on. A light page has little room above it, so the bar
 /// is only a shade lighter than the page; a dark one has none at all — black
 /// over black leaves nothing to see, so the bar is raised to a card's grey
-/// instead.
+/// instead. It is laid as alpha, so whatever is under the bar still shows
+/// through it.
 const FOOT_VEIL_LIGHT: u8 = 150;
 const FOOT_VEIL_DARK: u8 = 28;
 
@@ -47,9 +50,19 @@ const FOOT_SHADOW_INK: u8 = 60;
 /// own turn, so a touch moves two things at one pace.
 const FOOT_MS: u64 = FACE_MS;
 
-/// Whether the bar frosts what lies under it. Off, it is a plain veil: the
-/// same bar, a shade flatter, for a machine that cannot spare the blur.
-const FOOT_FROST: bool = true;
+/// Whether the bar frosts what lies under it. Off, it is a plain veil.
+///
+/// It is off: the store's faces are empty, so the bar stands on a page of one
+/// colour and the frost comes back with that same colour — 243 in, 243 out,
+/// 250 once the veil is over it, which is what the plain veil gives too. The
+/// blur would be paid for on every frame of every slide and show nothing.
+/// Under content it is a different matter: turn this back on when the shelves
+/// are filled and the page scrolls under the bar with something to smudge.
+///
+/// Off does not mean opaque. The veil is white at 150/255 in the light and
+/// 28/255 in the dark, laid over what is already drawn, so the page and
+/// anything on it still read through the bar — just sharp.
+const FOOT_FROST: bool = false;
 
 /// The pill on its way from the face it was behind to the one just touched.
 pub struct FootSlide {
@@ -93,9 +106,10 @@ impl App {
         self.foot_slide = Some(FootSlide { screen: self.screen(), from: from as f32, to: to as f32, since: now });
     }
 
-    /// Lay the bar at the foot of the page, if it has one: its frosted ground
-    /// and the faces it names. The page is drawn by the time this runs, which
-    /// is what the frost is taken from.
+    /// Lay the bar at the foot of the page, if it has one: its ground and the
+    /// faces it names. The page is drawn by the time this runs, so the veil
+    /// goes over the page itself — and a frost, were one turned on, would
+    /// have something to take.
     pub(super) fn paint_foot(&mut self, out: &mut Canvas, t: &Theme, f: &Fonts, now: u64) {
         let Some((faces, shown)) = self.frame.as_ref().and_then(|fr| fr.foot.as_ref()).map(|ft| (ft.faces, ft.shown)) else {
             return;
@@ -111,11 +125,11 @@ impl App {
             let fill = if t.dark { FOOT_FILL_DARK } else { FOOT_FILL_LIGHT };
             out.frost_round_rect(bar.x, bar.y, bar.w, bar.h, r, FOOT_STEP, FOOT_BLUR, fill);
         }
-        // The bar's own colour over the frost: white in both themes, at the
-        // amount above. Its edge is the frost's own, not a stroke's and not a
-        // shadow's — a lip or a drop around a bar this light reads as a
-        // button's bevel, which is not what a surface lying over the page
-        // looks like.
+        // The bar's own colour over the page: white in both themes, at the
+        // amount above, and as alpha, so what lies under still reads through
+        // the bar — sharp, since no frost is taken. Its edge is the shadow's,
+        // not a stroke's: a lip around a bar this light reads as a button's
+        // bevel, which is not what a surface lying over the page looks like.
         let veil = if t.dark { FOOT_VEIL_DARK } else { FOOT_VEIL_LIGHT };
         out.fill_round_rect(bar.x, bar.y, bar.w, bar.h, r, Rgba::rgb(255, 255, 255).with_alpha(veil));
         // The shadow last and outside the bar, so what it darkens is the page
