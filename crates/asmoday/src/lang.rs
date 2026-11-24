@@ -59,27 +59,34 @@ impl Lang {
         // Chinese that says nothing about the characters: simplified.
         Lang::Zh
     }
-}
 
-/// The language the panel speaks without being told.
-///
-/// `AETHER_LANG` first, because a shell can say so outright — nothing on the
-/// phone sets it, and it is what lets the panel be looked at in either
-/// language from a terminal without a rebuild. Otherwise the settings file
-/// answers: the language chosen on the language page, and failing that the one
-/// the pages last spoke.
-///
-/// Nothing to read, or nothing in it about a language, is a phone that has not
-/// asked for Chinese, and English is what it reads. A first start, a system
-/// that never came up far enough to mount `/metadata`, a settings file wiped
-/// by a factory reset — all of them land here, and all of them are English.
-pub fn chosen() -> Lang {
-    if let Ok(tag) = std::env::var("AETHER_LANG")
-        && !tag.is_empty()
-    {
-        return Lang::for_locale(&tag);
+    /// The language the panel speaks without being told.
+    ///
+    /// `AETHER_LANG` first, because a shell can say so outright — nothing on
+    /// the phone sets it, and it is what lets the panel be looked at in either
+    /// language from a terminal without a rebuild. Otherwise the settings file
+    /// answers: the language chosen on the language page, and failing that the
+    /// one the pages last spoke.
+    ///
+    /// Nothing to read, or nothing in it about a language, is a phone that has
+    /// not asked for Chinese, and English is what it reads. A first start, a
+    /// system that never came up far enough to mount `/metadata`, a settings
+    /// file wiped by a factory reset — all of them land here, and all of them
+    /// are English.
+    ///
+    /// An associated function rather than one beside the type: the two screens
+    /// that speak are both `#[cfg(target_os = "android")]`, so a call that
+    /// does not resolve is a break no test on the host can see — it is only
+    /// found by building for the phone. Keeping the name on `Lang` means the
+    /// name the call sites write is the name the compiler checks when it does.
+    pub fn chosen() -> Lang {
+        if let Ok(tag) = std::env::var("AETHER_LANG")
+            && !tag.is_empty()
+        {
+            return Lang::for_locale(&tag);
+        }
+        of_settings(&std::fs::read_to_string(SETTINGS).unwrap_or_default())
     }
-    of_settings(&std::fs::read_to_string(SETTINGS).unwrap_or_default())
 }
 
 /// The language the settings file's text names.
