@@ -13,19 +13,29 @@
 //! touch the log's mutex — either could be held by the very panic being
 //! reported, and a second panic here would leave no report at all.
 
+// What follows belongs to the phone: a desk build's `install` is empty, so
+// none of it has a caller there. Keep it out of that build rather than
+// silencing dead_code — clippy checks this crate for the desk as well.
+// The two helpers the tests reach are kept for them, so a desk test still
+// proves how a real panic's line is read.
+#[cfg(any(target_os = "android", test))]
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "android")]
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The recovery's own folder, shared with the watcher on the other side of
 /// the fork. Repeated here so a change to one side has to be matched by a
 /// decision on the other; both sides pin the resulting path in a test.
+#[cfg(any(target_os = "android", test))]
 const RUN: &str = "/skyward/run";
 
 /// Only the first report is kept. A hook that is reached twice is already a
 /// double panic, which aborts whether this writes anything or not.
+#[cfg(target_os = "android")]
 static WROTE: AtomicBool = AtomicBool::new(false);
 
 /// Where the line about a panic is left for the parent to read.
+#[cfg(any(target_os = "android", test))]
 pub(crate) fn panic_file() -> PathBuf {
     Path::new(RUN).join("panic")
 }
@@ -54,6 +64,7 @@ pub(crate) fn install() {}
 
 /// `file:line:column: words`, on one line, so a reader never has to decide
 /// which part of it is the location.
+#[cfg(any(target_os = "android", test))]
 fn line_of(info: &std::panic::PanicHookInfo<'_>) -> String {
     let at = info
         .location()
@@ -72,6 +83,7 @@ fn line_of(info: &std::panic::PanicHookInfo<'_>) -> String {
 /// Write what was caught, once. Errors are dropped on purpose: a folder that
 /// has filled up or gone read-only is one of the things this is meant to
 /// report, and a failing write must not become a second panic.
+#[cfg(target_os = "android")]
 fn note(line: &str) {
     if WROTE.swap(true, Ordering::Relaxed) {
         return;
