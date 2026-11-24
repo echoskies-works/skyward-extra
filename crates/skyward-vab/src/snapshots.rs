@@ -12,7 +12,9 @@ use skyward_block::{devnum, dm, BY_NAME};
 use skyward_lp::{Metadata, Partition, ATTR_UPDATED, SECTOR_SIZE};
 use std::fs::{self, File, OpenOptions};
 use std::io::{ErrorKind, Write};
+#[cfg(unix)]
 use std::os::fd::AsRawFd;
+#[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
@@ -149,6 +151,7 @@ impl Snapshots {
         }
     }
 
+    #[cfg(unix)]
     fn lock_in(dir: &Path, exclusive: bool) -> Result<Snapshots> {
         let lock = OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW).open(dir)?;
         let how = if exclusive { libc::LOCK_EX } else { libc::LOCK_SH };
@@ -161,6 +164,15 @@ impl Snapshots {
                 return Err(e).with_context(|| format!("lock {}", dir.display()));
             }
         }
+        Ok(Snapshots { dir: dir.into(), exclusive, _lock: lock })
+    }
+
+    /// Windows cannot flock a directory, and a desk build never reaches the
+    /// phone's /metadata. Opening the folder still answers the one question
+    /// the tests ask — is there an update here — and keeps the same shape.
+    #[cfg(windows)]
+    fn lock_in(dir: &Path, exclusive: bool) -> Result<Snapshots> {
+        let lock = File::open(dir).with_context(|| format!("lock {}", dir.display()))?;
         Ok(Snapshots { dir: dir.into(), exclusive, _lock: lock })
     }
 
@@ -344,7 +356,12 @@ fn told_first(status: MergeStatus) -> bool {
 /// synced, then put in its place, and the folder synced.
 fn write_atomic(path: &Path, data: &[u8]) -> Result<()> {
     let tmp = PathBuf::from(format!("{}.tmp", path.display()));
+    // Only a phone keeps these files where permissions matter; Windows
+    // has no Unix mode on OpenOptions and uses ACLs instead.
+    #[cfg(unix)]
     let mut file = OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&tmp).with_context(|| format!("open {}", tmp.display()))?;
+    #[cfg(windows)]
+    let mut file = OpenOptions::new().write(true).create(true).truncate(true).open(&tmp).with_context(|| format!("open {}", tmp.display()))?;
     file.write_all(data).with_context(|| format!("write {}", tmp.display()))?;
     file.sync_all().with_context(|| format!("sync {}", tmp.display()))?;
     fs::rename(&tmp, path).with_context(|| format!("put {} in place of {}", tmp.display(), path.display()))?;

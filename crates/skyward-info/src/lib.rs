@@ -3,9 +3,11 @@ use skyward_config::DeviceConfig;
 use skyward_sys::{prop, ToldOnce};
 use skyward_vab::{Slot, SnapshotState};
 use std::collections::HashMap;
+#[cfg(unix)]
 use std::ffi::CStr;
 use std::fs;
 use std::io::ErrorKind;
+#[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::str::FromStr;
@@ -261,8 +263,7 @@ pub fn installed_props(slot: Slot) -> Result<HashMap<String, String>> {
                 Err(e) => return Err(e).with_context(|| format!("stat {}", path.display())),
                 Ok(_) => {}
             }
-            rsproperties::load_properties_from_file(&path, None, "u:r:init:s0", &mut props)
-                .with_context(|| format!("read {}", path.display()))?;
+            load_properties(&path, &mut props).with_context(|| format!("read {}", path.display()))?;
         }
     }
     Ok(props)
@@ -271,6 +272,32 @@ pub fn installed_props(slot: Slot) -> Result<HashMap<String, String>> {
 fn read(path: impl AsRef<Path>) -> Result<String> {
     let p = path.as_ref();
     Ok(fs::read_to_string(p).with_context(|| format!("read {}", p.display()))?.trim().to_string())
+}
+
+/// Read an Android property file into `props`, in init's order. On a phone
+/// this is the property service's parser, with its imports and escaping.
+#[cfg(not(windows))]
+fn load_properties(path: &Path, props: &mut HashMap<String, String>) -> Result<()> {
+    rsproperties::load_properties_from_file(path, None, "u:r:init:s0", props).map_err(|e| anyhow::anyhow!("{e}"))
+}
+
+/// The desk has no property service. This function is only reached on a
+/// phone — its caller first mounts the system's partitions — but it must
+/// still build on Windows. Read the plain `key=value` lines so the shape
+/// of the answer is the same; a file that cannot be read is an error.
+#[cfg(windows)]
+fn load_properties(path: &Path, props: &mut HashMap<String, String>) -> Result<()> {
+    let text = fs::read_to_string(path)?;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with("import ") {
+            continue;
+        }
+        if let Some((key, value)) = line.split_once('=') {
+            props.insert(key.trim().to_string(), value.trim().to_string());
+        }
+    }
+    Ok(())
 }
 
 /// `None` when the file does not exist; any other failure is an error.
@@ -339,6 +366,7 @@ fn mem_total(meminfo: &str) -> Result<u64> {
     parse(kib.trim(), "MemTotal")
 }
 
+#[cfg(unix)]
 fn kernel_release() -> Result<String> {
     let mut u: libc::utsname = unsafe { std::mem::zeroed() };
     if unsafe { libc::uname(&mut u) } != 0 {
@@ -346,6 +374,14 @@ fn kernel_release() -> Result<String> {
     }
     let release = unsafe { CStr::from_ptr(u.release.as_ptr()) };
     Ok(release.to_str().context("kernel release is not UTF-8")?.to_string())
+}
+
+/// A desk build never collects a phone's info — the preview makes its own —
+/// but the About page still names an OS. Windows has no uname; report its
+/// own so the field is filled.
+#[cfg(windows)]
+fn kernel_release() -> Result<String> {
+    Ok(format!("Windows {}", std::env::consts::ARCH))
 }
 
 fn storage() -> Result<Storage> {
@@ -360,11 +396,19 @@ fn storage() -> Result<Storage> {
 
 /// A directory is a mountpoint when it lives on a different filesystem from
 /// its parent.
+#[cfg(unix)]
 fn is_mountpoint(path: &Path) -> Result<bool> {
     let parent = path.parent().ok_or_else(|| anyhow!("{} has no parent", path.display()))?;
     let here = fs::metadata(path).with_context(|| format!("stat {}", path.display()))?;
     let up = fs::metadata(parent).with_context(|| format!("stat {}", parent.display()))?;
     Ok(here.dev() != up.dev())
+}
+
+/// Windows has no device numbers on a path; a desk build never asks about
+/// /data anyway (the preview supplies its own storage figures).
+#[cfg(windows)]
+fn is_mountpoint(_path: &Path) -> Result<bool> {
+    Ok(false)
 }
 
 /// The battery as it is now.

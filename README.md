@@ -213,6 +213,26 @@ at the next start and brings Skyward up before anything else.
 
 ## Building
 
+### On the computer, including Windows
+
+The preview that draws every screen as a PNG builds and runs natively on
+Windows, macOS and Linux. Install Rust with [rustup](https://rustup.rs/); the
+toolchain version and the Android target are read from `rust-toolchain.toml`.
+Nothing else is needed to look at or change the interface:
+
+```sh
+cargo run --release -p skyward-preview -- preview-out --lang en
+```
+
+Pass an output directory as the first argument; `--lang` takes a locale such
+as `en` or `zh-CN`. The phone-only parts of the workspace are kept out of the
+Windows build, so the same command works on a computer with no NDK and no
+WSL. Building the recovery itself, and running the full test and lint suite,
+still use the Linux commands below (CI runs them on Ubuntu); Windows builds
+and previews the code.
+
+### For the phone
+
 Skyward builds with the version of Rust that `rust-toolchain.toml` names, with its
 `aarch64-linux-android` target, the Android NDK r29 and
 [cargo-ndk](https://github.com/bbqsrc/cargo-ndk). The recovery service is built for

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use skyward_block::area::Area;
 use std::fs::{self, File, OpenOptions};
 use std::io::{ErrorKind, Write};
+#[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
@@ -141,7 +142,10 @@ impl State {
         fs::create_dir_all(dir).with_context(|| format!("make {}", dir.display()))?;
         let text = toml::to_string(self).context("write the systems' state")?;
         let tmp = path.with_extension("toml.new");
+        #[cfg(unix)]
         let mut f = OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&tmp).with_context(|| format!("open {}", tmp.display()))?;
+        #[cfg(windows)]
+        let mut f = OpenOptions::new().write(true).create(true).truncate(true).open(&tmp).with_context(|| format!("open {}", tmp.display()))?;
         f.write_all(text.as_bytes()).with_context(|| format!("write {}", tmp.display()))?;
         f.sync_all().with_context(|| format!("sync {}", tmp.display()))?;
         fs::rename(&tmp, path).with_context(|| format!("put {} in place of {}", tmp.display(), path.display()))?;

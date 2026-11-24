@@ -6,8 +6,10 @@
 
 use anyhow::{bail, Context, Result};
 use std::collections::{BTreeMap, BTreeSet};
+#[cfg(unix)]
 use std::ffi::CString;
 use std::fs::{self, OpenOptions};
+#[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
@@ -90,11 +92,35 @@ fn config(path: &str) -> Result<Vec<Vec<String>>> {
 }
 
 /// Whether `name` matches the shell pattern `pattern`.
+#[cfg(unix)]
 fn matches(pattern: &str, name: &str) -> bool {
     let (Ok(pattern), Ok(name)) = (CString::new(pattern), CString::new(name)) else {
         return false;
     };
     unsafe { libc::fnmatch(pattern.as_ptr(), name.as_ptr(), 0) == 0 }
+}
+
+/// A desk build never loads a kernel module; aliases in a config still need
+/// a pattern match, and the ones Android writes are plain `*` globs.
+#[cfg(windows)]
+fn matches(pattern: &str, name: &str) -> bool {
+    let mut parts = pattern.split('*');
+    let Some(first) = parts.next() else { return false };
+    if !name.starts_with(first) {
+        return false;
+    }
+    let mut rest = &name[first.len()..];
+    let last = parts.clone().last().unwrap_or("");
+    for part in parts {
+        if part.is_empty() {
+            continue;
+        }
+        match rest.find(part) {
+            Some(at) => rest = &rest[at + part.len()..],
+            None => return false,
+        }
+    }
+    rest.ends_with(last)
 }
 
 /// The module files of one or more folders, read as libmodprobe reads
@@ -330,7 +356,10 @@ impl Modprobe {
     fn insmod(&mut self, path: &str) -> Result<()> {
         let module = canonical(path).unwrap_or_default();
         let options = self.options.get(&module).cloned().unwrap_or_default();
+        #[cfg(unix)]
         let file = OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW).open(path).with_context(|| format!("open {path}"))?;
+        #[cfg(windows)]
+        let file = OpenOptions::new().read(true).open(path).with_context(|| format!("open {path}"))?;
         match crate::finit_module(&file, &options) {
             Ok(()) => self.count += 1,
             Err(e) if e.raw_os_error() == Some(libc::EEXIST) => {}
@@ -432,7 +461,11 @@ pub fn first_stage(cmdline: &str, bootconfig: &str, skip: &[String]) -> Result<L
         }
     }
     let release = fs::read_to_string("/proc/sys/kernel/osrelease").context("read the kernel's release")?;
+    #[cfg(unix)]
     let page_size = u64::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) }).context("read the page size")?;
+    // A desk build never reaches here — the one caller is Android-only.
+    #[cfg(windows)]
+    let page_size = 4096;
     let charger = charging(cmdline, bootconfig);
     for name in version_dirs(&names, release.trim(), page_size)? {
         let dir = format!("{FIRST_STAGE}/{name}");

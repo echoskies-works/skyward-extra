@@ -11,19 +11,30 @@
 //! own, these need none of them.
 
 use std::ffi::{OsStr, OsString};
+#[cfg(unix)]
 use std::io::{self, Read, Write};
 
+// These stand in for a phone's install-script commands and speak Unix
+// signals, properties and pipes. A desk build is never started under any
+// of these names; keep them out of the Windows build.
+#[cfg(unix)]
 mod avbctl;
+#[cfg(unix)]
 mod resetprop;
+#[cfg(unix)]
 mod sevenzip;
+#[cfg(unix)]
 mod unzip;
+#[cfg(unix)]
 mod zstandard;
 
 /// How much is read and written at a time: a whole partition image may go
 /// through a command.
+#[cfg(unix)]
 const CHUNK: usize = 1 << 20;
 
 /// What a command reads and writes besides the files it names.
+#[cfg(unix)]
 struct Io<'a> {
     input: &'a mut dyn Read,
     output: &'a mut dyn Write,
@@ -31,9 +42,11 @@ struct Io<'a> {
 }
 
 /// A command: its arguments, without its name, to the status it ends with.
+#[cfg(unix)]
 type Command = fn(&[OsString], &mut Io) -> i32;
 
 /// The command a program started as `name` is, if it is one of them.
+#[cfg(unix)]
 fn command(name: &OsStr) -> Option<Command> {
     match name.to_str()? {
         "7za" => Some(sevenzip::run),
@@ -47,6 +60,7 @@ fn command(name: &OsStr) -> Option<Command> {
 
 /// Run the command this program was started as, `name`, with `args`, and
 /// give the status it ends with; none when `name` is not one of them.
+#[cfg(unix)]
 pub fn run(name: &OsStr, args: &[OsString]) -> Option<i32> {
     let command = command(name)?;
     // As with the programs these stand in for, writing to a pipe whose
@@ -57,7 +71,15 @@ pub fn run(name: &OsStr, args: &[OsString]) -> Option<i32> {
     Some(command(args, &mut Io { input: &mut input, output: &mut output, errors: &mut errors }))
 }
 
+/// Windows is never started as one of the phone's install commands, so
+/// there is nothing to run under such a name.
+#[cfg(windows)]
+pub fn run(_name: &OsStr, _args: &[OsString]) -> Option<i32> {
+    None
+}
+
 /// Where copying stopped.
+#[cfg(unix)]
 #[derive(Debug)]
 enum Failed {
     Reading(io::Error),
@@ -65,6 +87,7 @@ enum Failed {
 }
 
 /// Copy what is left of `from` to `to`, giving how much there was.
+#[cfg(unix)]
 fn copy(from: &mut dyn Read, to: &mut dyn Write) -> Result<u64, Failed> {
     let mut chunk = vec![0; CHUNK];
     let mut copied = 0;
@@ -80,7 +103,7 @@ fn copy(from: &mut dyn Read, to: &mut dyn Write) -> Result<u64, Failed> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use std::path::Path;

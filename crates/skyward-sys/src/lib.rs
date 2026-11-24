@@ -5,8 +5,14 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+// These five talk to the kernel through Unix descriptors — pipes, netlink
+// sockets, epoll, pread. A desk build has none of that and reaches none of
+// them: every caller sits behind target_os = "android". Keep them out of
+// the Windows build rather than fake a kernel that is not there.
+#[cfg(unix)]
 pub mod bcb;
 pub mod clock;
+#[cfg(unix)]
 pub mod control;
 pub mod cpu;
 pub mod leave;
@@ -16,6 +22,7 @@ pub mod sleep;
 pub mod uevent;
 pub mod ueventd;
 pub mod usb;
+#[cfg(unix)]
 pub mod worker;
 
 /// A system property, or `None` when it is unset.
@@ -293,12 +300,20 @@ fn records(text: &str, most: usize) -> Vec<&str> {
 
 /// How long the phone has been running, on the clock the kernel stamps its
 /// log with.
+#[cfg(unix)]
 fn since_boot() -> Result<Duration> {
     let mut t = libc::timespec { tv_sec: 0, tv_nsec: 0 };
     if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut t) } != 0 {
         return Err(std::io::Error::last_os_error()).context("read the time since the phone started");
     }
     Ok(Duration::new(t.tv_sec as u64, t.tv_nsec as u32))
+}
+
+/// Windows has no CLOCK_MONOTONIC from boot; GetTickCount64 is its answer,
+/// in milliseconds. Only the log line's timestamp reads it off a desk.
+#[cfg(windows)]
+fn since_boot() -> Result<Duration> {
+    Ok(Duration::from_millis(unsafe { windows_sys::Win32::System::SystemInformation::GetTickCount64() }))
 }
 
 /// The kernel log as `dmesg` prints it: as much of it as the kernel still

@@ -87,6 +87,7 @@
 
 ### 内部 / 工程
 
+- **Windows 原生可编译、可出图**：装 Rust 即可在 Windows 上编译预览程序并生成 337 张界面图，不需要 WSL、NDK 或 Linux。给只读手机的部分按 `cfg(unix)` 门控，`skyward-lp` 的镜像读取、`skyward-block` 的磁盘空间、`skyward-sys` 的开机时间等少数在电脑上会用到的，给了真正跨平台的 Windows 实现（seek 读、`GetDiskFreeSpaceEx`、`GetTickCount64`），不是糊过去的 stub。别人拉源码、不带任何本机配置，同样能编。仓库两份 README 加了「在电脑上（含 Windows）」一节说明命令。完整的 `cargo test` / `clippy` 仍在 Linux/CI 上跑，Windows 这一阶段负责构建与出图。
 - 桌面 `clippy --workspace --all-targets -D warnings` 之前红在 `paniclog.rs` 五处死代码：那些只服务 Android 版 `install()`，桌面版是空实现却照样编进去；现在按平台剔除，测试要用的两个助手在 `cfg(test)` 下保留。CI 三道门（host clippy、host 测试、aarch64 clippy）全部通过。
 - crate 两次改名：`skyward-startup` → `skyward-asmoday` → `asmoday`，贴合它「系统外」的身份；面向用户文案不变，预览输出目录仍是 `startup/`。
 - 打包链路同步：`--asmoday` 传参、recovery 装 asmoday / 新增 skyward 装系统、5 个命令软链改指向，CI、两份 README 与本机脚本同步；原厂 `init.rc` 不动。

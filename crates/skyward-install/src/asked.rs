@@ -1,6 +1,7 @@
 //! Where a package the system asked to be installed is, as the recovery
 //! reaches it, and what has to be open for the recovery to read it.
 
+#[cfg(unix)]
 use crate::blockmap;
 use std::path::PathBuf;
 
@@ -31,10 +32,15 @@ pub enum Needs {
 /// partition on a phone with no cache partition, and /sdcard is the
 /// owner's shared storage, which is the data partition's /data/media/0.
 pub fn locate(package: &str, cache_partition: bool) -> (Asked, Needs) {
+    // No block map can be read on a desk — the mapped form is a phone's
+    // /data file — so the package is always taken as a plain path here.
+    #[cfg(unix)]
     let (map, path) = match blockmap::mapped(package) {
         Some(map) => (true, map),
         None => (false, package),
     };
+    #[cfg(windows)]
+    let (map, path) = (false, package);
     let path = match path.strip_prefix("/cache/") {
         Some(rest) if !cache_partition => format!("/data/cache/{rest}"),
         _ => path.to_string(),

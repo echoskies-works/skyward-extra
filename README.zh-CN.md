@@ -159,6 +159,18 @@ Skyward 可以在手机自身分区中的系统旁边安装第二系统，主系
 
 ## 构建
 
+### 在电脑上（含 Windows）
+
+把每一屏画成 PNG 的预览程序能在 Windows、macOS、Linux 上原生编译运行。用 [rustup](https://rustup.rs/) 装 Rust 即可，工具链版本和 Android 目标由 `rust-toolchain.toml` 指定。看界面、改界面不需要别的东西：
+
+```sh
+cargo run --release -p skyward-preview -- preview-out --lang zh-CN
+```
+
+第一个参数是输出目录，`--lang` 取 `en`、`zh-CN` 这样的地区码。workspace 里只在手机上跑的部分不会进 Windows 构建，所以没有 NDK、没有 WSL 的电脑也能用这条命令。构建 recovery 本体、跑完整的测试和 lint 仍用下面的 Linux 命令（CI 在 Ubuntu 上跑）；Windows 这边负责构建和出图。
+
+### 针对手机
+
 Skyward 使用 `rust-toolchain.toml` 指定版本的 Rust 和它的 `aarch64-linux-android` 目标、Android NDK r29 和 [cargo-ndk](https://github.com/bbqsrc/cargo-ndk) 构建。recovery 服务针对手机构建，打包工具针对电脑构建：
 
 ```sh

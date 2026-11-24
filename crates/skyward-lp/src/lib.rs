@@ -2,6 +2,7 @@ use anyhow::{anyhow, bail, ensure, Context, Result};
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::mem::size_of;
+#[cfg(unix)]
 use std::os::unix::fs::FileExt;
 use std::path::Path;
 use zerocopy::byteorder::little_endian::{U16, U32, U64};
@@ -209,8 +210,21 @@ pub fn read(super_dev: &Path, slot: u32) -> Result<Metadata> {
     let file = File::open(super_dev).with_context(|| format!("open {}", super_dev.display()))?;
     let at = |offset: u64, len: usize| -> Result<Vec<u8>> {
         let mut buf = vec![0u8; len];
+        // A phone reads a super image with pread, which needs no moving of
+        // the file's cursor. Windows has no pread, so get a private handle
+        // there and seek it; both hands read the same bytes at the offset.
+        #[cfg(unix)]
         file.read_exact_at(&mut buf, offset)
             .with_context(|| format!("read {len} bytes at {offset} in {}", super_dev.display()))?;
+        #[cfg(not(unix))]
+        {
+            use std::io::{Read, Seek, SeekFrom};
+            let mut at = file.try_clone().with_context(|| format!("clone {}", super_dev.display()))?;
+            at.seek(SeekFrom::Start(offset))
+                .with_context(|| format!("seek {offset} in {}", super_dev.display()))?;
+            at.read_exact(&mut buf)
+                .with_context(|| format!("read {len} bytes at {offset} in {}", super_dev.display()))?;
+        }
         Ok(buf)
     };
 

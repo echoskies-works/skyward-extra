@@ -143,7 +143,10 @@ pub fn mount(drive: &Drive, at: &Path) -> Result<(String, &'static str)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::os::unix::fs::symlink;
+    #[cfg(windows)]
+    use std::os::windows::fs::symlink_dir as symlink;
 
     /// A disk at `path` under `root`'s devices, with `sectors` and these
     /// partitions, each with its sectors, listed in `root`'s block folder

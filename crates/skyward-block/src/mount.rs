@@ -1,6 +1,10 @@
-use std::ffi::CString;
 use std::io;
+#[cfg(unix)]
+use std::ffi::CString;
+#[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 
 /// Filesystems Android puts on logical and metadata partitions, in the order
@@ -72,6 +76,7 @@ pub fn space(path: &Path) -> io::Result<Space> {
 }
 
 /// What the kernel says of the filesystem that holds `path`.
+#[cfg(unix)]
 fn statvfs(path: &Path) -> io::Result<libc::statvfs> {
     let c = CString::new(path.as_os_str().as_bytes()).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
@@ -79,6 +84,40 @@ fn statvfs(path: &Path) -> io::Result<libc::statvfs> {
         return Err(io::Error::last_os_error());
     }
     Ok(s)
+}
+
+/// Windows has no statvfs; GetDiskFreeSpaceEx is its answer to the same
+/// question. Keep the errors alike across platforms: a path with a NUL is
+/// bad input, one that is not there is not found. The counts come back in
+/// bytes already, so they are laid into the same fields `space` reads.
+#[cfg(windows)]
+fn statvfs(path: &Path) -> io::Result<Statvfs> {
+    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+    if wide.contains(&0) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "a path holds a NUL"));
+    }
+    let mut wide = wide;
+    wide.push(0);
+    if !path.exists() {
+        return Err(io::Error::new(io::ErrorKind::NotFound, "no such folder"));
+    }
+    let (mut available, mut total, mut free) = (0u64, 0u64, 0u64);
+    let ok = unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut available, &mut total, &mut free) };
+    if ok == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(Statvfs { f_blocks: total, f_bfree: free, f_bavail: available, f_frsize: 1 })
+}
+
+/// The four counts `space` needs, in the shape statvfs gives them on a
+/// phone and that the Windows call above fills from its own answer.
+#[cfg(windows)]
+struct Statvfs {
+    f_blocks: u64,
+    f_bfree: u64,
+    f_bavail: u64,
+    f_frsize: u64,
 }
 
 #[cfg(target_os = "android")]

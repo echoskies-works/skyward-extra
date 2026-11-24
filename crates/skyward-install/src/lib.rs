@@ -5,8 +5,11 @@
 
 pub mod adb;
 pub mod asked;
+// Block maps and FUSE mounts are phone-only; a desk build reaches neither.
+#[cfg(unix)]
 pub mod blockmap;
 pub mod commands;
+#[cfg(unix)]
 pub mod fuse;
 pub mod image;
 pub mod keep;
