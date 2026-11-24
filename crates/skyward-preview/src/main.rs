@@ -149,12 +149,14 @@ type PageShot<'a> = (&'a str, Screen, bool, &'a dyn Fn(&mut App));
 /// workspace's `skyward-preview/` baked in through `SWEX_PREVIEW_OUT` at build
 /// time, else `./preview-out`.
 ///
-/// The baked-in path is there because this only builds under WSL: there
-/// `CARGO_MANIFEST_DIR` points into `~/aether-skyward`, and no relative path
-/// from it can reach the Windows workspace that holds the source snapshot.
-/// Build with `SWEX_PREVIEW_OUT=<workspace>/skyward-preview` and the binary
-/// writes its shots there without being told; a leading `--`-option is never
-/// taken for the directory.
+/// The baked-in path is there so the binary writes its shots into the
+/// workspace's folder whatever directory it is run from: that folder is a
+/// sibling of this crate, so a relative path would follow the working
+/// directory instead, and `CARGO_MANIFEST_DIR` names the source tree rather
+/// than the pictures beside it. Build with
+/// `SWEX_PREVIEW_OUT=<workspace>/skyward-preview` and the binary writes its
+/// shots there without being told; a leading `--`-option is never taken for
+/// the directory.
 fn out_dir(args: &[String]) -> PathBuf {
     match args.get(1).map(String::as_str).filter(|a| !a.starts_with("--")) {
         Some(dir) => PathBuf::from(dir),
