@@ -24,12 +24,24 @@ const FOOT_FILL_DARK: f32 = 0.84;
 /// is only a shade lighter than the page; a dark one has none at all — black
 /// over black leaves nothing to see, so the bar is raised to a card's grey
 /// instead.
-///
-/// Nothing is cast under the bar. A drop shadow there reads as relief — the
-/// bar looks like a key standing on the page, which is not what a surface
-/// lying flat over it looks like. The lift is the bar's own colour.
 const FOOT_VEIL_LIGHT: u8 = 150;
 const FOOT_VEIL_DARK: u8 = 28;
+
+/// The shadow under the bar, in dp — the dial's shadow, not a halo: the light
+/// comes from above, so it is at its darkest under the bar's foot, thin at the
+/// sides, and gone above it, where the bar is between the light and the page.
+/// `DIAL_SIGMA` is 11 dp on a disc 212 across; the bar is 52 high, so its fade
+/// is taken at about that share of its own height.
+const FOOT_SHADOW_DP: f32 = 6.0;
+
+/// How dark that shadow is, as an alpha of black. The palette's own shadow is
+/// too faint to be read under a surface this light — the dial takes a quarter
+/// of black for the same reason, and this is taken at the dial's measure.
+///
+/// A dark page gets no shadow at all: the page is already black, and black
+/// laid on black is not a shadow, it is nothing. The bar there stands off the
+/// page by its own grey, the way the dial does.
+const FOOT_SHADOW_INK: u8 = 60;
 
 /// How long the pill takes to reach the face just touched, in ms: the page's
 /// own turn, so a touch moves two things at one pace.
@@ -106,6 +118,14 @@ impl App {
         // looks like.
         let veil = if t.dark { FOOT_VEIL_DARK } else { FOOT_VEIL_LIGHT };
         out.fill_round_rect(bar.x, bar.y, bar.w, bar.h, r, Rgba::rgb(255, 255, 255).with_alpha(veil));
+        // The shadow last and outside the bar, so what it darkens is the page
+        // around it and not the bar itself. The light is above, so it is at
+        // its darkest under the foot, thin along the sides, and there is none
+        // of it above — see `shadow_round_rect_lit`.
+        if !t.dark {
+            let ink = Rgba::rgb(0, 0, 0).with_alpha(FOOT_SHADOW_INK);
+            out.shadow_round_rect_lit(bar.x, bar.y, bar.w, bar.h, r, t.m.dp(FOOT_SHADOW_DP), ink);
+        }
 
         let l = self.state.lang;
         let marks: Vec<(crate::icons::Icon, &str)> = faces.iter().map(|fc| (fc.icon, l.pick(fc.name))).collect();

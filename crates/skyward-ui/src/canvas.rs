@@ -1130,6 +1130,23 @@ impl Canvas {
     /// edge, fading with the distance from it as the blur has it.
     #[allow(clippy::too_many_arguments)]
     pub fn shadow_round_rect(&mut self, x: f32, y: f32, w: f32, h: f32, r: f32, sigma: f32, color: Rgba) {
+        self.shadow_rr(x, y, w, h, r, sigma, color, false);
+    }
+
+    /// The same shadow cast under a light from above, as the clock's dial
+    /// casts it: all of it under the foot, little at the sides, none above,
+    /// where the rectangle itself stands between the light and the page.
+    ///
+    /// An even fade all round — what `shadow_round_rect` lays — reads as a
+    /// thing hovering over the page with light coming from nowhere; the eye
+    /// takes an edge lit above and dark below for a surface lying on it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn shadow_round_rect_lit(&mut self, x: f32, y: f32, w: f32, h: f32, r: f32, sigma: f32, color: Rgba) {
+        self.shadow_rr(x, y, w, h, r, sigma, color, true);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn shadow_rr(&mut self, x: f32, y: f32, w: f32, h: f32, r: f32, sigma: f32, color: Rgba, lit: bool) {
         let (cx, cy) = (x + w / 2.0, y + h / 2.0);
         let (hx, hy) = (w / 2.0, h / 2.0);
         let r = r.min(hx).min(hy);
@@ -1156,7 +1173,18 @@ impl Canvas {
                     continue;
                 }
                 let (i, k) = (d as usize, d.fract());
-                self.blend(px, py, color, level[i] + (level[i + 1] - level[i]) * k);
+                let mut cov = level[i] + (level[i + 1] - level[i]) * k;
+                if lit {
+                    // How much of the shadow this pixel can see, by where it
+                    // stands against the rectangle: the whole of it below the
+                    // foot, an eighth at the sides, none of it above — the
+                    // same reading the dial's round shadow takes.
+                    let lean = ((fy - cy) / (hy + d)).clamp(-1.0, 1.0);
+                    cov *= (0.5 + 0.5 * lean).powi(3);
+                }
+                if cov > 0.0 {
+                    self.blend(px, py, color, cov);
+                }
             }
         }
     }
@@ -2084,9 +2112,29 @@ mod tests {
         assert_eq!(c.px(360, 150).expect("on the canvas")[0], 243, "it reaches no further than three deviations");
     }
 
+    /// A shadow cast under a light from above: none of it above what casts it,
+    /// all of it under the foot, a trace of it at the sides. The even one is
+    /// laid beside it to show the difference the light makes.
+    #[test]
+    fn a_shadow_from_above_keeps_to_the_foot_of_what_casts_it() {
+        let ink = Rgba::rgb(0, 0, 0).with_alpha(200);
+        let (x, y, w, h, r) = (100.0, 150.0, 200.0, 60.0, 30.0);
+        let mut lit = Canvas::filled(400, 400, Rgba::rgb(243, 243, 243));
+        lit.shadow_round_rect_lit(x, y, w, h, r, 16.0, ink);
+        let mut even = Canvas::filled(400, 400, Rgba::rgb(243, 243, 243));
+        even.shadow_round_rect(x, y, w, h, r, 16.0, ink);
+        let at = |c: &mut Canvas, x: i32, y: i32| c.px(x, y).expect("on the canvas")[0];
+
+        assert_eq!(at(&mut lit, 200, 130), 243, "nothing of it above the top");
+        assert!(at(&mut even, 200, 130) < 243, "the even one puts a halo there");
+        let foot = at(&mut lit, 200, 214);
+        assert!(foot < 180, "under the foot it is at its darkest: {foot}");
+        let side = at(&mut lit, 70, 180);
+        assert!(foot < side && side <= 243, "foot {foot}, side {side}: the light reaches the sides");
+    }
+
     /// A canvas two pixels wide whose row k is grey k.
-    fn graded(h: u32) -> Canvas {
-        let mut c = Canvas::new(2, h);
+    fn graded(h: u32) -> Canvas {        let mut c = Canvas::new(2, h);
         for (k, row) in c.data.chunks_mut(8).enumerate() {
             let g = k as u8;
             row.copy_from_slice(&[g, g, g, 255, g, g, g, 255]);
