@@ -3,9 +3,9 @@
 ## 0.1.5（未发布）
 
 > - 起点：`84bd239 Call this build 0.1.4`（2026-11-18 20:43）
-> - 截止：`135644c`（2026-11-23），共 **67 次提交**，110 个文件，+28,296 / −3,902 行（含上游 15 语言文件与新增二进制资源）；另含其后的 5 次提交（商店底栏、asmoday 语言函数修复、底栏去掉投影、阴影重画为光从上方来、底栏不再磨砂）
-> - `SWEX_VERSION` 已升到 `0.1.5`（2026-11-24）；这批改动已推远端 main（`13f91c4`），但还没编成新 img，GitHub 账号仍是 suspended
-> - 按用户可感知程度分组。逐提交、逐文件的开发总账见工作区根 `CHANGES.md` 第七十～一百一十二节
+> - 截止：`135644c`（2026-11-23），共 **67 次提交**，110 个文件，+28,296 / −3,902 行（含上游 15 语言文件与新增二进制资源）；另含其后的 10 次提交（商店底栏、asmoday aarch64 修复、底栏投影的取舍与重画、关掉磨砂、三次 CHANGELOG 同步、版本号 0.1.5、桌面 clippy 死代码修复）
+> - `SWEX_VERSION` 已升到 `0.1.5`（2026-11-24）；这批改动推到远端 main 的 `13f91c4`，其后两笔（版本号、clippy 修复）尚未推，也还没编成新 img，GitHub 账号仍是 suspended
+> - 按用户可感知程度分组。逐提交、逐文件的开发总账见工作区根 `CHANGES.md` 第七十～一百一十六节
 
 ### 上游同步：v0.3.1 → `dc7f769`
 
@@ -87,8 +87,9 @@
 
 ### 内部 / 工程
 
+- 桌面 `clippy --workspace --all-targets -D warnings` 之前红在 `paniclog.rs` 五处死代码：那些只服务 Android 版 `install()`，桌面版是空实现却照样编进去；现在按平台剔除，测试要用的两个助手在 `cfg(test)` 下保留。CI 三道门（host clippy、host 测试、aarch64 clippy）全部通过。
 - crate 两次改名：`skyward-startup` → `skyward-asmoday` → `asmoday`，贴合它「系统外」的身份；面向用户文案不变，预览输出目录仍是 `startup/`。
 - 打包链路同步：`--asmoday` 传参、recovery 装 asmoday / 新增 skyward 装系统、5 个命令软链改指向，CI、两份 README 与本机脚本同步；原厂 `init.rc` 不动。
 - 去掉「上滑显示后台」整层（手势与后台内容），回桌面与解锁的上滑保留；后台暂由任务管理器管。
 - 依赖：`toml` 显式开 `preserve_order`、新增 `indexmap` 用于壁纸保序；`Cargo.lock` 只增量加 3 行。
-- 验证：WSL 工作区测试全绿（`cargo test --workspace`，其中 skyward-ui 504），Android `cargo ndk -t arm64-v8a --platform 30 clippy --locked --workspace --all-targets -- -D warnings` EXIT=0（此前被 `asmoday` 在 aarch64 下的 E0599 挡着，同一个包里一并修掉）；预览 337 张（根 327 + startup 10）重出并逐张核对。
+- 验证：CI 三道门全绿——`cargo clippy --locked --workspace --all-targets -- -D warnings`（此前被 `paniclog.rs` 的死代码挡着）、`cargo test --locked --workspace`（skyward-ui 504）、`cargo ndk -t arm64-v8a --platform 30 clippy --locked --workspace --all-targets -- -D warnings`（此前被 `asmoday` 在 aarch64 下的 E0599 挡着）；中英预览 337 张（根 327 + startup 10）重出并逐张核对。
