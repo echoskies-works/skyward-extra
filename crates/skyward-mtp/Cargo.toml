@@ -4,11 +4,13 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 anyhow = { workspace = true }
 # The recovery carries no time zone files, so the rules come built in.
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-always"] }
-libc = { workspace = true }
 skyward-block = { path = "../skyward-block" }
 skyward-files = { path = "../skyward-files" }
 
@@ -19,3 +21,8 @@ skyward-sys = { path = "../skyward-sys" }
 # phone.
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
 zerocopy = { version = "0.8.63", features = ["derive"] }
+
+# The store's times and the folders it watches are the kernel's: libc is
+# the phone's, listed among the phone's.
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }

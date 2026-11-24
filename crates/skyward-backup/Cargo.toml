@@ -4,13 +4,21 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 anyhow = { workspace = true }
 hex = { workspace = true }
-libc = { workspace = true }
 lz4_flex = "0.14.0"
 serde = { workspace = true }
 sha2 = "0.10.9"
 skyward-files = { path = "../skyward-files" }
-tar = "0.4.46"
 toml = { workspace = true }
+
+# A tar of a phone's folders keeps their kinds, modes and times, which
+# only a Unix-like system writes back: these are the phone's, listed among
+# the phone's.
+[target.'cfg(not(windows))'.dependencies]
+libc = { workspace = true }
+tar = "0.4.46"

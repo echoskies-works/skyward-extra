@@ -12,6 +12,9 @@ license.workspace = true
 name = "asmoday"
 path = "src/main.rs"
 
+[lints]
+workspace = true
+
 # The menu depends on the scanout and nothing else, on purpose. Adding a
 # dependency here is a decision about how likely this program is to still
 # work on a phone whose system partition is the thing that broke.

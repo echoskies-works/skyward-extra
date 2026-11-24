@@ -4,15 +4,21 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 anyhow = { workspace = true }
-libc = { workspace = true }
+prost = "0.14.4"
 skyward-block = { path = "../skyward-block" }
 skyward-config = { path = "../skyward-config" }
 skyward-sys = { path = "../skyward-sys" }
 skyward-vab = { path = "../skyward-vab" }
 
 [target.'cfg(not(windows))'.dependencies]
+# The kernel's name comes from uname, and the properties from a file only
+# a Unix-like system keeps: these are the phone's, listed among the phone's.
+libc = { workspace = true }
 rsproperties = { version = "0.6.0", features = ["builder"] }
 
 [dev-dependencies]

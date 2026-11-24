@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 aes = "0.8.4"
 anyhow = { workspace = true }
@@ -13,7 +16,6 @@ dhcproto = "0.15.0"
 hex = { workspace = true }
 hickory-proto = { version = "0.26.3", default-features = false, features = ["std"] }
 httparse = "1.10.1"
-libc = { workspace = true }
 md-5 = "0.10.6"
 semver = "1.0.28"
 serde = { workspace = true }
@@ -23,3 +25,8 @@ skyward-block = { path = "../skyward-block" }
 # The resolver ureq takes is under its unversioned API, which may change
 # between any two releases.
 ureq = { version = "=3.5.0", default-features = false, features = ["rustls"] }
+
+# The hooks the WLAN is driven through are the kernel's: libc is the
+# phone's, listed among the phone's.
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
