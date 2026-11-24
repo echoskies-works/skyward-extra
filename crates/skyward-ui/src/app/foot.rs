@@ -1,6 +1,5 @@
 //! The bar at the foot of a page: the ground it is made of — the page's own
-//! colours, frosted — the shadow under it, and the pill that slides to the
-//! face just touched.
+//! colours, frosted — and the pill that slides to the face just touched.
 //!
 //! It is laid after everything else the page puts down, and outside the
 //! page's canvas, for two reasons at once: the frost has to reach what lies
@@ -20,16 +19,17 @@ const FOOT_BLUR: usize = 2;
 const FOOT_FILL_LIGHT: f32 = 0.82;
 const FOOT_FILL_DARK: f32 = 0.84;
 
-/// What the bar adds over the frost: the white a light page keeps, and the
-/// black of a dark one. Thin either way — the frost is the bar's colour,
-/// this only settles it.
-const FOOT_VEIL_LIGHT: u8 = 78;
-const FOOT_VEIL_DARK: u8 = 150;
-
-/// The shadow under the bar: its deviation and how far down it is set, in
-/// dp. Light enough to lift the bar off the page without reading as a line.
-const FOOT_SHADOW_DP: f32 = 7.0;
-const FOOT_SHADOW_DROP_DP: f32 = 2.5;
+/// What the bar adds over the frost: white, at the amount that lifts it off
+/// the page it stands on. A light page has little room above it, so the bar
+/// is only a shade lighter than the page; a dark one has none at all — black
+/// over black leaves nothing to see, so the bar is raised to a card's grey
+/// instead.
+///
+/// Nothing is cast under the bar. A drop shadow there reads as relief — the
+/// bar looks like a key standing on the page, which is not what a surface
+/// lying flat over it looks like. The lift is the bar's own colour.
+const FOOT_VEIL_LIGHT: u8 = 150;
+const FOOT_VEIL_DARK: u8 = 28;
 
 /// How long the pill takes to reach the face just touched, in ms: the page's
 /// own turn, so a touch moves two things at one pace.
@@ -81,9 +81,9 @@ impl App {
         self.foot_slide = Some(FootSlide { screen: self.screen(), from: from as f32, to: to as f32, since: now });
     }
 
-    /// Lay the bar at the foot of the page, if it has one: the shadow under
-    /// it, its frosted ground, its rim, and the faces it names. The page is
-    /// drawn by the time this runs, which is what the frost is taken from.
+    /// Lay the bar at the foot of the page, if it has one: its frosted ground
+    /// and the faces it names. The page is drawn by the time this runs, which
+    /// is what the frost is taken from.
     pub(super) fn paint_foot(&mut self, out: &mut Canvas, t: &Theme, f: &Fonts, now: u64) {
         let Some((faces, shown)) = self.frame.as_ref().and_then(|fr| fr.foot.as_ref()).map(|ft| (ft.faces, ft.shown)) else {
             return;
@@ -95,26 +95,17 @@ impl App {
         let geom = widgets::foot_geom(t, count, self.foot_at(now, shown));
         let (bar, r) = (geom.bar, geom.bar.h / 2.0);
 
-        // The shadow first and set a little down, so what it darkens is the
-        // page around the bar rather than the bar.
-        out.shadow_round_rect(bar.x, bar.y + t.m.dp(FOOT_SHADOW_DROP_DP), bar.w, bar.h, r, t.m.dp(FOOT_SHADOW_DP), t.pal.shadow);
         if FOOT_FROST {
             let fill = if t.dark { FOOT_FILL_DARK } else { FOOT_FILL_LIGHT };
             out.frost_round_rect(bar.x, bar.y, bar.w, bar.h, r, FOOT_STEP, FOOT_BLUR, fill);
         }
-        // The bar's own colour over the frost: a light page's white, a dark
-        // one's black, thin enough for the frost to still be what is seen.
-        let veil = if t.dark {
-            Rgba::rgb(0, 0, 0).with_alpha(FOOT_VEIL_DARK)
-        } else {
-            Rgba::rgb(255, 255, 255).with_alpha(FOOT_VEIL_LIGHT)
-        };
-        out.fill_round_rect(bar.x, bar.y, bar.w, bar.h, r, veil);
-        // The hairline rim every round thing in the system carries; in the
-        // light it is the white of the fill and hardly shows, which is what
-        // a bar on a grey page wants.
-        let rim = if t.dark { Rgba::rgb(62, 62, 62).with_alpha(160) } else { Rgba::rgb(255, 255, 255) };
-        out.stroke_round_rect(bar.x, bar.y, bar.w, bar.h, r, t.m.dp(0.8), rim);
+        // The bar's own colour over the frost: white in both themes, at the
+        // amount above. Its edge is the frost's own, not a stroke's and not a
+        // shadow's — a lip or a drop around a bar this light reads as a
+        // button's bevel, which is not what a surface lying over the page
+        // looks like.
+        let veil = if t.dark { FOOT_VEIL_DARK } else { FOOT_VEIL_LIGHT };
+        out.fill_round_rect(bar.x, bar.y, bar.w, bar.h, r, Rgba::rgb(255, 255, 255).with_alpha(veil));
 
         let l = self.state.lang;
         let marks: Vec<(crate::icons::Icon, &str)> = faces.iter().map(|fc| (fc.icon, l.pick(fc.name))).collect();
