@@ -356,7 +356,10 @@ mod tests {
         assert!(rd.add("system/bin/recovery", 0o644, Vec::new()).is_err());
     }
 
-    /// What the reference `lz4` tool unpacks `packed` to.
+    /// What the reference `lz4` tool unpacks `packed` to. The tool is only
+    /// expected on a Unix computer; elsewhere the in-process frame decoder
+    /// below checks the same bytes.
+    #[cfg(unix)]
     fn unpacked_by_the_tool(packed: &[u8]) -> Vec<u8> {
         let mut child = Command::new("lz4").args(["-d", "-c"]).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
         let mut stdin = child.stdin.take().unwrap();
@@ -375,12 +378,16 @@ mod tests {
         let packed = lz4_legacy(&input);
         assert_eq!(packed[..4], [0x02, 0x21, 0x4c, 0x18]);
         assert!(packed.len() < input.len());
+        #[cfg(unix)]
         assert_eq!(unpacked_by_the_tool(&packed), input, "the reference tool reads it");
         let mut back = Vec::new();
         lz4_flex::frame::FrameDecoder::new(packed.as_slice()).read_to_end(&mut back).unwrap();
         assert_eq!(back, input);
     }
 
+    /// The reference tool reads 8 MiB legacy blocks that the in-process
+    /// frame decoder refuses; this cross-check runs where the tool exists.
+    #[cfg(unix)]
     #[test]
     fn a_stream_after_the_vendor_ramdisk_is_read_on_into() {
         let mut vendor = Ramdisk { entries: Vec::new() };

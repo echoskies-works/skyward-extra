@@ -7,8 +7,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
-use std::os::fd::RawFd;
 use std::path::{Path, PathBuf};
+
+use crate::platform::RawFd;
 
 /// The top of the storage, which the computer names by no handle.
 pub const TOP: u32 = 0;

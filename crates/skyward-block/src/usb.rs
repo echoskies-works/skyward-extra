@@ -145,12 +145,11 @@ mod tests {
     use super::*;
     #[cfg(unix)]
     use std::os::unix::fs::symlink;
-    #[cfg(windows)]
-    use std::os::windows::fs::symlink_dir as symlink;
 
     /// A disk at `path` under `root`'s devices, with `sectors` and these
     /// partitions, each with its sectors, listed in `root`'s block folder
     /// as the kernel lists its disks.
+    #[cfg(unix)]
     fn disk(root: &Path, path: &str, sectors: u64, parts: &[(&str, u64)]) {
         let dir = root.join("devices").join(path);
         fs::create_dir_all(dir.join("queue")).unwrap();
@@ -165,6 +164,9 @@ mod tests {
         symlink(&dir, root.join("block").join(name)).unwrap();
     }
 
+    /// The paths here are Linux sysfs device names, with colons the Windows
+    /// filesystem refuses; the traversal itself is checked on Linux CI.
+    #[cfg(unix)]
     #[test]
     fn only_disks_on_a_usb_bus_that_hold_something_are_drives() {
         let root = std::env::temp_dir().join(format!("skyward-usb-{}", std::process::id()));

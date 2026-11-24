@@ -110,7 +110,7 @@ fn matches(pattern: &str, name: &str) -> bool {
         return false;
     }
     let mut rest = &name[first.len()..];
-    let last = parts.clone().last().unwrap_or("");
+    let last = parts.clone().next_back().unwrap_or("");
     for part in parts {
         if part.is_empty() {
             continue;

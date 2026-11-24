@@ -620,7 +620,7 @@ impl DeviceConfig {
             let path = Path::new(log);
             let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
             ensure!(
-                path.is_absolute() && plain && path.starts_with(DATA) && path != Path::new(DATA),
+                from_the_top(path) && plain && path.starts_with(DATA) && path != Path::new(DATA),
                 "[wipe] logs: {log} is not a folder inside {DATA}"
             );
         }

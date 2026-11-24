@@ -1,6 +1,31 @@
 use super::*;
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::fs::FileExt;
+#[cfg(not(unix))]
+use std::io::{Read, Seek, SeekFrom};
+
+/// Positioned I/O for the tests on a computer without Unix `pread`/`pwrite`.
+#[cfg(not(unix))]
+trait FileExt {
+    fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> std::io::Result<()>;
+    fn write_all_at(&self, buf: &[u8], offset: u64) -> std::io::Result<()>;
+}
+
+#[cfg(not(unix))]
+impl FileExt for File {
+    fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
+        let mut at = self.try_clone()?;
+        at.seek(SeekFrom::Start(offset))?;
+        at.read_exact(buf)
+    }
+
+    fn write_all_at(&self, buf: &[u8], offset: u64) -> std::io::Result<()> {
+        let mut at = self.try_clone()?;
+        at.seek(SeekFrom::Start(offset))?;
+        at.write_all(buf)
+    }
+}
 
 /// A folder of its own for a test, empty, under `TMPDIR`.
 fn scratch(test: &str) -> PathBuf {
@@ -340,7 +365,7 @@ fn a_file_sent_is_made_where_asked_with_its_time() {
     let (h, done) = send(&mut r, download, "报告.txt", b"hello", 5);
     assert_eq!(done.code, response::OK, "{:?}", done.why);
     assert_eq!(fs::read(at.join("Download/报告.txt")).unwrap(), b"hello");
-    assert_eq!(fs::metadata(at.join("Download/报告.txt")).unwrap().mtime(), 1_792_584_900, "the time the computer gave");
+    assert_eq!(crate::platform::mtime(&fs::metadata(at.join("Download/报告.txt")).unwrap()), 1_792_584_900, "the time the computer gave");
     assert_eq!(handles(&mut r, download, 0), [h], "listed under the handle it was given");
     assert_eq!(info(&mut r, h).name, "报告.txt");
     let (top, done) = send(&mut r, PARENT_ROOT, "top.txt", b"", 0);

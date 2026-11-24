@@ -225,11 +225,18 @@ cargo run --release -p skyward-preview -- preview-out --lang en
 ```
 
 Pass an output directory as the first argument; `--lang` takes a locale such
-as `en` or `zh-CN`. The phone-only parts of the workspace are kept out of the
-Windows build, so the same command works on a computer with no NDK and no
-WSL. Building the recovery itself, and running the full test and lint suite,
-still use the Linux commands below (CI runs them on Ubuntu); Windows builds
-and previews the code.
+as `en` or `zh-CN`. The whole workspace — preview, packer, unit tests, and
+both lints — checks, builds and runs natively on Windows with just Rust. A
+few tests assert Unix file semantics and are skipped there; CI still runs
+them on Ubuntu.
+
+To build the phone binaries and lint their target, add the Android NDK r29
+and cargo-ndk (no WSL needed either):
+
+```sh
+export ANDROID_NDK_HOME=/path/to/ndk ANDROID_NDK_ROOT=$ANDROID_NDK_HOME
+CARGO_INCREMENTAL=0 cargo ndk -t arm64-v8a --platform 30 clippy --locked --workspace --all-targets -- -D warnings
+```
 
 ### For the phone
 

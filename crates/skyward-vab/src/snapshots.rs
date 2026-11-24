@@ -138,7 +138,9 @@ fn placed(md: &Metadata, name: &str) -> Placed {
 pub struct Snapshots {
     dir: PathBuf,
     exclusive: bool,
-    _lock: File,
+    /// Windows cannot lock a directory; the desk build never reaches the
+    /// phone's /metadata, so there is no lock to hold there.
+    _lock: Option<File>,
 }
 
 impl Snapshots {
@@ -164,16 +166,20 @@ impl Snapshots {
                 return Err(e).with_context(|| format!("lock {}", dir.display()));
             }
         }
-        Ok(Snapshots { dir: dir.into(), exclusive, _lock: lock })
+        Ok(Snapshots { dir: dir.into(), exclusive, _lock: Some(lock) })
     }
 
-    /// Windows cannot flock a directory, and a desk build never reaches the
-    /// phone's /metadata. Opening the folder still answers the one question
-    /// the tests ask — is there an update here — and keeps the same shape.
+    /// Windows cannot open or flock a directory, and a desk build never
+    /// reaches the phone's /metadata. Checking the folder still answers the
+    /// one question the tests ask — is there an update here — and keeps the
+    /// same shape, including a NotFound when there is none.
     #[cfg(windows)]
     fn lock_in(dir: &Path, exclusive: bool) -> Result<Snapshots> {
-        let lock = File::open(dir).with_context(|| format!("lock {}", dir.display()))?;
-        Ok(Snapshots { dir: dir.into(), exclusive, _lock: lock })
+        dir.try_exists().with_context(|| format!("lock {}", dir.display()))?;
+        if !dir.is_dir() {
+            return Err(std::io::Error::new(ErrorKind::NotFound, "no such folder")).with_context(|| format!("lock {}", dir.display()));
+        }
+        Ok(Snapshots { dir: dir.into(), exclusive, _lock: None })
     }
 
     /// The update's whole status.
@@ -365,8 +371,15 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<()> {
     file.write_all(data).with_context(|| format!("write {}", tmp.display()))?;
     file.sync_all().with_context(|| format!("sync {}", tmp.display()))?;
     fs::rename(&tmp, path).with_context(|| format!("put {} in place of {}", tmp.display(), path.display()))?;
-    let dir = path.parent().context("a file kept for an update is in a folder")?;
-    File::open(dir).and_then(|d| d.sync_all()).with_context(|| format!("sync {}", dir.display()))
+    // Syncing a directory is a Unix privilege; Windows refuses to open one.
+    #[cfg(unix)]
+    let synced = {
+        let dir = path.parent().context("a file kept for an update is in a folder")?;
+        File::open(dir).and_then(|d| d.sync_all()).with_context(|| format!("sync {}", dir.display()))
+    };
+    #[cfg(windows)]
+    let synced = Ok(());
+    synced
 }
 
 /// What a kernel snapshot says of itself: the sectors its copy-on-write

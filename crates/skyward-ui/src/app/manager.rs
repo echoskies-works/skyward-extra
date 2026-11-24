@@ -138,14 +138,28 @@ impl Folder {
         &self.entries.as_ref().expect("an entry touched is one the list shows")[i]
     }
 
-    /// Where the entry of this name in the folder is.
+    /// Where the entry of this name in the folder is. These are paths on
+    /// the phone, always with `/`, even when the UI is drawn on a computer
+    /// whose own separator is `\`.
     pub(super) fn inside(&self, name: &str) -> String {
-        std::path::Path::new(&self.path).join(name).to_string_lossy().into_owned()
+        if self.path.is_empty() {
+            name.to_string()
+        } else {
+            format!("{}/{name}", self.path.trim_end_matches('/'))
+        }
     }
 
     /// The folder this one is in; none for the root.
     pub(super) fn up(&self) -> Option<String> {
-        std::path::Path::new(&self.path).parent().map(|p| p.to_string_lossy().into_owned())
+        let base = self.path.trim_end_matches('/');
+        if base.is_empty() {
+            None
+        } else if let Some(cut) = base.rfind('/') {
+            if cut == 0 { Some("/".into()) } else { Some(base[..cut].to_string()) }
+        } else {
+            // A relative folder's parent is the empty path, the top.
+            Some(String::new())
+        }
     }
 
     /// The folder this many levels below the root, by its place in the

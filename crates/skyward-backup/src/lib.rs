@@ -1,6 +1,10 @@
 //! Backups: what one holds, as the manifest in its folder records it, and
 //! the files each of its parts is kept in.
 
+/// The archive keeps Unix modes, owners, times, links and labels, and reads
+/// encryption policies through ioctls. None of that has a counterpart on a
+/// computer running Windows, where the recovery's own code is not built.
+#[cfg(unix)]
 pub mod archive;
 pub mod store;
 

@@ -1,5 +1,8 @@
 //! The commands install scripts run, run as the scripts run them: by name,
-//! from a folder of links to this binary on their PATH, in a pipe.
+//! from a folder of links to this binary on their PATH, in a pipe. The
+//! scripts are shell scripts and the links need no admin rights on Unix,
+//! so this contract is checked on Linux CI, not on a Windows computer.
+#![cfg(unix)]
 
 use std::fs;
 use std::io::{Cursor, Write};
@@ -44,7 +47,7 @@ fn script(dir: &Path, script: &str, zip: &Path, out: &Path) -> ExitStatus {
     for command in skyward_config::ramdisk::COMMANDS {
         let link = bin.join(Path::new(command).file_name().unwrap());
         if !link.exists() {
-            symlink(env!("CARGO_BIN_EXE_skyward"), link).unwrap();
+            symlink(env!("CARGO_BIN_EXE_skyward"), &link).unwrap();
         }
     }
     Command::new("sh")

@@ -212,7 +212,10 @@ impl Phone {
     /// Where the program a script names `path` is started from.
     pub fn started_from(&self, path: &str) -> String {
         match self.within(path) {
-            Some((partition, within)) => partition.mounted.join(within).to_string_lossy().into_owned(),
+            // A program's path on the phone is a Unix path even when the
+            // tests run on Windows, so join the two as strings and never
+            // through a PathBuf, which would put a drive's separator in it.
+            Some((partition, within)) => format!("{}/{}", partition.mounted.to_string_lossy(), within.replace('\\', "/")),
             None => path.to_string(),
         }
     }

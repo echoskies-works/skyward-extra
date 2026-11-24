@@ -227,6 +227,7 @@ mod tests {
     const ADDRESSES: [Ipv4Addr; 2] = [Ipv4Addr::new(10, 0, 0, 1), Ipv4Addr::new(10, 0, 0, 2)];
 
     /// Answer the one question that comes over TCP to `tcp`, whole.
+    #[cfg(unix)]
     fn answer_over_tcp(tcp: std::net::TcpListener) {
         let (mut s, _) = tcp.accept().unwrap();
         let mut len = [0u8; 2];
@@ -239,7 +240,10 @@ mod tests {
     }
 
     /// A server on this computer that answers the way one on the network
-    /// does: over UDP with the answer cut short, then whole over TCP.
+    /// does: over UDP with the answer cut short, then whole over TCP. Both
+    /// sockets take the one port, which only Unix allows here; the DNS
+    /// answers themselves are checked on Linux CI.
+    #[cfg(unix)]
     #[test]
     fn an_answer_too_long_for_a_datagram_is_asked_for_again_over_tcp() {
         let udp = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
@@ -257,7 +261,9 @@ mod tests {
     }
 
     /// A server behind a network that lets questions out over UDP and
-    /// never lets the answers back in.
+    /// never lets the answers back in. Both sockets take the one port,
+    /// which only Unix allows here; Linux CI checks this answer path.
+    #[cfg(unix)]
     #[test]
     fn a_server_whose_answers_never_come_over_udp_is_asked_over_tcp() {
         let udp = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();

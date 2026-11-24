@@ -787,13 +787,17 @@ fn recovery() -> Result<()> {
     // the one that gets written, not one that goes unrecorded because the
     // hook was still waiting for its own directory to exist.
     paniclog::install();
-    use std::os::unix::fs::PermissionsExt;
     let run = || -> Result<()> {
         // Open to the programs the recovery runs as other users, the
-        // supplicant among them, whatever the umask.
+        // supplicant among them, whatever the umask. No Unix modes to open
+        // up on a computer; the recovery only ever runs on the phone.
         std::fs::create_dir_all(skyward_sys::RUN).with_context(|| format!("make {}", skyward_sys::RUN))?;
-        std::fs::set_permissions(skyward_sys::RUN, std::fs::Permissions::from_mode(0o755))
-            .with_context(|| format!("open {} to the recovery's other users", skyward_sys::RUN))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(skyward_sys::RUN, std::fs::Permissions::from_mode(0o755))
+                .with_context(|| format!("open {} to the recovery's other users", skyward_sys::RUN))?;
+        }
         skyward_sys::keep_log(Path::new(skyward_sys::LOG))?;
         // A leave note from a previous life would make the watcher reboot the
         // phone when this system only stops. It is cleared before the fork

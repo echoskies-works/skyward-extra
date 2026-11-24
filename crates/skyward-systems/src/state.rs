@@ -6,7 +6,9 @@ use crate::boot::Start;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use skyward_block::area::Area;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
+#[cfg(unix)]
+use std::fs::File;
 use std::io::{ErrorKind, Write};
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
@@ -149,7 +151,17 @@ impl State {
         f.write_all(text.as_bytes()).with_context(|| format!("write {}", tmp.display()))?;
         f.sync_all().with_context(|| format!("sync {}", tmp.display()))?;
         fs::rename(&tmp, path).with_context(|| format!("put {} in place of {}", tmp.display(), path.display()))?;
-        File::open(dir).and_then(|d| d.sync_all()).with_context(|| format!("sync {}", dir.display()))
+        // Syncing a directory to make a rename durable is a Unix call;
+        // Windows refuses to open one this way, and has no equivalent here.
+        #[cfg(unix)]
+        {
+            File::open(dir).and_then(|d| d.sync_all()).with_context(|| format!("sync {}", dir.display()))
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = dir;
+            Ok(())
+        }
     }
 
     /// Which system's boot set the boot partitions of `slot` hold.

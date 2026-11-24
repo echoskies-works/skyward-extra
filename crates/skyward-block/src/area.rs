@@ -85,11 +85,23 @@ impl Area {
 }
 
 /// A new area's id: 16 random bytes in hexadecimal.
+#[cfg(unix)]
 pub fn new_id() -> Result<String> {
     use std::io::Read;
     let mut bytes = [0u8; 16];
     std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut bytes)).context("read /dev/urandom")?;
     Ok(hex::encode(bytes))
+}
+
+/// A computer that is not Unix has no `/dev/urandom` and never makes an area;
+/// this only keeps the shape of an id for the platform-independent tests.
+#[cfg(not(unix))]
+pub fn new_id() -> Result<String> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos() as u64;
+    let n = NEXT.fetch_add(1, Ordering::Relaxed) ^ (std::process::id() as u64) << 32 ^ now;
+    Ok(hex::encode(n.to_le_bytes().repeat(2)))
 }
 
 fn unhex(id: &str) -> Result<[u8; 16]> {

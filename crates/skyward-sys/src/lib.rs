@@ -5,11 +5,13 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-// These five talk to the kernel through Unix descriptors — pipes, netlink
+// These talk to the kernel through Unix descriptors — pipes, netlink
 // sockets, epoll, pread. A desk build has none of that and reaches none of
 // them: every caller sits behind target_os = "android". Keep them out of
 // the Windows build rather than fake a kernel that is not there.
-#[cfg(unix)]
+// bcb is the exception: the recovery's command-line binary names its types
+// even on a computer, so the module stays and only its positioned I/O
+// degrades to seeks there (see bcb.rs).
 pub mod bcb;
 pub mod clock;
 #[cfg(unix)]

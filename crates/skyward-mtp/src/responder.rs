@@ -15,9 +15,9 @@ use std::ffi::OsString;
 use std::fmt::Display;
 use std::fs::{self, File, OpenOptions};
 use std::io;
-use std::os::fd::RawFd;
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+
+use crate::platform::{self, RawFd};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -270,9 +270,8 @@ impl Object {
 
     /// Unique to the entry and its last change, the same in every session.
     fn persistent_id(&self) -> u128 {
-        use std::os::unix::ffi::OsStrExt;
-        let hash = self.relative.as_os_str().as_bytes().iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3));
-        u128::from(hash) << 64 | u128::from(self.meta.mtime() as u64)
+        let hash = platform::name_bytes(self.relative.as_os_str()).iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3));
+        u128::from(hash) << 64 | u128::from(platform::mtime(&self.meta) as u64)
     }
 }
 
@@ -431,7 +430,7 @@ impl Responder {
                     _ => Reply::ok(),
                 });
             }
-            Received::Failed(e) if e.raw_os_error() == Some(libc::ENOSPC) => Some(Reply::failed(response::STORAGE_FULL, e)),
+            Received::Failed(e) if platform::is_storage_full(&e) => Some(Reply::failed(response::STORAGE_FULL, e)),
             Received::Failed(e) => Some(Reply::failed(response::GENERAL_ERROR, format!("write {}: {e}", sending.path.display()))),
             Received::Stopped => None,
         };
@@ -680,7 +679,7 @@ impl Responder {
             Ok(o) => o,
             Err(reply) => return reply,
         };
-        let modified = time::format(o.meta.mtime(), &self.zone);
+        let modified = time::format(platform::mtime(&o.meta), &self.zone);
         let mut w = Writer::new();
         w.u32(STORAGE_ID).u16(o.format()).u16(0).u32(u32::try_from(o.size()).unwrap_or(u32::MAX));
         // No thumbnail, and no image size, colour depth or sequence.
@@ -746,7 +745,7 @@ impl Responder {
             prop::PROTECTION_STATUS => w.u16(0),
             prop::OBJECT_SIZE => w.u64(o.size()),
             prop::OBJECT_FILE_NAME | prop::NAME | prop::DISPLAY_NAME => w.string(&o.name()),
-            prop::DATE_MODIFIED | prop::DATE_ADDED => w.string(&time::format(o.meta.mtime(), &self.zone)),
+            prop::DATE_MODIFIED | prop::DATE_ADDED => w.string(&time::format(platform::mtime(&o.meta), &self.zone)),
             prop::PERSISTENT_UID => w.u128(o.persistent_id()),
             prop::PARENT_OBJECT => w.u32(o.parent),
             other => unreachable!("{other:#06x} is not among the properties objects have"),
@@ -1083,13 +1082,7 @@ impl ObjectInfo {
 
 /// Give the entry at `path` the time it last changed.
 fn set_modified(path: &Path, unix: i64) -> io::Result<()> {
-    use std::os::unix::ffi::OsStrExt;
-    let c = std::ffi::CString::new(path.as_os_str().as_bytes()).map_err(io::Error::other)?;
-    let times = [libc::timespec { tv_sec: 0, tv_nsec: libc::UTIME_OMIT }, libc::timespec { tv_sec: unix as _, tv_nsec: 0 }];
-    if unsafe { libc::utimensat(libc::AT_FDCWD, c.as_ptr(), times.as_ptr(), 0) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(())
+    platform::set_modified(path, unix)
 }
 
 /// The response for a file that would not open.

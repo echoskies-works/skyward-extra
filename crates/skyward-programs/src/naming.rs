@@ -126,7 +126,7 @@ mod tests {
     use crate::phone::Partition;
     use std::collections::HashMap;
     use std::fs;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     /// A phone whose vendor and odm partitions lie under `at`, each with
     /// one script, read with `properties`.
@@ -136,7 +136,10 @@ mod tests {
             let folder = at.join(name).join("etc/init");
             fs::create_dir_all(&folder).unwrap();
             fs::write(folder.join("names.rc"), script).unwrap();
-            partitions.push(Partition { name: name.to_string(), mounted: Path::new("/").join(name), at: at.join(name) });
+            // A phone's mount point is a Unix path, not a path on the
+            // computer running the tests; Path::join would put a Windows
+            // separator in the middle of it.
+            partitions.push(Partition { name: name.to_string(), mounted: PathBuf::from(format!("/{name}")), at: at.join(name) });
         }
         let properties: HashMap<String, String> = properties.iter().map(|(name, value)| (name.to_string(), value.to_string())).collect();
         Phone::read(partitions, properties, None).unwrap()

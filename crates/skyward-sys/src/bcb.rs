@@ -1,8 +1,35 @@
 use anyhow::{bail, ensure, Context, Result};
 use std::fs::{File, OpenOptions};
+#[cfg(not(unix))]
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::ops::Range;
+#[cfg(unix)]
 use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
+
+/// Positioned reads and writes on a computer without Unix `pread`/`pwrite`.
+/// `bcb` only ever touches one file at a time and nothing else holds it, so
+/// a seek to the offset answers the same purpose there.
+#[cfg(not(unix))]
+trait FileExt {
+    fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> std::io::Result<()>;
+    fn write_all_at(&self, buf: &[u8], offset: u64) -> std::io::Result<()>;
+}
+
+#[cfg(not(unix))]
+impl FileExt for File {
+    fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
+        let mut at = self.try_clone()?;
+        at.seek(SeekFrom::Start(offset))?;
+        at.read_exact(buf)
+    }
+
+    fn write_all_at(&self, buf: &[u8], offset: u64) -> std::io::Result<()> {
+        let mut at = self.try_clone()?;
+        at.seek(SeekFrom::Start(offset))?;
+        at.write_all(buf)
+    }
+}
 
 /// The bootloader message at the start of misc: command[32], status[32],
 /// recovery[768], stage[32] and reserved[1184].

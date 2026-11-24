@@ -8,8 +8,9 @@ use anyhow::{bail, ensure, Context, Result};
 use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
 use std::io::{ErrorKind, Read, Write};
-use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+
+mod platform;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// How much of a file is copied between two reports of how far it is.
@@ -138,7 +139,7 @@ fn real(path: &Path) -> Result<PathBuf> {
 fn mounted_at(path: &Path, meta: &fs::Metadata) -> Result<bool> {
     let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) else { return Ok(true) };
     let up = fs::metadata(parent).with_context(|| format!("look at {}", parent.display()))?;
-    Ok(up.dev() != meta.dev())
+    Ok(platform::dev(&up) != platform::dev(meta))
 }
 
 /// The bytes the files of `paths` hold and how many entries they are,
@@ -148,7 +149,7 @@ fn mounted_at(path: &Path, meta: &fs::Metadata) -> Result<bool> {
 fn measure(paths: &[PathBuf], one_filesystem: bool) -> Result<(u64, u64)> {
     fn walk(path: &Path, dev: Option<u64>, one_filesystem: bool, sum: &mut (u64, u64)) -> Result<()> {
         let meta = fs::symlink_metadata(path).with_context(|| format!("look at {}", path.display()))?;
-        if one_filesystem && meta.is_dir() && dev.is_some_and(|d| d != meta.dev()) {
+        if one_filesystem && meta.is_dir() && dev.is_some_and(|d| d != platform::dev(&meta)) {
             bail!("another filesystem is mounted at {}; unmount it first", path.display());
         }
         sum.1 += 1;
@@ -157,7 +158,7 @@ fn measure(paths: &[PathBuf], one_filesystem: bool) -> Result<(u64, u64)> {
         } else if meta.is_dir() {
             for entry in fs::read_dir(path).with_context(|| format!("read {}", path.display()))? {
                 let entry = entry.with_context(|| format!("read {}", path.display()))?;
-                walk(&entry.path(), Some(meta.dev()), one_filesystem, sum)?;
+                walk(&entry.path(), Some(platform::dev(&meta)), one_filesystem, sum)?;
             }
         }
         Ok(())
@@ -272,8 +273,8 @@ fn give(into: &Path, ownership: Ownership) -> Result<Give> {
     }
     ensure!(keeps.owner, "{} is on a filesystem that keeps no owners to give what is made there", into.display());
     let folder = fs::metadata(into).with_context(|| format!("look at {}", into.display()))?;
-    let mode = (ownership == Ownership::Shared).then_some(folder.mode() & 0o7777);
-    Ok(Give::Folder(Like { uid: folder.uid(), gid: folder.gid(), label: label(into)?, mode }))
+    let mode = (ownership == Ownership::Shared).then_some(platform::mode(&folder) & 0o7777);
+    Ok(Give::Folder(Like { uid: platform::uid(&folder), gid: platform::gid(&folder), label: label(into)?, mode }))
 }
 
 /// The SELinux label of the folder `into`, as stored.
@@ -350,7 +351,7 @@ pub fn move_into(
                 p.entries += entries;
                 progress(p);
             }
-            Err(e) if e.raw_os_error() == Some(libc::EXDEV) => {
+            Err(e) if e.raw_os_error() == Some(platform::EXDEV) => {
                 copy_entry(&from, &to, &give, cancel, &mut p, progress)?;
                 remove(&from, cancel, &mut Progress::default(), &mut |_| {})?;
             }
@@ -379,7 +380,7 @@ pub fn make_folders(path: &Path, ownership: Ownership) -> Result<()> {
 pub fn make_file(path: &Path, ownership: Ownership) -> Result<File> {
     let into = path.parent().filter(|p| !p.as_os_str().is_empty()).with_context(|| format!("{} is in no folder", path.display()))?;
     let give = give(into, ownership)?;
-    let file = OpenOptions::new().write(true).create_new(true).mode(0o600).open(path).with_context(|| format!("make {}", path.display()))?;
+    let file = platform::create_new_mode(path).with_context(|| format!("make {}", path.display()))?;
     given(path, &give, false)?;
     Ok(file)
 }
@@ -393,10 +394,10 @@ fn given(path: &Path, give: &Give, folder: bool) -> Result<()> {
     if let Some(label) = &like.label {
         set_label(path, label)?;
     }
-    std::os::unix::fs::lchown(path, Some(like.uid), Some(like.gid)).with_context(|| format!("give {} its owner", path.display()))?;
+    platform::chown(path, like.uid, like.gid)?;
     if let Some(mode) = like.mode {
         let mode = if folder { mode } else { mode & 0o666 };
-        fs::set_permissions(path, fs::Permissions::from_mode(mode)).with_context(|| format!("give {} its permissions", path.display()))?;
+        platform::set_mode(path, mode)?;
     }
     Ok(())
 }
@@ -423,7 +424,7 @@ pub fn rename(path: &Path, new: &str) -> Result<PathBuf> {
         }
         let own = fs::symlink_metadata(path).with_context(|| format!("look at {}", path.display()))?;
         let found = fs::symlink_metadata(&to).with_context(|| format!("look at {}", to.display()))?;
-        if named || (own.dev(), own.ino()) != (found.dev(), found.ino()) {
+        if named || (platform::dev(&own), platform::ino(&own)) != (platform::dev(&found), platform::ino(&found)) {
             return Err(Taken(to).into());
         }
         let step = free_name(folder, name(path)?)?;
@@ -441,15 +442,15 @@ pub fn rename(path: &Path, new: &str) -> Result<PathBuf> {
 /// they were.
 pub fn set_mode(path: &Path, mode: u32) -> Result<u32> {
     let mode = mode & 0o7777;
-    fs::set_permissions(path, fs::Permissions::from_mode(mode)).with_context(|| format!("give {} the permissions {mode:04o}", path.display()))?;
-    Ok(fs::metadata(path).with_context(|| format!("look at {}", path.display()))?.mode() & 0o7777)
+    platform::set_mode(path, mode)?;
+    Ok(platform::mode(&fs::metadata(path).with_context(|| format!("look at {}", path.display()))?) & 0o7777)
 }
 
 /// What the file at `path` holds, if that is no more than `most` bytes.
 pub fn read_up_to(path: &Path, most: u64) -> Result<Option<Vec<u8>>> {
     // Opened without waiting, as a pipe waits for a writer, to be turned
     // down for what it is.
-    let file = OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(path).with_context(|| format!("open {}", path.display()))?;
+    let file = platform::open_nonblock(path).with_context(|| format!("open {}", path.display()))?;
     ensure!(file.metadata().with_context(|| format!("look at {}", path.display()))?.is_file(), "{} is not a file", path.display());
     let mut bytes = Vec::new();
     file.take(most + 1).read_to_end(&mut bytes).with_context(|| format!("read {}", path.display()))?;
@@ -465,7 +466,7 @@ pub fn read_up_to(path: &Path, most: u64) -> Result<Option<Vec<u8>>> {
 pub fn replace(path: &Path, bytes: &[u8]) -> Result<()> {
     let meta = fs::symlink_metadata(path).with_context(|| format!("look at {}", path.display()))?;
     ensure!(meta.is_file(), "{} is not a file", path.display());
-    if meta.nlink() > 1 || mounted_at(path, &meta)? {
+    if platform::nlink(&meta) > 1 || mounted_at(path, &meta)? {
         let mut file = OpenOptions::new().write(true).truncate(true).open(path).with_context(|| format!("open {}", path.display()))?;
         file.write_all(bytes).with_context(|| format!("write {}", path.display()))?;
         return file.sync_all().with_context(|| format!("write {}", path.display()));
@@ -495,7 +496,7 @@ fn beside(path: &Path) -> Result<(PathBuf, File)> {
         temp.push(name(path)?);
         temp.push(format!(".{n}.saving"));
         let temp = folder.join(temp);
-        match OpenOptions::new().write(true).create_new(true).mode(0o600).open(&temp) {
+        match platform::create_new_mode(&temp) {
             Ok(file) => return Ok((temp, file)),
             Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(e).with_context(|| format!("make {}", temp.display())),
@@ -561,7 +562,7 @@ pub fn relabel(
     cancel: &AtomicBool,
     progress: &mut dyn FnMut(Relabeling),
 ) -> Result<()> {
-    let dev = fs::symlink_metadata(root).with_context(|| format!("look at {}", root.display()))?.dev();
+    let dev = platform::dev(&fs::symlink_metadata(root).with_context(|| format!("look at {}", root.display()))?);
     let mut p = Relabeling::default();
     progress(p);
     walk_labeled(root, Path::new(""), dev, cancel, &mut |_, _, _| {
@@ -598,7 +599,7 @@ fn walk_labeled(
     if treat != Treat::Within {
         visit(path, rel, &meta)?;
     }
-    if treat == Treat::Alone || !meta.is_dir() || meta.dev() != dev {
+    if treat == Treat::Alone || !meta.is_dir() || platform::dev(&meta) != dev {
         return Ok(());
     }
     for entry in fs::read_dir(path).with_context(|| format!("read {}", path.display()))? {
@@ -650,14 +651,14 @@ pub fn delete_files(folders: &[PathBuf], cancel: &AtomicBool, progress: &mut dyn
 fn files_in(folder: &Path, dev: Option<u64>, out: &mut Vec<(PathBuf, u64)>) -> Result<()> {
     let meta = fs::symlink_metadata(folder).with_context(|| format!("look at {}", folder.display()))?;
     ensure!(meta.is_dir(), "{} is not a folder", folder.display());
-    if dev.is_some_and(|d| d != meta.dev()) {
+    if dev.is_some_and(|d| d != platform::dev(&meta)) {
         bail!("another filesystem is mounted at {}; unmount it first", folder.display());
     }
     for entry in fs::read_dir(folder).with_context(|| format!("read {}", folder.display()))? {
         let path = entry.with_context(|| format!("read {}", folder.display()))?.path();
         let inside = fs::symlink_metadata(&path).with_context(|| format!("look at {}", path.display()))?;
         if inside.is_dir() {
-            files_in(&path, Some(meta.dev()), out)?;
+            files_in(&path, Some(platform::dev(&meta)), out)?;
         } else if inside.is_file() {
             out.push((path, inside.len()));
         }
@@ -691,7 +692,7 @@ fn copy_entry(from: &Path, to: &Path, give: &Give, cancel: &AtomicBool, p: &mut 
     let kind = meta.file_type();
     if kind.is_symlink() {
         let target = fs::read_link(from).with_context(|| format!("read the link {}", from.display()))?;
-        std::os::unix::fs::symlink(&target, to).with_context(|| format!("make the link {}", to.display()))?;
+        platform::symlink(&target, to)?;
     } else if kind.is_dir() {
         fs::create_dir(to).with_context(|| format!("make {}", to.display()))?;
         let mut entries: Vec<PathBuf> = fs::read_dir(from)
@@ -705,8 +706,8 @@ fn copy_entry(from: &Path, to: &Path, give: &Give, cancel: &AtomicBool, p: &mut 
         }
     } else if kind.is_file() {
         copy_file(from, to, cancel, p, progress)?;
-    } else if kind.is_block_device() || kind.is_char_device() || kind.is_fifo() {
-        make_node(to, meta.mode(), meta.rdev())?;
+    } else if platform::is_special(&kind) {
+        platform::make_node(to, platform::mode(&meta), platform::rdev(&meta))?;
     } else {
         bail!("{} is a socket, which only the program that made it can answer", from.display());
     }
@@ -720,12 +721,7 @@ fn copy_entry(from: &Path, to: &Path, give: &Give, cancel: &AtomicBool, p: &mut 
 /// file stopped halfway is not left behind.
 fn copy_file(from: &Path, to: &Path, cancel: &AtomicBool, p: &mut Progress, progress: &mut dyn FnMut(Progress)) -> Result<()> {
     let mut source = File::open(from).with_context(|| format!("open {}", from.display()))?;
-    let mut target = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(to)
-        .with_context(|| format!("make {}", to.display()))?;
+    let mut target = platform::create_new_mode(to).with_context(|| format!("make {}", to.display()))?;
     let mut buf = vec![0u8; CHUNK];
     let copied = (|| -> Result<()> {
         loop {
@@ -746,29 +742,11 @@ fn copy_file(from: &Path, to: &Path, cancel: &AtomicBool, p: &mut Progress, prog
     copied
 }
 
-fn make_node(to: &Path, mode: u32, rdev: u64) -> Result<()> {
-    use std::os::unix::ffi::OsStrExt;
-    let c = std::ffi::CString::new(to.as_os_str().as_bytes()).with_context(|| format!("{} holds a NUL", to.display()))?;
-    if unsafe { libc::mknod(c.as_ptr(), mode as libc::mode_t, rdev as libc::dev_t) } != 0 {
-        return Err(std::io::Error::last_os_error()).with_context(|| format!("make {}", to.display()));
-    }
-    Ok(())
-}
-
 /// Give a copy what `give` says beyond its contents, and the original's
 /// times, which go last, as writing the rest would change them.
 fn keep(from: &Path, to: &Path, meta: &fs::Metadata, give: &Give) -> Result<()> {
-    use std::os::unix::ffi::OsStrExt;
     attributes(from, to, meta, give)?;
-    let c = std::ffi::CString::new(to.as_os_str().as_bytes()).with_context(|| format!("{} holds a NUL", to.display()))?;
-    let times = [
-        libc::timespec { tv_sec: meta.atime() as _, tv_nsec: meta.atime_nsec() as _ },
-        libc::timespec { tv_sec: meta.mtime() as _, tv_nsec: meta.mtime_nsec() as _ },
-    ];
-    if unsafe { libc::utimensat(libc::AT_FDCWD, c.as_ptr(), times.as_ptr(), libc::AT_SYMLINK_NOFOLLOW) } != 0 {
-        return Err(std::io::Error::last_os_error()).with_context(|| format!("give {} its times", to.display()));
-    }
-    Ok(())
+    platform::set_times(to, meta)
 }
 
 /// Give a copy what `give` says beyond its contents and times: its owner,
@@ -781,7 +759,7 @@ fn attributes(from: &Path, to: &Path, meta: &fs::Metadata, give: &Give) -> Resul
             if keeps.xattrs {
                 copy_xattrs(from, to)?;
             }
-            (keeps.owner.then_some((meta.uid(), meta.gid())), keeps.mode.then_some(meta.mode() & 0o7777))
+            (keeps.owner.then_some((platform::uid(meta), platform::gid(meta))), keeps.mode.then_some(platform::mode(meta) & 0o7777))
         }
         Give::Folder(like) => {
             if let Some(label) = &like.label {
@@ -790,16 +768,16 @@ fn attributes(from: &Path, to: &Path, meta: &fs::Metadata, give: &Give) -> Resul
             let mode = match like.mode {
                 Some(folder) if meta.is_dir() => folder,
                 Some(folder) => folder & 0o666,
-                None => meta.mode() & 0o7777,
+                None => platform::mode(meta) & 0o7777,
             };
             (Some((like.uid, like.gid)), Some(mode))
         }
     };
     if let Some((uid, gid)) = owner {
-        std::os::unix::fs::lchown(to, Some(uid), Some(gid)).with_context(|| format!("give {} its owner", to.display()))?;
+        platform::chown(to, uid, gid)?;
     }
     if let Some(mode) = mode.filter(|_| !link) {
-        fs::set_permissions(to, fs::Permissions::from_mode(mode)).with_context(|| format!("give {} its permissions", to.display()))?;
+        platform::set_mode(to, mode)?;
     }
     Ok(())
 }
@@ -865,10 +843,16 @@ fn set_label(_to: &Path, _label: &[u8]) -> Result<()> {
     unreachable!("only the phone labels entries")
 }
 
-#[cfg(test)]
+/// Every assertion here is about Unix semantics — modes, owners, times,
+/// links, pipes and labels — which have no counterpart on a computer that
+/// does not run the recovery. CI on Linux still runs all of them.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    use std::os::unix::fs::symlink;
+    // These tests assert Unix file semantics directly. The production code
+    // reaches the same operations through platform, but the tests check the
+    // results with the traits themselves.
+    use std::os::unix::fs::{symlink, FileTypeExt, MetadataExt, PermissionsExt};
 
     /// A folder of its own for a test, empty, under the system's temporary
     /// folder.

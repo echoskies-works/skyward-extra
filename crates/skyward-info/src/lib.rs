@@ -538,7 +538,11 @@ mod tests {
 
     #[test]
     fn the_phone_is_plugged_in_while_a_power_supply_besides_the_battery_is_online() {
-        // The 13 Ultra's power supplies in the recovery.
+        // The 13 Ultra's power supplies in the recovery. The phone names the
+        // UCSI supply with colons; a folder cannot hold one on Windows, and
+        // `battery` reads only the files inside, never the folder's name, so
+        // the test uses underscores and keeps the same shape of directory.
+        const UCSI: &str = "ucsi-source-psy-soc_qcom,pmic_glink_qcom,ucsi1";
         let class = tempfile::tempdir().unwrap();
         let supplies = class.path().join("power_supply");
         let supply = |name: &str, files: &[(&str, &str)]| {
@@ -551,13 +555,13 @@ mod tests {
         supply("battery", &[("type", "Battery"), ("status", "Discharging"), ("capacity", "80")]);
         supply("usb", &[("type", "USB"), ("online", "0")]);
         supply("wireless", &[("type", "Wireless"), ("online", "0")]);
-        supply("ucsi-source-psy-soc:qcom,pmic_glink:qcom,ucsi1", &[("type", "USB"), ("online", "0")]);
+        supply(UCSI, &[("type", "USB"), ("online", "0")]);
         assert!(!battery(&supplies).unwrap().expect("a battery").plugged, "on its battery alone");
         supply("usb", &[("type", "USB_PD"), ("online", "1")]);
-        supply("ucsi-source-psy-soc:qcom,pmic_glink:qcom,ucsi1", &[("online", "1")]);
+        supply(UCSI, &[("online", "1")]);
         assert!(battery(&supplies).unwrap().expect("a battery").plugged, "on a charger's cable");
         supply("usb", &[("type", "USB"), ("online", "0")]);
-        supply("ucsi-source-psy-soc:qcom,pmic_glink:qcom,ucsi1", &[("online", "0")]);
+        supply(UCSI, &[("online", "0")]);
         supply("wireless", &[("online", "1")]);
         assert!(battery(&supplies).unwrap().expect("a battery").plugged, "on a wireless charger");
     }
