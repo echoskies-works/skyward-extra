@@ -19,6 +19,7 @@
 
 use anyhow::Result;
 
+mod battery;
 mod bootstate;
 mod crashlog;
 mod font;

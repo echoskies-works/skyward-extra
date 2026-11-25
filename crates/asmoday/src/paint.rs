@@ -40,17 +40,14 @@ pub(crate) const EXIT: [[&str; 2]; 2] = [
 
 /// What the panel says when the battery is running out.
 ///
-/// Written here, and not yet drawn: the level it is said at, and the way the
-/// panel learns the level at all, are a job of their own — the panel runs
-/// before the system's battery service exists, so there is no state to read,
-/// only a kernel file to parse. The words are settled first so that the
-/// string and its glyphs are checked on a desk build before anything on a
-/// phone depends on them.
-///
-/// It will read as a reading under the key legend, in the same yellow as the
+/// It reads as a reading under the key legend, in the same yellow as the
 /// Secure Boot line and for the same reason: it is a state the panel is
-/// reporting, not one of the lines the keys move through.
-#[allow(dead_code)]
+/// reporting, not one of the lines the keys move through. A phone that is
+/// not Qualcomm has no boot line to report, and then this one stands alone.
+///
+/// A sentence in both languages, like every other line here, and nothing
+/// about the charger: at this level the panel has one thing to say, and the
+/// pages, which know whether the cable is in, say the two things there.
 pub(crate) const BATTERY_LOW: [&str; 2] = ["The battery is low.", "电池电量不足。"];
 
 /// How a line is drawn.
@@ -83,26 +80,30 @@ impl Hint {
     }
 }
 
-/// What the panel says under the key legend, in the order it is read.
+/// What the panel says under the key legend, in the order it is read: what
+/// the boot chain says of itself, then the battery.
 ///
 /// This is the one place the menu's running commentary is gathered. It is a
-/// list, not a single line: more readings are coming — a low battery among
-/// them — and a reading that stops being true has to be able to go away.
+/// list, not a single line: a reading that stops being true has to be able to
+/// go away, and a platform with nothing to report leaves no line behind.
 /// Nothing here is carved into the drawing, so an empty list leaves the
 /// panel exactly as it was before any of this existed.
 pub(crate) fn hints(lang: Lang) -> Vec<Hint> {
-    hints_from(lang, crate::bootstate::secure_boot())
+    hints_from(lang, crate::bootstate::secure_boot(), crate::battery::level())
 }
 
-/// The same lines with the reading supplied, so a desk build can check what
+/// The same lines with the readings supplied, so a desk build can check what
 /// each answer looks like without a phone — and a phone that did not answer
-/// keeps a panel that looks exactly as it did before this reading existed.
+/// keeps a panel that looks exactly as it did before that reading existed.
 ///
-/// Three answers, two of them written: a Qualcomm phone says whether its
-/// boot chain is checked, and only a phone that said neither nothing nor
-/// something else gets to say it.
-pub(crate) fn hints_from(lang: Lang, boot: SecureBoot) -> Vec<Hint> {
-    match boot {
+/// Three answers about the boot chain, two of them written: a Qualcomm phone
+/// says whether its boot chain is checked, and only a phone that said neither
+/// nothing nor something else gets to say it. The battery is written at one
+/// level: at or below [`crate::battery::LOW_AT`] it says so, and above it
+/// says nothing. A phone with both readings gets both lines, the battery's
+/// under the boot chain's.
+pub(crate) fn hints_from(lang: Lang, boot: SecureBoot, battery: Option<u8>) -> Vec<Hint> {
+    let mut hints = match boot {
         SecureBoot::On => vec![Hint::yellow(lang.pick([
             "Secure Boot is on.",
             "安全启动已开启。",
@@ -112,7 +113,11 @@ pub(crate) fn hints_from(lang: Lang, boot: SecureBoot) -> Vec<Hint> {
             "安全启动未开启。",
         ]))],
         SecureBoot::Unknown => Vec::new(),
+    };
+    if battery.is_some_and(|level| level <= crate::battery::LOW_AT) {
+        hints.push(Hint::yellow(lang.pick(BATTERY_LOW)));
     }
+    hints
 }
 
 /// One line of the panel.
@@ -485,7 +490,7 @@ mod tests {
         // is the last line, with no blank and no yellow note after it.
         for lang in BOTH {
             let with_none = footer_with(lang, &[]);
-            let with_one = footer_with(lang, &hints_from(lang, SecureBoot::On));
+            let with_one = footer_with(lang, &hints_from(lang, SecureBoot::On, None));
             assert_eq!(with_none.len() + 2, with_one.len(), "{lang:?}: one blank and one line for a reading");
             for (i, hint) in HINT.iter().enumerate() {
                 assert_eq!(with_none[with_none.len() - HINT.len() + i].text(), lang.pick(*hint), "{lang:?}: the legend ends it");
@@ -498,22 +503,86 @@ mod tests {
     #[test]
     fn the_secure_boot_hint_reads_both_answers_and_keeps_quiet_otherwise() {
         for lang in BOTH {
-            let on = hints_from(lang, SecureBoot::On);
+            let on = hints_from(lang, SecureBoot::On, None);
             assert_eq!(on.len(), 1, "{lang:?}: a checked chain is one line");
             assert_eq!(on[0].ink, Ink::Yellow, "{lang:?}: reported, not offered");
             assert_eq!(on[0].text, lang.pick(["Secure Boot is on.", "安全启动已开启。"]));
-            let off = hints_from(lang, SecureBoot::Off);
+            let off = hints_from(lang, SecureBoot::Off, None);
             assert_eq!(off.len(), 1, "{lang:?}: an unchecked chain is one line too");
             assert_eq!(off[0].ink, Ink::Yellow, "{lang:?}: the same ink, a different reading");
             assert_eq!(off[0].text, lang.pick(["Secure Boot is off.", "安全启动未开启。"]));
-            assert!(hints_from(lang, SecureBoot::Unknown).is_empty(), "{lang:?}: a phone that did not answer gets no line");
+            assert!(hints_from(lang, SecureBoot::Unknown, None).is_empty(), "{lang:?}: a phone that did not answer gets no line");
+        }
+    }
+
+    /// The battery is said at twenty and below, and not above it.
+    ///
+    /// Nothing about the cable: the panel reads the charge alone, and a phone
+    /// filling at nine per cent is still a phone that will not last long once
+    /// the cable comes out. Coming down from above, the first reading that
+    /// says anything is the line itself.
+    #[test]
+    fn the_battery_is_said_at_twenty_and_below() {
+        for lang in BOTH {
+            let said = lang.pick(BATTERY_LOW);
+            for level in [0, 1, 19, crate::battery::LOW_AT] {
+                let hints = hints_from(lang, SecureBoot::Unknown, Some(level));
+                assert_eq!(hints.len(), 1, "{lang:?}: {level}% is one line");
+                assert_eq!(hints[0].text, said, "{lang:?}: {level}%");
+                assert_eq!(hints[0].ink, Ink::Yellow, "{lang:?}: reported, not offered");
+            }
+            for level in [crate::battery::LOW_AT + 1, 50, 100] {
+                assert!(hints_from(lang, SecureBoot::Unknown, Some(level)).is_empty(), "{lang:?}: {level}% says nothing");
+            }
+            assert!(hints_from(lang, SecureBoot::Unknown, None).is_empty(), "{lang:?}: no battery, no line");
+        }
+    }
+
+    /// Both readings, the battery's under the boot chain's.
+    ///
+    /// A Qualcomm phone with something to say about each gets two lines in
+    /// that order; a phone that is not Qualcomm has no boot line, and the
+    /// battery's stands alone.
+    #[test]
+    fn the_battery_line_stands_under_the_boot_chain_line() {
+        for lang in BOTH {
+            let both = hints_from(lang, SecureBoot::On, Some(9));
+            assert_eq!(both.len(), 2, "{lang:?}: two readings");
+            assert_eq!(both[0].text, lang.pick(["Secure Boot is on.", "安全启动已开启。"]), "{lang:?}: the boot chain first");
+            assert_eq!(both[1].text, lang.pick(BATTERY_LOW), "{lang:?}: the battery under it");
+            let alone = hints_from(lang, SecureBoot::Unknown, Some(9));
+            assert_eq!(alone.len(), 1, "{lang:?}: another platform says the battery alone");
+            assert_eq!(alone[0].text, lang.pick(BATTERY_LOW), "{lang:?}");
+        }
+    }
+
+    /// The longest panel the menu ever stands: the list, both readings under
+    /// the legend, and the legend itself. A short screen must still hold it,
+    /// with the strip at the foot left dark.
+    #[test]
+    fn the_menu_with_both_readings_fits_a_short_screen() {
+        let (w, h) = (1080u32, 1920u32);
+        for lang in BOTH {
+            let reported = hints_from(lang, SecureBoot::On, Some(9));
+            assert_eq!(reported.len(), 2, "{lang:?}: the longest footing");
+            let mut lines = header(lang);
+            for (i, item) in ITEMS.iter().enumerate() {
+                let ink = if i == 0 { Ink::Reversed } else { Ink::Plain };
+                lines.push(Line::Words(item.label(lang).to_string(), ink));
+            }
+            lines.extend(footer_with(lang, &reported));
+            let mut screen = Screen::new(w, h);
+            draw_lines(&mut screen, &lines);
+            let lit = |y: u32| (0..w).any(|x| screen.data[((y * w + x) * 4) as usize] != 0);
+            assert!((0..h).any(lit), "{lang:?}: something is drawn");
+            assert!(!(h * 7 / 8..h).any(lit), "{lang:?}: and it ends above the foot");
         }
     }
 
     #[test]
     fn a_reading_is_the_last_line_in_yellow() {
         for lang in BOTH {
-            let reported = hints_from(lang, SecureBoot::On);
+            let reported = hints_from(lang, SecureBoot::On, None);
             let lines = footer_with(lang, &reported);
             let last = lines.last().expect("a footer");
             assert_eq!(reported.len(), 1, "{lang:?}: one reading when the chain is checked");
@@ -533,7 +602,7 @@ mod tests {
         for lang in BOTH {
             let mut screen = Screen::new(w, h);
             let mut lines = header(lang);
-            lines.extend(footer_with(lang, &hints_from(lang, SecureBoot::On)));
+            lines.extend(footer_with(lang, &hints_from(lang, SecureBoot::On, None)));
             draw_lines(&mut screen, &lines);
             // No greys and no theme: black, white, and one yellow for the
             // readings. The cursor is the same white reversed, not a shade.
