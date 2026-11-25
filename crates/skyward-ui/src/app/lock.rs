@@ -24,9 +24,11 @@ const LOCK_DAY_AT: f32 = -62.0;
 /// the eye lands on and the day reads as the line standing over it.
 const LOCK_DAY_PX: f32 = 24.0;
 /// Where the words over the swipe stand, as a share of the screen's height:
-/// on the line the lock's own system puts its torch and its camera on, near
-/// enough the foot to sit under a thumb and clear of it.
-const LOCK_WORDS_AT: f32 = 0.872;
+/// low enough to sit under a thumb rather than floating above the foot of
+/// the picture, and high enough to clear the strip the gesture bar keeps at
+/// the foot (`desktop::FOOT_DP`). It stood at 0.872 until 2026-11-26, which
+/// read as hanging in the middle of nothing.
+const LOCK_WORDS_AT: f32 = 0.92;
 /// How far up a finger drags the lock, as a share of the screen's height,
 /// for letting go to put it away: short of it, the lock goes back where it
 /// was. The lock travels one for one with the finger, so this is a distance
@@ -59,6 +61,25 @@ const LOCK_INK: Rgba = Rgba::rgb(255, 255, 255);
 const LOCK_SOFT: Rgba = Rgba::rgb(224, 224, 224);
 const LOCK_INK_DARK: Rgba = Rgba::rgb(24, 24, 24);
 const LOCK_SOFT_DARK: Rgba = Rgba::rgb(96, 96, 96);
+
+/// The lock's words about the battery, kept beside its words about the
+/// swipe. Nothing draws either yet — the lock shows no charge state — so
+/// they are written here and left unused on purpose, for the screen that
+/// will show them: the wording gets settled before the wiring does.
+///
+/// They go through `among`, as the swipe's words do, and move into the
+/// locale files with the rest of the lock's text when that text moves.
+#[allow(dead_code)]
+pub(crate) fn charging(lang: Lang, level: u8) -> String {
+    lang.among("正在充电 {level}%", "正在充電 {level}%", "Charging {level}%").replace("{level}", &level.to_string())
+}
+
+/// What the lock says when the battery is nearly out: the other half of the
+/// pair above, and unused for the same reason.
+#[allow(dead_code)]
+pub(crate) fn battery_low(lang: Lang) -> &'static str {
+    lang.among("电池电量不足", "電池電量不足", "Battery low")
+}
 
 /// The lock, once it is up: how far up it has been pushed, and where it is
 /// going now that the finger has lifted.
@@ -323,27 +344,48 @@ pub(super) fn soft_ground(picture: &Canvas, w: u32, h: u32) -> Canvas {
     out
 }
 
-/// Whether `picture` is dark enough that light ink reads on it: the mean
-/// brightness of its pixels, a pixel of every [`LOCK_STEP`] taken, against
-/// the midpoint. The lock's clock and words take their ink from this rather
-/// than the theme, so they follow the wallpaper instead of the page.
+/// Brightness at or above which a pixel counts as paper rather than
+/// picture: the lock only gives up its white ink for a ground that is
+/// nearly white.
+const LOCK_PAPER: u32 = 200;
+/// How many pixels of paper make a picture paper: one in two. Below that
+/// it is a picture with a bright patch in it, and white still reads.
+const LOCK_PAPER_SHARE: u64 = 2;
+
+/// Whether `picture` is dark enough that light ink reads on it.
+///
+/// Not the midpoint of the mean: the mean of a photograph sits near the
+/// middle whatever the photograph is, so a midpoint test calls a blue sky
+/// and a grey wall alike — and the lock's words sit at the top and the
+/// foot of the screen, where a graded picture is brighter and darker than
+/// its own mean. What the eye asks instead is whether this is a picture or
+/// a sheet of paper: white ink reads on anything painted, and fails on
+/// paper. So the lock counts the pixels that are nearly white and turns
+/// its ink dark only when most of the picture is ([`LOCK_PAPER`],
+/// [`LOCK_PAPER_SHARE`]).
+///
+/// This decides the ink of the clock, the day, the status bar and the
+/// words, which follow the wallpaper rather than the theme.
 fn is_dark(picture: &Canvas) -> bool {
     let (w, h) = (picture.w, picture.h);
     if w == 0 || h == 0 {
         return true;
     }
-    let mut sum = 0u64;
+    let mut paper = 0u64;
     let mut n = 0u64;
     for y in (0..h).step_by(LOCK_STEP as usize) {
         let row = y as usize * w as usize;
         for x in (0..w).step_by(LOCK_STEP as usize) {
             let p = &picture.data[(row + x as usize) * 4..][..3];
             // The eye's weights: green counts most, blue least.
-            sum += (p[0] as u64 * 299 + p[1] as u64 * 587 + p[2] as u64 * 114) / 1000;
+            let luma = (p[0] as u32 * 299 + p[1] as u32 * 587 + p[2] as u32 * 114) / 1000;
+            if luma >= LOCK_PAPER {
+                paper += 1;
+            }
             n += 1;
         }
     }
-    sum / n.max(1) < 128
+    paper * LOCK_PAPER_SHARE <= n
 }
 
 #[cfg(test)]
@@ -558,5 +600,45 @@ mod tests {
         assert!(app.take_dirty(), "and each frame of it is drawn");
         app.tick(1_000);
         assert!(!app.locked(), "and it lands where the swipe said");
+    }
+
+    /// A picture of one colour, for the ink tests: what the lock reads is
+    /// the colour of the pixels, not where they came from.
+    fn filled(w: u32, h: u32, colour: Rgba) -> Canvas {
+        let mut c = Canvas::new(w, h);
+        c.clear(colour);
+        c
+    }
+
+    /// The picture that started the argument: a mid-blue sky whose mean is
+    /// 132 out of 255. The midpoint test called it light and drew the clock
+    /// in dark grey on it; the eye calls it a sky.
+    #[test]
+    fn a_painted_sky_keeps_the_locks_white_ink() {
+        let sky = filled(108, 192, Rgba::rgb(74, 143, 168));
+        assert!(is_dark(&sky), "a painted sky is a picture, not paper");
+    }
+
+    /// Only a ground that is nearly white gives up the white ink: the lock
+    /// asks how much of the picture is paper, not what it averages to.
+    #[test]
+    fn only_a_nearly_white_picture_turns_the_ink_dark() {
+        assert!(!is_dark(&filled(108, 192, Rgba::rgb(255, 255, 255))), "white paper asks for dark ink");
+        assert!(!is_dark(&filled(108, 192, Rgba::rgb(232, 232, 232))), "so does a pale wall");
+        assert!(is_dark(&filled(108, 192, Rgba::rgb(0, 0, 0))), "and black keeps the white");
+        assert!(is_dark(&filled(108, 192, Rgba::rgb(120, 120, 120))), "grey is still a picture");
+    }
+
+    /// The battery's words are written and not drawn yet. They have to be
+    /// the three languages the lock speaks, with the level in the middle
+    /// where each of them puts it.
+    #[test]
+    fn the_battery_words_are_written_in_the_locks_three_languages() {
+        assert_eq!(charging(Lang::Hans, 47), "正在充电 47%");
+        assert_eq!(charging(Lang::Hant, 47), "正在充電 47%");
+        assert_eq!(charging(Lang::En, 47), "Charging 47%");
+        assert_eq!(battery_low(Lang::Hans), "电池电量不足");
+        assert_eq!(battery_low(Lang::Hant), "電池電量不足");
+        assert_eq!(battery_low(Lang::En), "Battery low");
     }
 }
