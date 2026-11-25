@@ -18,11 +18,16 @@ workspace = true
 # The menu depends on the scanout and nothing else, on purpose. Adding a
 # dependency here is a decision about how likely this program is to still
 # work on a phone whose system partition is the thing that broke.
+#
+# skyward-sys is here on every build rather than only the phone's because
+# the words this program answers for — the note's, and the power targets a
+# shell asks for — are read and tested on a desk too, and the two sides of
+# that agreement have to come from one definition.
 [dependencies]
 anyhow = { workspace = true }
+skyward-sys = { path = "../skyward-sys" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 evdev = "0.13.2"
 libc = { workspace = true }
 skyward-kms = { path = "../skyward-kms" }
-skyward-sys = { path = "../skyward-sys" }

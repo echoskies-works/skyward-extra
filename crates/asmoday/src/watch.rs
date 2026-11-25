@@ -34,6 +34,7 @@ use crate::{Choice, Crash};
 use anyhow::{anyhow, Result};
 use skyward_sys::Power;
 use std::io::ErrorKind;
+use std::os::fd::{FromRawFd, OwnedFd};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -106,17 +107,19 @@ pub fn run() -> Result<()> {
 
     loop {
         let forked = Instant::now();
-        let ended = wait(start()?, forked);
+        let (pid, note) = start()?;
+        let ended = wait(pid, forked);
         // A system that left deliberately says where it wants to go. Reading
         // the note comes before judging the exit: the note makes this an
         // ordinary departure whatever the code says, and the power operation
         // belongs here, in the process that is still alive to carry it out.
-        // Anything the system could not say — a note it failed to write —
-        // falls back to the system having written sys.powerctl itself, and
-        // the phone is already leaving.
-        if let Some(power) = skyward_sys::leave::take() {
-            let _ = skyward_sys::kmsg(&format!("the system left for {}; carrying it out", skyward_sys::leave::name(power)));
-            return skyward_sys::power(power);
+        // A folder that would not take the note left the same word down the
+        // pipe instead, so both places are asked before the exit is believed.
+        // Anything the system could not say either way is an ordinary stop.
+        let asked = skyward_sys::leave::take().or_else(|| note.and_then(pipe_note));
+        if let Some(target) = asked {
+            let _ = skyward_sys::kmsg(&format!("the system left for {}; carrying it out", skyward_sys::leave::name(target)));
+            return crate::power::run(target);
         }
         let (code, crash, reason) = match ended {
             End::Clean | End::Asked => return Ok(()),
@@ -146,9 +149,9 @@ pub fn run() -> Result<()> {
         match crate::run() {
             // Back into the system: the loop starts it again.
             Ok(Choice::System) => {}
-            Ok(Choice::PowerOff) => return skyward_sys::power(Power::Off),
+            Ok(Choice::PowerOff) => return crate::power::run(Power::Off),
             // The bootloader's own fastboot, as the menu says.
-            Ok(Choice::Fastboot) => return skyward_sys::power(Power::Bootloader),
+            Ok(Choice::Fastboot) => return crate::power::run(Power::Bootloader),
             // Neither screen would come up. Leaving lets init have the service
             // back; a loop here would spin on a panel nobody can see.
             Err(e) => {
@@ -175,7 +178,7 @@ fn light_panel(light: &mut Option<Backlight>) {
 /// does one thing only — run that system and leave its exit code behind — so
 /// nothing of the parent's state does any work in it. exec, rather than a call
 /// into this program, is the whole point: the two binaries stay independent.
-fn start() -> Result<libc::pid_t> {
+fn start() -> Result<(libc::pid_t, Option<OwnedFd>)> {
     // The system makes this folder when it comes up, which is later than the
     // first beat below. Without it that beat is written into nothing, and the
     // parent would go back to counting silence from the fork — the one number
@@ -197,9 +200,36 @@ fn start() -> Result<libc::pid_t> {
     // well covers a system that never got that far.
     skyward_sys::leave::clear();
 
+    // A note the folder will not take goes down this pipe instead. It is
+    // opened before the fork so the child inherits the writing end, and the
+    // reading end comes back with the pid. A pipe that will not open costs
+    // the fallback, not the start: the note still has its folder.
+    let mut ends = [-1; 2];
+    let piped = unsafe { libc::pipe(ends.as_mut_ptr()) } == 0;
+    if piped {
+        // The parent reads once, after the child is gone, and must not sit
+        // waiting on a word that was never written.
+        unsafe { libc::fcntl(ends[0], libc::F_SETFL, libc::O_NONBLOCK) };
+    }
+
     match unsafe { libc::fork() } {
-        -1 => Err(anyhow!("start the system: {}", std::io::Error::last_os_error())),
+        -1 => {
+            if piped {
+                unsafe { libc::close(ends[0]) };
+                unsafe { libc::close(ends[1]) };
+            }
+            Err(anyhow!("start the system: {}", std::io::Error::last_os_error()))
+        }
         0 => {
+            let note = if piped {
+                // The child never reads: only the parent has something to
+                // hear, and a reading end left open here would keep the
+                // parent from seeing the pipe close.
+                unsafe { libc::close(ends[0]) };
+                Some(ends[1])
+            } else {
+                None
+            };
             // The first beat, before the exec: from here the parent knows the
             // system is alive and watching is about silence rather than about
             // a fork that may not have happened. The system keeps writing the
@@ -207,24 +237,49 @@ fn start() -> Result<libc::pid_t> {
             let _ = std::fs::write(beat_file(), monotonic_ms().to_string());
             // exec the system. On success this never returns: the child's
             // image, including every byte of this program, is replaced.
-            let error = exec(SYSTEM);
+            let error = exec(SYSTEM, note);
             // A system that could not be exec'd has nothing to report but the
             // code and the reason in the kernel log.
             eprintln!("asmoday: exec {SYSTEM}: {error:?}");
             let _ = skyward_sys::kmsg(&format!("could not start the system: {error:?}"));
             std::process::exit(1)
         }
-        pid => Ok(pid),
+        pid => {
+            if piped {
+                // The parent writes nothing: a writing end left open here
+                // would keep it from seeing the pipe close.
+                unsafe { libc::close(ends[1]) };
+                // SAFETY: the descriptor is open here, is not held by
+                // anything else in this process, and is closed by the value
+                // once the note has been read.
+                Ok((pid, Some(unsafe { OwnedFd::from_raw_fd(ends[0]) })))
+            } else {
+                Ok((pid, None))
+            }
+        }
     }
 }
 
 /// Replace this process with the system binary, keeping its arguments empty
-/// and its environment as it is.
+/// and its environment as it is but for one name: the pipe's writing end,
+/// where there is one, so the system can say where it wants to go even when
+/// the folder cannot take the note.
 #[cfg(target_os = "android")]
-fn exec(path: &str) -> Result<()> {
+fn exec(path: &str, note: Option<libc::c_int>) -> Result<()> {
     use std::ffi::CString;
 
     let path = CString::new(path).map_err(|e| anyhow!("system path has a nul: {e}"))?;
+    // The child runs a single thread, so writing the environment here is safe,
+    // and execv keeps what is written: this is the whole hand-over of the
+    // pipe, and it needs no argument the system would read as a command.
+    if let Some(fd) = note
+        && let (Ok(name), Ok(value)) = (
+            CString::new(skyward_sys::leave::NOTE_FD),
+            CString::new(fd.to_string()),
+        )
+    {
+        unsafe { libc::setenv(name.as_ptr(), value.as_ptr(), 1) };
+    }
     // The array ends at the first null pointer. Putting an empty string in
     // that place would not be "no arguments": it would be one argument, an
     // empty one, and the system reads everything after its own name as a
@@ -235,6 +290,21 @@ fn exec(path: &str) -> Result<()> {
     // success execv does not return; on failure the errno says why.
     unsafe { libc::execv(path.as_ptr(), argv.as_ptr()) };
     Err(anyhow!("execv: {}", std::io::Error::last_os_error()))
+}
+
+/// What the child wrote down the pipe, if anything: the same word the folder
+/// would have held. An empty pipe, or a word that is not a target, is no
+/// request — an ordinary stop, as with the note.
+#[cfg(target_os = "android")]
+fn pipe_note(fd: OwnedFd) -> Option<Power> {
+    use std::os::fd::AsRawFd;
+
+    let mut buf = [0u8; 32];
+    let read = unsafe { libc::read(fd.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len()) };
+    if read <= 0 {
+        return None;
+    }
+    Power::parse(std::str::from_utf8(&buf[..read as usize]).ok()?.trim())
 }
 
 /// Wait for the child to stop, and make what it left into something a panel

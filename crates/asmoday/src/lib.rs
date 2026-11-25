@@ -18,6 +18,7 @@
 #![cfg_attr(not(target_os = "android"), allow(dead_code))]
 
 use anyhow::Result;
+use skyward_sys::Power;
 
 mod battery;
 mod bootstate;
@@ -27,6 +28,7 @@ mod lang;
 mod liveness;
 mod menu;
 mod paint;
+pub mod power;
 mod screen;
 mod verdict;
 
@@ -48,36 +50,54 @@ pub use menu::{Action, Crash, Reason, View};
 /// wanted outright, whatever the binary happens to be called. The word wins
 /// over the name, because the name was fixed when the image was built and the
 /// word was said a moment ago.
+///
+/// `--reboot` is the other word. The system says where it wants to go in a
+/// note and exits; this program carries the note out. A shell that asks for
+/// the same thing — `skyward reboot edl` — is handed here rather than writing
+/// the property itself, so the one program that takes the phone down is this
+/// one, whatever asked.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Job {
     /// Start the system and own the panel while it is down.
     Watch,
     /// Put the menu up on its own.
     Menu,
+    /// Carry out a power operation and be gone.
+    Reboot(Power),
 }
 
 /// Read the job off the name the program was started under and the words
 /// after it.
 ///
-/// Only `--menu` is understood. Anything else is refused rather than skipped:
-/// a name or a word nobody meant is a menu that does not come up, and one that
-/// comes up anyway with a typo swallowed is worse than one that says so on the
-/// kernel log and stays down.
+/// `--menu` and `--reboot <target>` are the words understood; the two ask for
+/// different things and are refused together. Anything else is refused rather
+/// than skipped: a name or a word nobody meant is a menu that does not come
+/// up, and one that comes up anyway with a typo swallowed is worse than one
+/// that says so on the kernel log and stays down.
 pub fn job_of(name: &str, args: &[String]) -> Result<Job> {
     let mut menu = false;
-    for arg in args {
+    let mut reboot = None;
+    let mut words = args.iter();
+    while let Some(arg) = words.next() {
         match arg.as_str() {
             "--menu" => menu = true,
+            "--reboot" => {
+                let word = words.next().ok_or_else(|| anyhow::anyhow!("asmoday: --reboot wants a target"))?;
+                let power = Power::parse(word).ok_or_else(|| anyhow::anyhow!("asmoday: unknown power target {word}"))?;
+                reboot = Some(power);
+            }
             other => anyhow::bail!("asmoday: unknown argument {other}"),
         }
     }
-    if menu {
-        return Ok(Job::Menu);
-    }
-    match name {
-        "recovery" => Ok(Job::Watch),
-        "startup" => Ok(Job::Menu),
-        other => anyhow::bail!("asmoday: unknown command {other}"),
+    match (menu, reboot) {
+        (true, Some(_)) => anyhow::bail!("asmoday: --menu and --reboot ask for two different things"),
+        (true, None) => Ok(Job::Menu),
+        (false, Some(power)) => Ok(Job::Reboot(power)),
+        (false, None) => match name {
+            "recovery" => Ok(Job::Watch),
+            "startup" => Ok(Job::Menu),
+            other => anyhow::bail!("asmoday: unknown command {other}"),
+        },
     }
 }
 
@@ -362,5 +382,28 @@ mod tests {
         assert!(job_of("recovery", &["--menus".to_string()]).is_err(), "a typo is not a request");
         assert!(job_of("startup", &["menu".to_string()]).is_err(), "the dashes are part of the word");
         assert!(job_of("asmoday", &nothing).is_err(), "a name nobody meant starts nothing");
+    }
+
+    /// A power operation asked at a shell: the target is read, and a word
+    /// that is not one, a missing target and a second job are all refused.
+    /// The service is the only program that takes the phone down, so this is
+    /// the one way a shell gets a power operation done.
+    #[test]
+    fn a_reboot_asked_at_a_shell_names_its_target() {
+        let asked = |words: &[&str]| -> Vec<String> { words.iter().map(|w| w.to_string()).collect() };
+        for (word, power) in [
+            ("system", Power::System),
+            ("recovery", Power::Recovery),
+            ("fastboot", Power::Fastboot),
+            ("bootloader", Power::Bootloader),
+            ("edl", Power::Edl),
+            ("off", Power::Off),
+        ] {
+            assert_eq!(job_of("recovery", &asked(&["--reboot", word])).expect("a target"), Job::Reboot(power));
+            assert_eq!(job_of("startup", &asked(&["--reboot", word])).expect("the word wins over the name"), Job::Reboot(power));
+        }
+        assert!(job_of("recovery", &asked(&["--reboot"])).is_err(), "a reboot with no target");
+        assert!(job_of("recovery", &asked(&["--reboot", "nowhere"])).is_err(), "a target nobody knows");
+        assert!(job_of("recovery", &asked(&["--reboot", "off", "--menu"])).is_err(), "two jobs at once");
     }
 }

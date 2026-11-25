@@ -271,7 +271,7 @@ fn main() -> Result<()> {
         Cmd::Recovery => recovery(),
         Cmd::Reboot { target } => {
             let p = Power::parse(&target).ok_or_else(|| anyhow!("unknown target {target:?}"))?;
-            skyward_sys::power(p)
+            hand_to_service(p)
         }
         Cmd::Bcb => {
             let b = bcb::read(&bcb::misc())?;
@@ -785,6 +785,39 @@ fn beat() {
 #[cfg(not(target_os = "android"))]
 fn beat() {}
 
+/// Hand a power operation asked at a shell to the program that carries one
+/// out.
+///
+/// Nothing in the system writes `sys.powerctl`: the recovery service is the
+/// one program that does, because it is the one still running when a system
+/// says where it wants to go and exits. A shell asking for the same thing is
+/// served the same way — this replaces itself with the service and says where
+/// to go — so a phone is never taken down by the system it is running.
+#[cfg(target_os = "android")]
+fn hand_to_service(power: Power) -> Result<()> {
+    use std::ffi::CString;
+
+    /// Where init starts the recovery service, and where it finds the system
+    /// beside it.
+    const RECOVERY: &str = "/system/bin/recovery";
+
+    let path = CString::new(RECOVERY).map_err(|e| anyhow!("the recovery path has a nul: {e}"))?;
+    // Fixed words, so the two conversions cannot fail.
+    let word = CString::new("--reboot").expect("no nul in a fixed word");
+    let target = CString::new(skyward_sys::leave::name(power)).expect("no nul in a fixed word");
+    let argv = [path.as_ptr(), word.as_ptr(), target.as_ptr(), std::ptr::null()];
+    // SAFETY: every pointer outlives the call and is nul-terminated. On
+    // success execv does not return; on failure the errno says why.
+    unsafe { libc::execv(path.as_ptr(), argv.as_ptr()) };
+    Err(anyhow!("exec {RECOVERY}: {}", std::io::Error::last_os_error()))
+}
+
+/// A host has no recovery service to ask, and no phone to take down.
+#[cfg(not(target_os = "android"))]
+fn hand_to_service(_power: Power) -> Result<()> {
+    anyhow::bail!("a host has no recovery service to hand a power operation to")
+}
+
 fn recovery() -> Result<()> {
     // Before the folder is even made: a panic in the setup below should be
     // the one that gets written, not one that goes unrecorded because the
@@ -806,6 +839,10 @@ fn recovery() -> Result<()> {
         // phone when this system only stops. It is cleared before the fork
         // too; doing it here as well covers a system started by hand.
         skyward_sys::leave::clear();
+        // The pipe the parent opened for a note the folder will not take is
+        // taken here, before anything is started: marked close-on-exec once,
+        // so no program the system runs inherits a writer it has no use for.
+        skyward_sys::leave::adopt();
         // The folder the parent watches is there now, so the first thing to
         // do with it is say that this is a system that came up.
         beat();
@@ -834,8 +871,19 @@ fn recovery() -> Result<()> {
         if !request.unknown.is_empty() {
             skyward_sys::kmsg(&format!("misc arguments this recovery does not know: {:?}", request.unknown))?;
         }
+        // A request to leave is said the way every page says it, so that the
+        // parent carries it out. There is no page here to report a failure
+        // on, so the kernel log takes the word and the code says the rest.
         if request.work == bcb::Work::Exit {
-            return skyward_sys::power(if request.shutdown_after { Power::Off } else { Power::System });
+            let target = if request.shutdown_after { Power::Off } else { Power::System };
+            if let Err(e) = skyward_sys::leave::ask(target) {
+                let _ = skyward_sys::kmsg(&format!(
+                    "the word to leave for {} could not be said: {e:#}",
+                    skyward_sys::leave::name(target)
+                ));
+                return Err(e.into());
+            }
+            std::process::exit(0)
         }
         // An update the system asked for starts counting its starts in misc,
         // as Android's own recovery counts them, so that one a restart cuts

@@ -8,15 +8,27 @@
 //! and does the power operation on its behalf. The exit code stays clean
 //! either way, which is the point: leaving is not a failure.
 //!
+//! The note is a file, because a file is the plainest thing both sides can
+//! read and a desk build can check the whole exchange without a phone. A
+//! folder that will not take it is not the end of the road: the parent opens
+//! a pipe before the fork and names the writing end in the environment, and
+//! the same word goes down that instead. Both places are the same agreement,
+//! and only when neither works does the system stay where it is and say so.
+//!
 //! Everything here is plain files and plain names. Both processes link this
-//! module, so the folder and the words agree because there is one definition
-//! of each, and a desk build can check the whole exchange without a phone.
+//! module, so the folder, the words and the pipe's name agree because there
+//! is one definition of each.
 
 use crate::{Power, RUN};
 use std::path::{Path, PathBuf};
 
 /// The note's name inside the shared folder.
 const LEAVE: &str = "leave";
+
+/// The name the parent hands the pipe's writing end over in. One definition,
+/// read by both sides: the parent sets it before the exec and the system takes
+/// it as it comes up.
+pub const NOTE_FD: &str = "SKYWARD_LEAVE_FD";
 
 /// Where the note is written, read and then removed.
 pub fn leave_file() -> PathBuf {
@@ -47,11 +59,68 @@ pub fn name(power: Power) -> &'static str {
     }
 }
 
-/// Leave a note saying where to go. An error here means the caller must fall
-/// back to carrying out the power operation itself — a note that cannot be
-/// written must not strand the phone in recovery.
+/// Leave a note saying where to go.
+///
+/// The folder is asked first; a folder that will not take the note — full,
+/// read-only, gone — is not the end of the road, because the parent left a
+/// pipe open before it forked. The same word goes down that instead. Only
+/// when neither works does the caller hear of it, and then the system stays
+/// where it is and says why, rather than take the phone down itself: nothing
+/// in the system writes `sys.powerctl`, and a note nobody could read would
+/// leave the phone in the recovery all the same.
 pub fn ask(power: Power) -> std::io::Result<()> {
-    ask_into(&leave_file(), power)
+    match ask_into(&leave_file(), power) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            #[cfg(unix)]
+            if ask_fd(power) {
+                return Ok(());
+            }
+            Err(e)
+        }
+    }
+}
+
+/// Take the pipe the parent handed over, if there is one, as the system comes
+/// up: the descriptor is marked close-on-exec once, here, so that no program
+/// the system starts afterwards inherits a writer it has no use for. A pipe
+/// that is not there is no error — a system started by hand has none.
+pub fn adopt() {
+    #[cfg(unix)]
+    {
+        let _ = note_fd();
+    }
+}
+
+/// Write the word down the pipe, where the parent left one.
+#[cfg(unix)]
+fn ask_fd(power: Power) -> bool {
+    note_fd().is_some_and(|fd| ask_into_fd(fd, power))
+}
+
+#[cfg(unix)]
+fn ask_into_fd(fd: std::os::fd::RawFd, power: Power) -> bool {
+    let word = name(power);
+    // SAFETY: the descriptor is the parent's writing end, open in this
+    // process; one write of a few bytes, and it is not closed here — the
+    // process is on its way out and the kernel closes it.
+    unsafe { libc::write(fd, word.as_ptr().cast(), word.len()) == word.len() as isize }
+}
+
+/// The pipe's writing end, read out of the environment once and closed to
+/// every program started after this point.
+#[cfg(unix)]
+fn note_fd() -> Option<std::os::fd::RawFd> {
+    use std::sync::OnceLock;
+
+    static FD: OnceLock<Option<std::os::fd::RawFd>> = OnceLock::new();
+    *FD.get_or_init(|| {
+        let fd: std::os::fd::RawFd = std::env::var(NOTE_FD).ok()?.parse().ok()?;
+        // SAFETY: the descriptor belongs to this process and nothing else
+        // touches its flags; this only says it is not to be inherited.
+        unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) };
+        Some(fd)
+    })
 }
 
 fn ask_into(path: &Path, power: Power) -> std::io::Result<()> {
@@ -159,5 +228,27 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_file(&log);
+    }
+
+    /// A folder that will not take the note is not the end of the road: the
+    /// pipe carries the same word, and the parent reads back the target it
+    /// names. This is what keeps the system from writing `sys.powerctl`
+    /// itself when the memory filesystem is full.
+    #[cfg(unix)]
+    #[test]
+    fn a_note_the_folder_cannot_take_goes_down_the_pipe() {
+        let mut ends = [-1; 2];
+        assert_eq!(unsafe { libc::pipe(ends.as_mut_ptr()) }, 0, "a pipe");
+
+        assert!(ask_into_fd(ends[1], Power::Bootloader), "the word goes down");
+        let mut buf = [0u8; 16];
+        let read = unsafe { libc::read(ends[0], buf.as_mut_ptr().cast(), buf.len()) };
+        assert!(read > 0, "something came back");
+        let word = std::str::from_utf8(&buf[..read as usize]).expect("a word");
+        assert_eq!(word, "bootloader", "the same word the note would hold");
+        assert_eq!(Power::parse(word), Some(Power::Bootloader), "and the parent reads the target");
+
+        unsafe { libc::close(ends[0]) };
+        unsafe { libc::close(ends[1]) };
     }
 }

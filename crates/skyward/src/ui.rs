@@ -213,10 +213,12 @@ fn stop(code: i32, reason: Option<&str>) -> Result<()> {
 /// The system does not carry out its own power operation. Writing
 /// `sys.powerctl` tears the phone down around this process, so nothing would
 /// be left to report a clean exit — and the log would end wherever the write
-/// happened to stop. Instead: keep the log, leave a note saying where to go,
-/// and exit cleanly. The parent, which is still running, reads the note and
-/// does the power operation. A note that cannot be written falls back to the
-/// old way, so a full folder never strands the phone in recovery.
+/// happened to stop. Instead: keep the log, say where to go — in the folder,
+/// or down the pipe the parent left when the folder will not take it — and
+/// exit cleanly. The parent, which is still running, reads the word and does
+/// the power operation. Where neither way of saying it works, the pages say so
+/// and the phone stays: nothing here falls back to taking the phone down
+/// itself, because the one program that does that is the parent.
 fn power(target: Target) -> Result<()> {
     let power = match target {
         Target::System => Power::System,
@@ -233,16 +235,11 @@ fn power(target: Target) -> Result<()> {
     // Keeping the log is best effort: a log that cannot be kept is no reason
     // to stay in recovery, and no reason to fail the note either.
     skyward_sys::leave::keep_logs();
-    match skyward_sys::leave::ask(power) {
-        Ok(()) => {
-            let _ = skyward_sys::kmsg(&format!("the system leaves for {}; code 0", skyward_sys::leave::name(power)));
-            std::process::exit(0)
-        }
-        Err(e) => {
-            let _ = skyward_sys::kmsg(&format!("note for the parent not written: {e:#}; leaving the old way"));
-            skyward_sys::power(power)
-        }
-    }
+    skyward_sys::leave::ask(power).with_context(|| {
+        format!("the word to leave for {} could not be said", skyward_sys::leave::name(power))
+    })?;
+    let _ = skyward_sys::kmsg(&format!("the system leaves for {}; code 0", skyward_sys::leave::name(power)));
+    std::process::exit(0)
 }
 
 /// File transfer: the service offering internal storage to a computer over

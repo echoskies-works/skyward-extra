@@ -181,10 +181,6 @@ impl Power {
     }
 }
 
-pub fn power(target: Power) -> Result<()> {
-    set_prop("sys.powerctl", target.command())
-}
-
 /// The folder the recovery service keeps what it makes for itself in, for
 /// as long as the phone stays in recovery: its logs, the screenshots that
 /// wait for internal storage, the supplicant's settings. Install scripts

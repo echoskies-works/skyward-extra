@@ -24,9 +24,12 @@ fn main() -> Result<()> {
         asmoday::Job::Watch => asmoday::watch(),
         asmoday::Job::Menu => match asmoday::run()? {
             asmoday::Choice::System => asmoday::watch(),
-            asmoday::Choice::PowerOff => skyward_sys::power(skyward_sys::Power::Off),
-            asmoday::Choice::Fastboot => skyward_sys::power(skyward_sys::Power::Bootloader),
+            asmoday::Choice::PowerOff => asmoday::power::run(skyward_sys::Power::Off),
+            asmoday::Choice::Fastboot => asmoday::power::run(skyward_sys::Power::Bootloader),
         },
+        // A power operation asked at a shell, handed here by the system so
+        // that this program, and no other, takes the phone down.
+        asmoday::Job::Reboot(power) => asmoday::power::run(power),
     }
 
     #[cfg(not(target_os = "android"))]
