@@ -678,10 +678,9 @@ const TASKS_FACES: [(TasksFace, Text); 3] = [
 ];
 
 /// The tasks page the desktop opens: the processes as a list, the services
-/// the machine keeps and the performance with the figures it will draw.
-/// None of the three has anything behind it yet — nothing is read off the
-/// phone — so each says where it stands rather than standing empty, as the
-/// player's list does.
+/// the machine keeps and the performance with the figures it reads off the
+/// phone. The first two have nothing behind them yet, so each says where it
+/// stands rather than standing empty, as the player's list does.
 ///
 /// It keeps the shape the clock, the calculator and the player take: the
 /// words across the top, no `<` and no large title, the gear at the top right
@@ -690,19 +689,26 @@ const TASKS_FACES: [(TasksFace, Text); 3] = [
 pub fn tasks(cx: &Ctx) -> Frame {
     let (t, f, l) = (cx.t, cx.f, cx.state.lang);
     let m = &t.m;
-    let mut c = page(cx);
+    let mut c = long_page(cx);
     let mut out = Vec::new();
 
     // The words, the face shown in the page's ink and the others quiet,
     // centred over what each face puts below them.
     out.extend(face_tabs(&mut c, t, f, l, &TASKS_FACES, cx.state.tasks_face, Action::TasksFace));
 
-    let said = match cx.state.tasks_face {
-        TasksFace::Process => l.among("还没有读取进程", "還沒有讀取進程", "Processes are not read yet"),
-        TasksFace::Service => l.among("还没有读取服务", "還沒有讀取服務", "Services are not read yet"),
-        TasksFace::Performance => l.among("还没有读数", "還沒有讀數", "Nothing is measured yet"),
+    let bottom = match cx.state.tasks_face {
+        // The figures, card by card down the page, scroll as the settings
+        // page does: more will stand under this one.
+        TasksFace::Performance => cpu_card(&mut c, cx, m.content_top),
+        face => {
+            let said = match face {
+                TasksFace::Process => l.among("还没有读取进程", "還沒有讀取進程", "Processes are not read yet"),
+                _ => l.among("还没有读取服务", "還沒有讀取服務", "Services are not read yet"),
+            };
+            c.text_center(&f.body, said, m.w as f32 / 2.0, m.h as f32 / 2.0, m.sub_px, t.pal.subtitle);
+            m.h as f32
+        }
     };
-    c.text_center(&f.body, said, m.w as f32 / 2.0, m.h as f32 / 2.0, m.sub_px, t.pal.subtitle);
 
     // No `<` and no large title: an app opened from the desktop leaves it the
     // way the desktop's own apps do, and the words across the top name it.
@@ -715,7 +721,76 @@ pub fn tasks(cx: &Ctx) -> Frame {
         bg: t.pal.bg,
         button: Some((widgets::Glyph::Gear, Action::Idle)),
         button_still: true,
-        ..Frame::new(t, c, out, "", m.content_top)
+        ..Frame::new(t, fit(c, t, bottom), out, "", m.content_top)
+    }
+}
+
+/// The performance face's first card, titled `CPU`: a chart of how hard the
+/// processor has been working over the minute, empty until the page keeps a
+/// history to draw on, and under it a line for each figure — the whole
+/// processor's use, clock and warmth, then every core's clock and use — set
+/// as the settings page sets its rows. Returns where the card ends.
+fn cpu_card(c: &mut Canvas, cx: &Ctx, top: f32) -> f32 {
+    let (t, f, l) = (cx.t, cx.f, cx.state.lang);
+    let m = &t.m;
+    let perf = &cx.state.perf;
+
+    let y = widgets::section_first(c, t, f, top, "CPU");
+    let mut titles = vec![
+        l.among("总使用率", "總使用率", "In use").to_string(),
+        l.among("频率", "頻率", "Clock").to_string(),
+        l.among("温度", "溫度", "Warmth").to_string(),
+    ];
+    let mut trails = vec![use_share(perf.busy), clock_ghz(perf.khz()), warmth_c(perf.celsius, l)];
+    for core in &perf.cores {
+        // The two Chinese say 核心0, as the cores are counted; English
+        // keeps the space its digits need.
+        let name = match l {
+            Lang::En => format!("Core {}", core.id),
+            _ => format!("核心{}", core.id),
+        };
+        titles.push(name);
+        trails.push(format!("{}/{}", clock_ghz(core.khz), use_share(core.busy)));
+    }
+    let rows: Vec<Row> = titles.iter().zip(&trails).map(|(title, trail)| Row::new(title).trail(Trail::Text(trail))).collect();
+
+    // The chart takes the card's width less its margins, and the rows stand
+    // under it in the card's own colour: the card is drawn whole first, so
+    // the chart has something to sit on.
+    let (pad, chart_h) = (m.dp(12.0), m.dp(80.0));
+    let rows_h = widgets::rows_height(c, t, f, &rows);
+    let chart = Rect::new(m.margin + m.inner, y + pad, m.w as f32 - (m.margin + m.inner) * 2.0, chart_h);
+    let list = chart.y + chart.h + m.dp(2.0);
+    let bottom = list + rows_h + pad / 2.0;
+    c.fill_round_rect(m.margin, y, m.w as f32 - m.margin * 2.0, bottom - y, m.card_radius, t.pal.card);
+    c.stroke_round_rect(chart.x, chart.y, chart.w, chart.h, m.dp(12.0), m.dp(1.0), t.pal.track);
+    widgets::rows_in(c, t, f, list, &rows, &Tone::page(t));
+    bottom
+}
+
+/// How much of the processor is in use, as the performance face writes it:
+/// whole percent, or a dash where there is nothing to say yet.
+fn use_share(busy: Option<f32>) -> String {
+    match busy {
+        Some(busy) => format!("{:.0}%", busy * 100.0),
+        None => "--%".to_string(),
+    }
+}
+
+/// A core's clock in kHz as the performance face writes it.
+fn clock_ghz(khz: Option<u32>) -> String {
+    match khz {
+        Some(khz) => format!("{:.2}GHz", khz as f32 / 1_000_000.0),
+        None => "--GHz".to_string(),
+    }
+}
+
+/// How warm the processor is, as the performance face writes it.
+fn warmth_c(celsius: Option<f32>, l: Lang) -> String {
+    let unit = l.among("℃", "℃", "°C");
+    match celsius {
+        Some(celsius) => format!("{celsius:.0}{unit}"),
+        None => format!("--{unit}"),
     }
 }
 

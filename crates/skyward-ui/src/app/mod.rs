@@ -832,6 +832,9 @@ pub(crate) const VOLUME_STEPS: u8 = 15;
 /// How long a text field's cursor shows and then hides, as the stock
 /// fields blink it.
 const BLINK_MS: u64 = 500;
+/// How often the performance face reads the processor: once a second,
+/// which is the stretch its shares are of.
+const PERF_MS: u64 = 1_000;
 /// The spring the home page's search bar moves to the search page's field
 /// on, and back: critically damped, fitted to frames of the stock settings
 /// on a Xiaomi 17 Ultra.
@@ -1546,6 +1549,12 @@ pub struct App {
     /// How round the screen's corners are, in pixels.
     corners: f32,
     dirty: bool,
+    /// When the performance face last read the processor; none until it
+    /// first shows, so it reads at once rather than a second in.
+    perf_at: Option<u64>,
+    /// The reader of the processor the performance face shows, kept so
+    /// each reading says what changed since the one before it.
+    perf_sampler: skyward_info::perf::Sampler,
     w: u32,
     h: u32,
     px_per_dp: f32,
@@ -1641,6 +1650,8 @@ impl App {
             backdrop: None,
             corners: 0.0,
             dirty: true,
+            perf_at: None,
+            perf_sampler: skyward_info::perf::Sampler::new(),
             w,
             h,
             px_per_dp,
@@ -1952,6 +1963,19 @@ impl App {
         {
             self.button = Some((key, Press::Spent));
             fx.extend(self.show_power_menu(now));
+        }
+        // The performance face reads the processor once a second while it
+        // shows. The counters only say what changed between two readings,
+        // so what it shows is the second gone, not the frame. Left, it
+        // reads afresh when it is shown again.
+        if self.screen() == Screen::Tasks && self.state.tasks_face == TasksFace::Performance {
+            if self.perf_at.is_none_or(|at| now >= at + PERF_MS) {
+                self.perf_at = Some(now);
+                self.state.perf = self.perf_sampler.read().clone();
+                self.dirty = true;
+            }
+        } else {
+            self.perf_at = None;
         }
         let active = *self.active.get_or_insert(now);
         if let (true, Some(after)) = (self.display_on, SCREEN_OFF[self.state.screen_off]) {

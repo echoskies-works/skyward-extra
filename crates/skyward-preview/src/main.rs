@@ -484,13 +484,35 @@ fn main() -> Result<()> {
     write_png(&path, &c)?;
     println!("wrote {}", path.display());
 
-    // The tasks page's three faces, none with anything read off the phone
-    // yet: the processes as a list that holds none, the services it keeps,
-    // and the performance with the figures it will draw.
-    let tasks: [(&str, TasksFace, bool); 4] = [
+    // The tasks page's three faces: the processes as a list that holds
+    // none, the services it keeps, and the performance. A desk build has
+    // no processor of the phone's to read, so the performance face is
+    // given a sample — eight cores of a Snapdragon 8s Gen 4 — for the rows
+    // to be set at the widths a phone's figures take rather than at a
+    // dash's. The phone itself reads its own.
+    let perf = skyward_info::perf::Reading {
+        busy: Some(0.37),
+        cores: [
+            (2_880_000, 0.62),
+            (2_400_000, 0.48),
+            (2_100_000, 0.21),
+            (1_900_000, 0.14),
+            (1_600_000, 0.09),
+            (1_100_000, 0.05),
+            (800_000, 0.03),
+            (700_000, 0.02),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(id, (khz, busy))| skyward_info::perf::Core { id: id as u32, khz: Some(khz), busy: Some(busy) })
+        .collect(),
+        celsius: Some(42.0),
+    };
+    let tasks: [(&str, TasksFace, bool); 5] = [
         ("00-10-tasks-process-light", TasksFace::Process, false),
         ("00-10-tasks-service-light", TasksFace::Service, false),
         ("00-10-tasks-performance-light", TasksFace::Performance, false),
+        ("00-10-tasks-performance-dark", TasksFace::Performance, true),
         ("00-10-tasks-process-dark", TasksFace::Process, true),
     ];
     for (name, face, dark) in tasks {
@@ -498,6 +520,9 @@ fn main() -> Result<()> {
         app.state.tasks_face = face;
         app.state.dark = dark;
         let _ = app.tick(0);
+        // After the tick, which reads the machine and finds no processor
+        // of the phone's here: the sample is what the card draws.
+        app.state.perf = perf.clone();
         let mut c = Canvas::new(w, h);
         app.compose(&mut c, &fonts, &info, "21:40", &shot_date(), 200);
         let path = out.join(format!("{name}.png"));

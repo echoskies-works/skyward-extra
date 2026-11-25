@@ -249,6 +249,9 @@ pub struct State {
     /// Which of the tasks page's three faces the page shows: the processes,
     /// the services or the performance.
     pub tasks_face: TasksFace,
+    /// What the performance face reads off the phone: the processor's use,
+    /// its cores' clocks and its warmth, sampled while that face shows.
+    pub perf: skyward_info::perf::Reading,
     /// Which of the Aether store's three faces the page shows: the front,
     /// everything it lists, or what the phone already has.
     pub store_face: StoreFace,
@@ -382,6 +385,7 @@ impl Default for State {
             music_face: MusicFace::List,
             music_filter: MusicFilter::All,
             tasks_face: TasksFace::Process,
+            perf: skyward_info::perf::Reading::default(),
             store_face: StoreFace::Home,
             clock: Clock::default(),
             timer_sound: DEFAULT_TIMER_SOUND.to_string(),

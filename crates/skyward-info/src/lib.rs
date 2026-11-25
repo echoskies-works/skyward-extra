@@ -13,6 +13,8 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::Mutex;
 
+pub mod perf;
+
 /// Version of the Skyward release this build sits on, shown on the About
 /// page in brackets.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

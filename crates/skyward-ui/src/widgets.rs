@@ -2087,6 +2087,25 @@ pub fn list(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, rows: &[Row]) -> Blo
     list_toned(c, t, f, top, rows, &Tone::page(t))
 }
 
+/// How tall `rows` stand together, drawn inside a card of another's
+/// making rather than one of their own.
+pub fn rows_height(c: &Canvas, t: &Theme, f: &Fonts, rows: &[Row]) -> f32 {
+    rows.iter().map(|r| layout(c, t, f, r).h).sum()
+}
+
+/// `rows` drawn inside a card another part drew, from `top`: the rows
+/// only, the card and its colour left to the caller. Returns where the
+/// last of them ends.
+pub fn rows_in(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, rows: &[Row], tone: &Tone) -> f32 {
+    let mut y = top;
+    for row in rows {
+        let lay = layout(c, t, f, row);
+        draw_row(c, t, f, row, &lay, y, tone);
+        y += lay.h;
+    }
+    y
+}
+
 /// [`list`] in the given colours.
 pub fn list_toned(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, rows: &[Row], tone: &Tone) -> Block {
     let m = &t.m;
