@@ -38,6 +38,21 @@ pub(crate) const EXIT: [[&str; 2]; 2] = [
     ["and show Startup Menu.", "并显示启动菜单。"],
 ];
 
+/// What the panel says when the battery is running out.
+///
+/// Written here, and not yet drawn: the level it is said at, and the way the
+/// panel learns the level at all, are a job of their own — the panel runs
+/// before the system's battery service exists, so there is no state to read,
+/// only a kernel file to parse. The words are settled first so that the
+/// string and its glyphs are checked on a desk build before anything on a
+/// phone depends on them.
+///
+/// It will read as a reading under the key legend, in the same yellow as the
+/// Secure Boot line and for the same reason: it is a state the panel is
+/// reporting, not one of the lines the keys move through.
+#[allow(dead_code)]
+pub(crate) const BATTERY_LOW: [&str; 2] = ["The battery is low.", "电池电量不足。"];
+
 /// How a line is drawn.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Ink {
@@ -680,6 +695,20 @@ mod tests {
         }
     }
 
+    /// The battery's line is written ahead of the reading that will say it.
+    ///
+    /// A sentence in both languages, in the shape the panel's other readings
+    /// are written in, so that the day the level is wired up there is nothing
+    /// left to decide about the wording.
+    #[test]
+    fn the_battery_line_is_written_before_it_is_drawn() {
+        for lang in BOTH {
+            let text = lang.pick(BATTERY_LOW);
+            assert!(text.ends_with(lang.pick([".", "。"])), "{lang:?}: a sentence, not a label: {text:?}");
+        }
+        assert_ne!(BATTERY_LOW[0], BATTERY_LOW[1], "the two languages are written, not shared");
+    }
+
     /// Every character either language can put on this panel has a glyph.
     ///
     /// The drawer falls back to `?` for a character it cannot find, which
@@ -697,6 +726,10 @@ mod tests {
             strings.extend(ITEMS.iter().flat_map(|item| [format!("{}{}", item.label(lang), lang.pick(["?", "？"])), item.label(lang).to_string()]));
             strings.extend([lang.pick(["No", "否"]).to_string(), lang.pick(["Yes", "是"]).to_string()]);
             strings.extend([lang.pick(["Error code:", "错误代码:"]).to_string(), "139".to_string(), "67".to_string(), "-2147483648".to_string()]);
+            // Not drawn yet, but the day it is, it must not come out as a row
+            // of question marks: the glyph table is checked here rather than
+            // on a phone whose system is already the thing that broke.
+            strings.push(lang.pick(BATTERY_LOW).to_string());
             for reason in [Reason::Music, Reason::Browser, Reason::Tasks] {
                 strings.push(reason.label(lang).to_string());
             }
