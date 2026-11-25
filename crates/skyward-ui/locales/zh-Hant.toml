@@ -66,7 +66,7 @@ charge_to_install = "充電至 {least}% 以上才能安裝"
 [lock]
 swipe = "上滑解鎖"
 charging = "正在充電 {level}%"
-battery_low = "電池電量不足"
+battery_low = "電池電力不足"
 
 [battery.health]
 good = "良好"
