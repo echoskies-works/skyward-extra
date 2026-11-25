@@ -63,6 +63,11 @@ capacity_left = "Capacità massima {share}%"
 low = "Batteria: {level}%"
 charge_to_install = "Ricarica oltre {least}% per installare"
 
+[lock]
+swipe = "Scorri verso l'alto per aprire"
+charging = "In carica: {level}%"
+battery_low = "Batteria quasi scarica"
+
 [battery.health]
 good = "Buona"
 overheated = "Surriscaldata"

@@ -558,21 +558,42 @@ fn main() -> Result<()> {
     // recovery, in both themes, since the veil lightens a light page and
     // darkens a dark one. Each is composed twice — once for the picture the
     // lock keeps behind itself, once with the lock over it.
-    let locks: [(&str, bool, Screen); 3] = [
-        ("00-04-lock-light", false, Screen::Settings),
-        ("00-04-lock-dark", true, Screen::Desktop),
-        ("00-04-lock-home-dark", true, Screen::Home),
+    // One shot of the lock: its name, the theme it is drawn in and the page
+    // under it, and the battery reading its foot line carries where it has
+    // one — the charge and whether a cable is in.
+    type LockShot = (&'static str, bool, Screen, Option<(u8, bool)>);
+    let locks: [LockShot; 5] = [
+        ("00-04-lock-light", false, Screen::Settings, None),
+        ("00-04-lock-dark", true, Screen::Desktop, None),
+        ("00-04-lock-home-dark", true, Screen::Home, None),
+        // The lock's foot line with the battery behind it: a cable in, and a
+        // charge under the line. The page under them is the desktop, as it
+        // is in the shot above, so the line is the only thing that differs.
+        ("00-04-lock-charging-dark", true, Screen::Desktop, Some((47, true))),
+        ("00-04-lock-battery-low-dark", true, Screen::Desktop, Some((15, false))),
     ];
-    for (name, dark, screen) in locks {
+    for (name, dark, screen, battery) in locks {
         let mut app = on_wallpaper(screen, App::new(screen, w, h, ppd));
         app.state.lang = lang;
         app.state.dark = dark;
         app.state.data = Data::Open;
+        let mut told = info.clone();
         let mut behind = Canvas::new(w, h);
         app.compose(&mut behind, &fonts, &info, "21:40", &shot_date(), 0);
         app.lock_now();
+        // Told after the lock is up, as the phone tells it: the card the
+        // reading would raise is held back by the lock, and the lock itself
+        // is drawn again with the line on it. The bar is told too, so the
+        // number at its corner and the words at the foot agree.
+        if let Some((level, plugged)) = battery {
+            let base = info.battery.clone().expect("the phone's battery");
+            let charge = if plugged { Charge::Charging } else { Charge::Discharging };
+            let reading = Battery { level, charge, plugged, ..base };
+            app.battery(Some(&reading));
+            told.battery = Some(reading);
+        }
         let mut shot = Canvas::new(w, h);
-        app.compose(&mut shot, &fonts, &info, "21:40", &shot_date(), 0);
+        app.compose(&mut shot, &fonts, &told, "21:40", &shot_date(), 0);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &shot)?;
         println!("wrote {}", path.display());

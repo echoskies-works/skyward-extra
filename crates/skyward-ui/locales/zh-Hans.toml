@@ -63,6 +63,11 @@ capacity_left = "剩余容量 {share}%"
 low = "电量仅剩 {level}%"
 charge_to_install = "充电至 {least}% 以上才能安装"
 
+[lock]
+swipe = "上滑解锁"
+charging = "正在充电 {level}%"
+battery_low = "电池电量不足"
+
 [battery.health]
 good = "良好"
 overheated = "过热"

@@ -84,6 +84,15 @@ low = "Battery at {level}%"
 charge_to_install = "Charge it past {least}% to install"
 
 # The battery's health, as the kernel reports it.
+# The lock screen's line at the foot of the screen: how to leave it, or
+# what the battery has to say instead. One line either way — the swipe is
+# still the only way off the lock, so a reading takes the line the swipe's
+# words were on rather than adding one.
+[lock]
+swipe = "Swipe up to open"
+charging = "Charging {level}%"
+battery_low = "Battery low"
+
 [battery.health]
 good = "Good"
 overheated = "Overheated"

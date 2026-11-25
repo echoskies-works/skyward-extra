@@ -59,6 +59,16 @@ impl App {
     /// not put back until it runs down to the next step.
     pub fn battery(&mut self, battery: Option<&skyward_info::Battery>) {
         let Some(b) = battery else { return };
+        // The lock draws the charge on its foot line, so a reading that
+        // changed is a lock drawn again: without this the line under the
+        // clock would go on saying what it said when the screen came up,
+        // through a cable going in or a charge running down.
+        let now = (b.level, b.plugged);
+        if self.battery_now != Some(now) {
+            self.battery_now = Some(now);
+            self.lock_sheet_gone();
+            self.dirty = true;
+        }
         // Charged back above every step: a run down from here is a new one,
         // and may say what it says again. Asked before the charger, because
         // a battery full on the cable is exactly the case the steps have to

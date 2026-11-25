@@ -63,6 +63,11 @@ capacity_left = "Dung lượng tối đa {share}%"
 low = "Pin còn {level}%"
 charge_to_install = "Sạc trên {least}% để cài"
 
+[lock]
+swipe = "Vuốt lên để mở"
+charging = "Đang sạc {level}%"
+battery_low = "Pin yếu"
+
 [battery.health]
 good = "Tốt"
 overheated = "Quá nóng"

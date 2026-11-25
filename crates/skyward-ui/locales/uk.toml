@@ -63,6 +63,11 @@ capacity_left = "Максимальна ємність {share}%"
 low = "Заряд акумулятора {level}%"
 charge_to_install = "Для встановлення зарядіть понад {least}%"
 
+[lock]
+swipe = "Проведіть угору, щоб відкрити"
+charging = "Заряджається: {level}%"
+battery_low = "Низький заряд батареї"
+
 [battery.health]
 good = "Добрий"
 overheated = "Перегрітий"

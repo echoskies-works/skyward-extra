@@ -63,6 +63,11 @@ capacity_left = "Максимальная ёмкость {share}%"
 low = "Заряд батареи {level}%"
 charge_to_install = "Для установки зарядите выше {least}%"
 
+[lock]
+swipe = "Смахните вверх, чтобы открыть"
+charging = "Заряжается: {level}%"
+battery_low = "Низкий заряд батареи"
+
 [battery.health]
 good = "Хорошее"
 overheated = "Перегрев"

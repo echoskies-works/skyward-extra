@@ -63,6 +63,11 @@ capacity_left = "Kapasitas maksimum {share}%"
 low = "Baterai {level}%"
 charge_to_install = "Isi daya hingga di atas {least}% untuk menginstal"
 
+[lock]
+swipe = "Geser ke atas untuk membuka"
+charging = "Mengisi daya {level}%"
+battery_low = "Baterai lemah"
+
 [battery.health]
 good = "Baik"
 overheated = "Terlalu panas"

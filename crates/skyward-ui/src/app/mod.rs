@@ -1475,6 +1475,11 @@ pub struct App {
     /// the lock, work under way — and the card waits for the way to clear
     /// rather than covering what is on the panel.
     battery_pending: Option<u8>,
+    /// The battery as last told — its charge and whether a charger is in —
+    /// which the lock reads to say how the phone is doing on its foot line
+    /// rather than how to leave it. Nothing until the system's first
+    /// reading, and the lock says the swipe until then.
+    battery_now: Option<(u8, bool)>,
     /// The page the panel showed before it went dark, a pixel of every ten,
     /// kept sharp: the lock's ground when there is no wallpaper. None until
     /// a page has been shown.
@@ -1576,6 +1581,7 @@ impl App {
             clock_timer: notify::Shown::No,
             battery_told: 0,
             battery_pending: None,
+            battery_now: None,
             behind: None,
             seek: None,
             knob: None,

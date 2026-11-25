@@ -63,6 +63,11 @@ capacity_left = "Maksimum kapasite %{share}"
 low = "Pil düzeyi %{level}"
 charge_to_install = "Yüklemek için %{least} üzerine şarj edin"
 
+[lock]
+swipe = "Açmak için yukarı kaydırın"
+charging = "Şarj oluyor: %{level}"
+battery_low = "Pil düşük"
+
 [battery.health]
 good = "İyi"
 overheated = "Aşırı ısınmış"

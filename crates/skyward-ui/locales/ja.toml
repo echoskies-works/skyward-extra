@@ -63,6 +63,11 @@ capacity_left = "最大容量 {share}%"
 low = "バッテリー残量 {level}%"
 charge_to_install = "{least}% を超えるとインストール可能"
 
+[lock]
+swipe = "上にスワイプして開く"
+charging = "{level}% 充電中"
+battery_low = "バッテリー残量不足"
+
 [battery.health]
 good = "良好"
 overheated = "過熱"

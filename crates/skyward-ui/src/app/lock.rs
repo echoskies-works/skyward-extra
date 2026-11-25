@@ -62,24 +62,11 @@ const LOCK_SOFT: Rgba = Rgba::rgb(224, 224, 224);
 const LOCK_INK_DARK: Rgba = Rgba::rgb(24, 24, 24);
 const LOCK_SOFT_DARK: Rgba = Rgba::rgb(96, 96, 96);
 
-/// The lock's words about the battery, kept beside its words about the
-/// swipe. Nothing draws either yet — the lock shows no charge state — so
-/// they are written here and left unused on purpose, for the screen that
-/// will show them: the wording gets settled before the wiring does.
-///
-/// They go through `among`, as the swipe's words do, and move into the
-/// locale files with the rest of the lock's text when that text moves.
-#[allow(dead_code)]
-pub(crate) fn charging(lang: Lang, level: u8) -> String {
-    lang.among("正在充电 {level}%", "正在充電 {level}%", "Charging {level}%").replace("{level}", &level.to_string())
-}
-
-/// What the lock says when the battery is nearly out: the other half of the
-/// pair above, and unused for the same reason.
-#[allow(dead_code)]
-pub(crate) fn battery_low(lang: Lang) -> &'static str {
-    lang.among("电池电量不足", "電池電量不足", "Battery low")
-}
+/// The charge at which the lock stops saying how to leave it and says the
+/// battery is low: the card's own first step, so the two screens call the
+/// same battery low at the same charge. Twenty itself counts, as it does on
+/// the card.
+const LOCK_LOW_AT: u8 = battery::BATTERY_LEVELS[0];
 
 /// The lock, once it is up: how far up it has been pushed, and where it is
 /// going now that the finger has lifted.
@@ -207,9 +194,32 @@ impl App {
         // step heavier than the pages' own text, as the stock lock sets it.
         sheet.text_center(&f.regular, today, w / 2.0, h * LOCK_CLOCK_AT + m.dp(LOCK_DAY_AT), m.dp(LOCK_DAY_PX), soft);
         sheet.text_center(&f.lock_clock, clock, w / 2.0, h * LOCK_CLOCK_AT, m.dp(LOCK_CLOCK_PX), ink);
-        let said = self.state.lang.among("上滑解锁", "上滑解鎖", "Swipe up to open");
-        sheet.text_center(&f.label, said, w / 2.0, h * LOCK_WORDS_AT, m.sub_px, soft);
+        let said = self.lock_words();
+        sheet.text_center(&f.label, &said, w / 2.0, h * LOCK_WORDS_AT, m.sub_px, soft);
         sheet
+    }
+
+    /// What the lock says on the line at its foot.
+    ///
+    /// The battery takes the line while it has something to say, because it
+    /// is the one thing about the phone worth reading there: a charger in
+    /// says how far along it is, and a phone running down under
+    /// [`LOCK_LOW_AT`] says so. A charger wins over a low charge — the phone
+    /// is filling, which is the reading that matters at that moment, and it
+    /// is the same order the card takes.
+    ///
+    /// Neither brings anything else with it. The words stand where the
+    /// swipe's did, in the same ink, and the swipe's come back the moment
+    /// neither is true: the swipe is still the only way off the lock, and a
+    /// screen that traded that for a reading would leave the phone with no
+    /// way out.
+    fn lock_words(&self) -> String {
+        let l = self.state.lang;
+        match self.battery_now {
+            Some((level, true)) => texts::lock::charging(l, level),
+            Some((level, false)) if level <= LOCK_LOW_AT => l.pick(texts::lock::BATTERY_LOW).to_string(),
+            _ => l.pick(texts::lock::SWIPE).to_string(),
+        }
     }
 
     /// A finger on the lock: pushed up it goes away, let go short of the
@@ -629,16 +639,71 @@ mod tests {
         assert!(is_dark(&filled(108, 192, Rgba::rgb(120, 120, 120))), "grey is still a picture");
     }
 
-    /// The battery's words are written and not drawn yet. They have to be
-    /// the three languages the lock speaks, with the level in the middle
-    /// where each of them puts it.
+    /// A battery as the system tells it to the lock.
+    fn say(app: &mut App, level: u8, plugged: bool) {
+        app.battery(Some(&skyward_info::Battery {
+            level,
+            plugged,
+            charge: if plugged { skyward_info::Charge::Charging } else { skyward_info::Charge::Discharging },
+            temp: None,
+            health: None,
+            cycles: None,
+            design: None,
+            full: None,
+            voltage: None,
+            quick: false,
+        }));
+    }
+
+    /// The line at the foot follows the charger first, the charge second,
+    /// and is the swipe's words whenever neither has anything to say.
     #[test]
-    fn the_battery_words_are_written_in_the_locks_three_languages() {
-        assert_eq!(charging(Lang::Hans, 47), "正在充电 47%");
-        assert_eq!(charging(Lang::Hant, 47), "正在充電 47%");
-        assert_eq!(charging(Lang::En, 47), "Charging 47%");
-        assert_eq!(battery_low(Lang::Hans), "电池电量不足");
-        assert_eq!(battery_low(Lang::Hant), "電池電量不足");
-        assert_eq!(battery_low(Lang::En), "Battery low");
+    fn the_lock_says_what_the_battery_is_doing_while_it_has_something_to_say() {
+        let mut app = App::new(Screen::Desktop, 400, 800, 2.0);
+        app.state.lang = Lang::Hans;
+        assert_eq!(app.lock_words(), "上滑解锁", "nothing told yet");
+
+        say(&mut app, 47, true);
+        assert_eq!(app.lock_words(), "正在充电 47%", "a cable in says how far along");
+        say(&mut app, 5, true);
+        assert_eq!(app.lock_words(), "正在充电 5%", "and wins over a low charge");
+
+        say(&mut app, 55, false);
+        assert_eq!(app.lock_words(), "上滑解锁", "running down with charge to spare");
+        say(&mut app, 21, false);
+        assert_eq!(app.lock_words(), "上滑解锁", "one point above the line says nothing");
+        say(&mut app, 20, false);
+        assert_eq!(app.lock_words(), "电池电量不足", "the line itself counts as low");
+        say(&mut app, 3, false);
+        assert_eq!(app.lock_words(), "电池电量不足");
+    }
+
+    /// A reading that changed is a lock drawn again: the line under the
+    /// clock must not go on saying what it said when the screen came up.
+    #[test]
+    fn a_new_reading_draws_the_lock_again() {
+        let f = crate::font::bundled();
+        let i = crate::app::testing::info();
+        let mut app = App::new(Screen::Desktop, 400, 800, 2.0);
+        app.wake(0);
+        app.lock_now();
+        let mut out = Canvas::new(400, 800);
+        app.compose(&mut out, &f, &i, "21:40", "11月18日 周二", 10);
+        assert!(app.lock.as_ref().is_some_and(|l| l.sheet.is_some()), "the lock is drawn");
+        say(&mut app, 9, false);
+        assert!(app.lock.as_ref().is_some_and(|l| l.sheet.is_none()), "a reading puts it back to be drawn");
+    }
+
+    /// All fifteen languages write the lock's three lines, and the level
+    /// lands in the charging one in each of them.
+    #[test]
+    fn the_locks_three_lines_are_written_in_every_language() {
+        for lang in Lang::ALL {
+            assert!(!lang.pick(texts::lock::SWIPE).trim().is_empty(), "{lang:?}: the swipe");
+            assert!(!lang.pick(texts::lock::BATTERY_LOW).trim().is_empty(), "{lang:?}: the low battery");
+            let said = texts::lock::charging(lang, 42);
+            assert!(said.contains("42"), "{lang:?}: the level is in the line: {said:?}");
+            assert!(!said.contains("{level}"), "{lang:?}: and not the placeholder: {said:?}");
+        }
     }
 }
