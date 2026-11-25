@@ -1801,7 +1801,14 @@ impl<'a> Pages<'a> {
                 Effect::Ticks => self.ticks()?,
                 // The power menu's black-out has run its course: the card has
                 // fallen and the page is black, and the phone leaves now.
-                Effect::Reboot(target) => self.leave_to(target, now),
+                // Whatever the request still kept in misc asked is answered
+                // here as it is from every other page: leaving is the answer,
+                // and a request left in misc unanswered would bring the phone
+                // back into the recovery on the next start.
+                Effect::Reboot(target) => {
+                    self.done_with_request()?;
+                    self.leave_to(target, now);
+                }
                 other => unreachable!("time passing asks for nothing but the motor, not {other:?}"),
             }
         }
