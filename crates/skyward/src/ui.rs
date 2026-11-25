@@ -216,9 +216,14 @@ fn stop(code: i32, reason: Option<&str>) -> Result<()> {
 /// happened to stop. Instead: keep the log, say where to go — in the folder,
 /// or down the pipe the parent left when the folder will not take it — and
 /// exit cleanly. The parent, which is still running, reads the word and does
-/// the power operation. Where neither way of saying it works, the pages say so
-/// and the phone stays: nothing here falls back to taking the phone down
-/// itself, because the one program that does that is the parent.
+/// the power operation.
+///
+/// A folder and a pipe that both refuse the word are not the end either. The
+/// process hands itself to the service, which takes the phone down from its
+/// own code exactly as `skyward reboot` asks it to. That costs the pages —
+/// there is no coming back from an exec — so it is the last thing tried,
+/// after the two cheaper ways of saying the same word. Only when even that
+/// will not start does the page say so and the phone stay.
 fn power(target: Target) -> Result<()> {
     let power = match target {
         Target::System => Power::System,
@@ -235,11 +240,26 @@ fn power(target: Target) -> Result<()> {
     // Keeping the log is best effort: a log that cannot be kept is no reason
     // to stay in recovery, and no reason to fail the note either.
     skyward_sys::leave::keep_logs();
-    skyward_sys::leave::ask(power).with_context(|| {
-        format!("the word to leave for {} could not be said", skyward_sys::leave::name(power))
-    })?;
-    let _ = skyward_sys::kmsg(&format!("the system leaves for {}; code 0", skyward_sys::leave::name(power)));
-    std::process::exit(0)
+    match skyward_sys::leave::ask(power) {
+        Ok(()) => {
+            let _ = skyward_sys::kmsg(&format!("the system leaves for {}; code 0", skyward_sys::leave::name(power)));
+            std::process::exit(0)
+        }
+        // Neither the folder nor the pipe took the word, which is what a
+        // memory filesystem that filled up or went read-only looks like. The
+        // service is still the one program allowed to take the phone down, so
+        // this process becomes it — the same hand-over a shell asks for with
+        // `skyward reboot <target>`, and one that needs no file at all. The
+        // pages go with the exec, which is why this is the last resort: the
+        // alternative is a phone with no way to leave but the power key.
+        Err(e) => {
+            let _ = skyward_sys::kmsg(&format!(
+                "the word to leave for {} could not be said: {e:#}; handing the power operation to the service",
+                skyward_sys::leave::name(power)
+            ));
+            crate::hand_to_service(power)
+        }
+    }
 }
 
 /// File transfer: the service offering internal storage to a computer over
