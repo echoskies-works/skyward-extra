@@ -23,16 +23,14 @@ const SHADE_FLICK_DP: f32 = 800.0;
 const SHADE_PERIOD: f32 = 0.34;
 
 /// The control centre is a card of the pages' own kind — the same white, the
-/// same corners, the same soft shadow, the same room from the screen's edges
-/// as the notices below it. How far below the status bar it floats, how much
-/// room it keeps from its own edges, and how far its last row stands above
-/// its foot.
+/// same corners, the same room from the screen's edges as the notices below
+/// it — and, like them, flat on the page: no shadow round either, the corners
+/// alone saying where a card ends and the page begins. How far below the
+/// status bar it floats, how much room it keeps from its own edges, and how
+/// far its last row stands above its foot.
 const CARD_TOP_DP: f32 = 12.0;
 const CARD_PAD_DP: f32 = 12.0;
 const CARD_FOOT_DP: f32 = 16.0;
-/// The blur of that card's shadow, in dp: about the gap above it, so none of
-/// it is cut off by the status bar.
-const CARD_SHADOW_DP: f32 = 12.0;
 
 const BRIGHT_H_DP: f32 = 16.0;
 /// The brightness bar's top, and the keys' first row, down from the card's
@@ -364,9 +362,9 @@ impl App {
         if let Some(head) = self.shade.as_ref().and_then(|s| s.head.as_ref()) {
             let rows = seen.min(geom.head_h as i32);
             if rows > 0 {
-                // Laid rather than put: the card rounds away from its corners
-                // and its shadow falls outside them, so the page has to show
-                // through where the card is not.
+                // Laid rather than put: the card rounds away from its
+                // corners, so the page has to show through where the card is
+                // not.
                 let part = head.crop(0, 0, head.w, rows as u32);
                 out.lay(&part, 0, top, 1.0);
             }
@@ -395,21 +393,11 @@ impl App {
         let w = m.w;
         let mut head = Canvas::new(w, geom.head_h as u32);
         // The card floats straight on the page, as the notices below do:
-        // no sheet of dark under either, only their own shadows. A veil here
-        // showed as one dark rectangle on the wallpaper behind it.
-        // The card itself, on all four corners and the same room from the
-        // edges as the notices below it: the control centre is one of them,
-        // with the shadow that makes it stand off the page.
+        // no sheet of dark under either, and no shadow around either. A veil
+        // here showed as one dark rectangle on the wallpaper behind it, and a
+        // shadow on a card that stands over its own page reads as a second
+        // edge drawn round the first — the corners are the edge.
         let card = geom.card;
-        head.shadow_round_rect(
-            card.x,
-            card.y - top,
-            card.w,
-            card.h,
-            m.card_radius,
-            m.dp(CARD_SHADOW_DP),
-            pal.shadow,
-        );
         head.fill_round_rect(card.x, card.y - top, card.w, card.h, m.card_radius, pal.card);
         icons::glyph(&mut head, Icon::Sun, geom.sun.0, geom.sun.1 - top, m.dp(SUN_DP), pal.subtitle);
         let b = geom.bright;
