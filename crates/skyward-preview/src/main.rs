@@ -280,6 +280,9 @@ fn main() -> Result<()> {
         write_png(&path, &whole_page(&mut app, &fonts, info))?;
         println!("wrote {}", path.display());
     }
+    // The charging screen, which no page can be photographed as: it is drawn
+    // by the millisecond, so it comes as a run of frames rather than a shot.
+    charge_shots(&out, &fonts, &light, &info, lang)?;
 
     // The clock's two faces as they are worked: the stopwatch before it has
     // ever run, one going with nothing yet on its paper, one going with a few
