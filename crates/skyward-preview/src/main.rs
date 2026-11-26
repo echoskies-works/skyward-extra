@@ -1616,9 +1616,14 @@ fn main() -> Result<()> {
     // The panel mid-gesture, to set beside recordings of the same moves.
     let moments: [Moment; 41] = [
         // A page pulled off the screen by its foot, the desktop come in
-        // under it: four frames of the one move. A page goes no higher than
-        // a quarter of the screen, so the last of them stands at that top
-        // with the finger still down and nothing more left to give.
+        // under it, and the page folding back into its icon. Two runs:
+        //
+        // The first four are the hand, gone as high as the page is allowed
+        // — a quarter of the screen — and no higher however far the finger
+        // goes, the page left behind at that top with nothing more to give.
+        // What follows a finger let go is drawn below, in its own run: it
+        // needs time to pass in order, which a moment replayed from zero
+        // does not give a spring started part way through.
         ("00-08-going-home-1-light", Screen::Calculator, false, &|app, f| {
             let by = app.theme().m.h as f32 * 0.06;
             pull_up(app, f, by)
@@ -1869,6 +1874,65 @@ fn main() -> Result<()> {
         eprintln!("{} of the moments were not drawn: {}", missed.len(), missed.join(", "));
     }
 
+    // A pull at the foot let go hard, drawn with the clock running in order:
+    // the finger takes the page up a tenth of the screen, carries on the last
+    // stretch in one frame — that is what the throw reads its speed from —
+    // and comes up. The page carries on past it to the quarter it is allowed,
+    // then folds into the icon it came out of, at the pace going back from a
+    // page takes, begun where the carry left it. Nine frames, the first with
+    // the finger still down and the last the desktop left behind.
+    //
+    // Apart from the moments above because a moment is replayed from zero:
+    // a spring started at 232 ms would be asked for its value at zero, read
+    // as settled, and fold at once. Here time starts where the finger does.
+    {
+        let mut app = on_wallpaper(Screen::Calculator, App::new(Screen::Calculator, w, h, ppd));
+        app.state.lang = lang;
+        app.state.data = Data::Open;
+        app.set_screen_corners(cfg.display.corner_radius as f32);
+        app.frame(&fonts, &info);
+        app.tick(0);
+        // Drawn once before the finger lands, as a page the hand can see is
+        // always drawn: the fold has to have the page it folds, and a page
+        // never composed has none.
+        app.compose(&mut Canvas::new(w, h), &fonts, &info, CLOCK, &shot_date(), 0);
+
+        let m = app.theme().m;
+        let foot = m.h as f32 - m.dp(24.0) + 2.0;
+        let by = m.h as f32 * 0.10;
+        let up = 232u64;
+        let mut now = 0u64;
+        app.touch(Touch::Down(600.0, foot), &fonts, 0);
+        for (at, lift) in [(16u64, 40.0f32), (200, by), (216, by + THROW_PX)] {
+            while now < at {
+                now += 16;
+                let _ = app.tick(now.min(at));
+            }
+            app.touch(Touch::Move(600.0, foot - lift), &fonts, at);
+        }
+        while now < up {
+            now += 16;
+            let _ = app.tick(now.min(up));
+        }
+        app.touch(Touch::Up, &fonts, up);
+        let _ = app.tick(up);
+
+        for (i, after) in [0u64, 32, 64, 96, 128, 160, 192, 240, 304, 388].iter().enumerate() {
+            let at = up + after;
+            while now < at {
+                now += 16;
+                let _ = app.tick(now.min(at));
+            }
+            let _ = app.tick(at);
+            let mut c = Canvas::new(w, h);
+            app.compose(&mut c, &fonts, &info, CLOCK, &shot_date(), at);
+            let name = format!("00-08-going-home-{}-light", i + 5);
+            let path = out.join(format!("{name}.png"));
+            write_png(&path, &c)?;
+            println!("wrote {}", path.display());
+        }
+    }
+
     // A notice that has just come, standing under the status bar over the
     // page: caught as it slips down, and again where it holds. The notice is
     // a stand-in like the ones in the panel above, for the same reason.
@@ -2082,6 +2146,11 @@ fn pull_up(app: &mut App, f: &Fonts, by: f32) -> u64 {
     app.touch(Touch::Move(600.0, foot - by), f, 200);
     240
 }
+
+/// How far the finger of a thrown pull travels in its last frame, in pixels:
+/// enough in one frame that the throw is read as a throw, not as a let go.
+const THROW_PX: f32 = 200.0;
+
 
 /// Put a finger down at `at` on the control doing `action`, on the page
 /// drawn: `<`, or one of the page's own.
