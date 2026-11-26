@@ -1148,54 +1148,6 @@ impl Canvas {
         }
     }
 
-    /// [`lay_opaque`] with each pixel of the layer standing for four of the
-    /// canvas's: a soft ground — a page blurred for the power menu — is
-    /// broad colour and nothing else, and four of its pixels side by side
-    /// are one colour to the eye, so the screen is mixed a block at a time.
-    pub fn lay_opaque_coarse(&mut self, layer: &Canvas, alpha: f32) {
-        assert!(layer.whole(), "a layer laid holds all of itself");
-        if alpha <= 0.0 || layer.w == 0 || layer.h == 0 {
-            return;
-        }
-        let strength = (alpha * 256.0).round() as u32;
-        let (w, h) = (self.w as usize, self.h as usize);
-        let (lw, lh) = (layer.w as usize, layer.h as usize);
-        let row_bytes = w * 4;
-        let mut y = 0;
-        while y < h {
-            let from = (y / 2).min(lh - 1) * lw * 4;
-            let at = y * row_bytes;
-            {
-                let row = &mut self.data[at..at + row_bytes].as_chunks_mut::<4>().0;
-                let src = &layer.data[from..from + lw * 4].as_chunks::<4>().0;
-                // A pixel of the layer stands for two here, so it is read
-                // once and its mix written twice: a block at a time, and no
-                // branch in the run for the compiler to stop at.
-                if strength >= 256 {
-                    for (d, s) in row.chunks_mut(2).zip(src.iter()) {
-                        d[0] = *s;
-                        if d.len() > 1 {
-                            d[1] = *s;
-                        }
-                    }
-                } else {
-                    for (d, s) in row.chunks_mut(2).zip(src.iter()) {
-                        let over = u32::from_ne_bytes(*s);
-                        let out = mix2(u32::from_ne_bytes(d[0]), over, strength);
-                        d[0] = out.to_ne_bytes();
-                        if d.len() > 1 {
-                            d[1] = out.to_ne_bytes();
-                        }
-                    }
-                }
-            }
-            if y + 1 < h {
-                self.data.copy_within(at..at + row_bytes, at + row_bytes);
-            }
-            y += 2;
-        }
-    }
-
     /// Where `layer` was laid with its top-left corner at (`x`, `y`), show
     /// `now` instead, `level` of the way: as if `now` had been laid there
     /// over what `layer` covered. `now` is as big as `layer` and covers

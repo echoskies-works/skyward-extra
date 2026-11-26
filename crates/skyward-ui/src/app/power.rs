@@ -400,7 +400,10 @@ impl App {
             self.power_blur = Some(super::lock::soft_ground(out, m.w, m.h));
         }
         if let Some(blur) = self.power_blur.as_ref() {
-            out.lay_opaque_coarse(blur, along);
+            // Laid whole: the ground is a screen of pixels, not a halved
+            // layer, so the coarse mix (which takes one pixel for two) would
+            // stretch its left upper quarter over the screen.
+            out.lay(blur, 0, 0, along);
         }
         let rows = power_rows();
         let geom = dialog::sheet_geom(&t, f, "", &rows);
