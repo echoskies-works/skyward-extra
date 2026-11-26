@@ -16,7 +16,7 @@ const FRAME_US: u64 = 8333;
 const BUDGET_MS: f64 = 5.5;
 
 /// The moves timed, each from the page it starts on.
-const MOVES: [&str; 12] = ["press", "open", "drag", "fold", "fling", "back", "search", "about", "files", "dark", "charge", "renders"];
+const MOVES: [&str; 14] = ["press", "open", "drag", "fold", "fling", "back", "zoom", "pull", "search", "about", "files", "dark", "charge", "renders"];
 
 /// Times what the UI draws: whole pages rendered, and every frame of the
 /// moves people make, driven the way the runtime drives the app. Run with
@@ -104,6 +104,23 @@ fn run(name: &str, f: &Fonts, i: &DeviceInfo, quiet: bool) {
             p.touch(Touch::Up);
             p.run(1000);
             p.report("the settings page sliding off");
+        }
+        "zoom" => {
+            // Out of a desktop icon and back into it: the whole screen drawn
+            // again each frame, scaled and faded, with the corners rounded
+            // as a rounded panel rounds them.
+            let mut p = Panel::new(Screen::Desktop, f, i, quiet);
+            p.tap(Action::Open(Screen::Clock));
+            p.run(400);
+            p.report("the clock coming out of its desktop icon");
+        }
+        "pull" => {
+            // A pull at the foot let go hard: up to the quarter it is
+            // allowed, then folded into the icon. Both halves in one run.
+            let mut p = Panel::new(Screen::Calculator, f, i, quiet);
+            p.fling(3190.0, 1600.0);
+            p.run(650);
+            p.report("a page pulled off by its foot and folded into its icon");
         }
         "search" => {
             let mut p = Panel::new(Screen::Home, f, i, quiet);

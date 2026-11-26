@@ -353,6 +353,30 @@ pub fn desk_pages() -> usize {
     DESKTOP_APPS.len().div_ceil(DESKTOP_PER_PAGE).max(1)
 }
 
+/// Where the tile of the app that opens `screen` stands, on whichever page
+/// of the desktop the app keeps: the square a page folding away goes back
+/// into. Read off the grid the desktop lays its tiles on rather than off
+/// the desktop as drawn, so a page opened from deep inside an app finds
+/// its own icon with no page drawn and no page turned to.
+///
+/// The measure here is `desktop`'s own: the tile, the gap, the row pitch
+/// and where the first row clears the bar. Changing one without the other
+/// puts a page back into a square that is not there.
+pub fn tile_of(t: &Theme, screen: Screen) -> Option<Rect> {
+    let at = DESKTOP_APPS.iter().position(|app| matches!(app.opens, Opens::Page(s) if s == screen))?;
+    let m = &t.m;
+    let tile = m.dp(DESKTOP_TILE_DP);
+    let gap = m.dp(DESKTOP_GAP_DP);
+    let row_w = tile * DESKTOP_COLS as f32 + gap * (DESKTOP_COLS - 1) as f32;
+    let margin_x = (m.w as f32 - row_w) / 2.0;
+    // A page's own row and column, not the app's place in the whole list.
+    let within = at % DESKTOP_PER_PAGE;
+    let (col, row) = ((within % DESKTOP_COLS) as f32, (within / DESKTOP_COLS) as f32);
+    let x = margin_x + col * (tile + gap);
+    let y = widgets::bar_bottom(t) - m.dp(14.0) + row * m.dp(104.8);
+    Some(Rect::new(x, y, tile, tile))
+}
+
 /// The apps the desktop names and cannot open yet, by the word the panel
 /// looks them up by.
 ///

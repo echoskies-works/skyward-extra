@@ -338,7 +338,7 @@ impl App {
                             self.fling = None;
                             self.bounce = None;
                             self.pull = 0.0;
-                            self.foot = Some(Foot { pull: (-dy).min(self.h as f32), to: 0.0, spring: None });
+                            self.foot = Some(Foot { pull: (-dy).min(self.lift_top()), to: 0.0, spring: None });
                             self.dirty = true;
                             Drag::Foot { from: y0 }
                         }
@@ -407,8 +407,11 @@ impl App {
                 }
                 Drag::Foot { from } => {
                     self.tracker.add(now, y);
+                    let top = self.lift_top();
                     if let Some(foot) = self.foot.as_mut() {
-                        foot.pull = (from - y).clamp(0.0, self.h as f32);
+                        // Past the top the page holds still: the finger has
+                        // left it behind, so the pull stops where it stops.
+                        foot.pull = (from - y).clamp(0.0, top);
                     }
                     self.drag = Drag::Foot { from };
                     self.dirty = true;
@@ -541,18 +544,36 @@ impl App {
                 }
                 Drag::Edge { armed: true, .. } => fx.extend(self.back(now)),
                 Drag::Foot { .. } => {
-                    // A pull let go: thrown on fast, it takes the page off
-                    // for the desktop; let go slower, it sinks back.
+                    // A pull let go: past the mark it takes the page off for
+                    // the desktop, and so does a throw short of it; short of
+                    // both the page sinks back. A page going carries on up
+                    // with the throw, no further than the lift allows, and
+                    // then the fold picks it up — so it stops here rather
+                    // than running off the screen.
                     let speed = -self.tracker.velocity(now);
                     let h = self.h as f32;
+                    let top = self.lift_top();
                     let fling = h * FOOT_FLING;
                     if let Some(foot) = self.foot.as_mut() {
-                        let to = if speed > fling { h } else { 0.0 };
+                        let going = foot.pull >= top - 0.5 || foot.pull > h * FOOT_MARK || speed > fling;
+                        let to = if going {
+                            // The throw adds as much again as it is over the
+                            // mark, up to the whole lift left to it: a hard
+                            // one reaches the top, a finger that rested adds
+                            // nothing and the page folds from where it
+                            // stands. Held at the top there is nowhere to go,
+                            // so a throw there adds nothing either.
+                            let over = ((speed - fling) / fling).clamp(0.0, 1.0);
+                            (foot.pull + (top - foot.pull) * over).min(top)
+                        } else {
+                            0.0
+                        };
                         foot.to = to;
-                        // Going off the screen takes the lock's own time;
-                        // coming back takes its quicker one. A page and the
-                        // lock leave and come back at one pace.
-                        let period = if to >= h - 0.5 { FOOT_AWAY } else { FOOT_BACK };
+                        // Carrying the page up takes the lock's own time,
+                        // less when there is less to carry; coming back
+                        // takes its quicker one.
+                        let period =
+                            if to <= 0.5 { FOOT_BACK } else { FOOT_AWAY * (0.5 + 0.5 * (to / top).min(1.0)) };
                         foot.spring = Some(Spring::new(now, foot.pull - to, speed, period));
                         self.dirty = true;
                     }
@@ -1279,25 +1300,51 @@ mod tests {
         assert!(app.turn.is_none(), "come to rest, the desktop is left alone");
     }
 
-    /// A slow pull from a page's foot has nowhere to stop any more: it sinks
-    /// back, and the page it started on is still the one showing. There is
-    /// no tasks' height to hover over.
+    /// A pull goes no higher than a quarter of the screen, however far the
+    /// finger travels: past that the page holds still and the finger leaves
+    /// it behind. Let go there and there is nothing left to throw it to, so
+    /// it folds at once — and it does leave, since a page dragged a quarter
+    /// of the way up has been asked to go.
     #[test]
-    fn a_slow_pull_from_the_foot_has_no_tasks_to_stop_at() {
+    fn a_pull_held_at_the_top_leaves_for_the_desktop() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Clock, W, H, PPD);
+        // Drawn once, as it stands on the phone: the fold takes the page as
+        // it last showed.
+        let mut c = Canvas::new(W, H);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 0);
+        let x = W as f32 / 2.0;
+        let from = H as f32 - 10.0;
+        app.touch(Touch::Down(x, from), &f, 0);
+        // Dragged well past the top, slowly: 40 px a frame at 20 ms.
+        for k in 1..=50 {
+            app.touch(Touch::Move(x, from - k as f32 * 40.0), &f, k as u64 * 20);
+        }
+        assert_eq!(app.foot.as_ref().map(|foot| foot.pull), Some(H as f32 / 4.0), "the page stops a quarter of the way up");
+        app.touch(Touch::Up, &f, 1020);
+        assert_eq!(app.foot.as_ref().map(|foot| foot.to), Some(H as f32 / 4.0), "nowhere left to throw to");
+        app.tick(20_000);
+        assert_eq!(app.screen(), Screen::Desktop, "let go past the mark, it leaves");
+    }
+
+    /// A short, slow pull is not a pull at all: the page sinks back and the
+    /// one showing is still the one showing.
+    #[test]
+    fn a_short_slow_pull_sinks_back() {
         let f = fonts();
         let mut app = App::new(Screen::Clock, W, H, PPD);
         let x = W as f32 / 2.0;
         let from = H as f32 - 10.0;
         app.touch(Touch::Down(x, from), &f, 0);
-        // Well past the old tasks' height, but slow: 40 px a frame at
-        // 20 ms, under half a screen a second.
-        for k in 1..=50 {
+        // A tenth of a screen, slowly: short of the mark and no throw.
+        for k in 1..=8 {
             app.touch(Touch::Move(x, from - k as f32 * 40.0), &f, k as u64 * 20);
         }
-        app.touch(Touch::Up, &f, 1020);
-        assert_eq!(app.foot.as_ref().map(|foot| foot.to), Some(0.0), "back down, not held at a tasks' height");
+        app.touch(Touch::Up, &f, 180);
+        assert_eq!(app.foot.as_ref().map(|foot| foot.to), Some(0.0), "back down, short of the mark");
         app.tick(20_000);
         assert!(app.foot.is_none());
+        assert!(app.turn.is_none(), "the page never folded away");
         assert_eq!(app.screen(), Screen::Clock, "the page was never taken off");
     }
 
@@ -1316,11 +1363,14 @@ mod tests {
         assert_eq!(app.screen(), Screen::Desktop);
     }
 
-    /// A flick still takes the page off for the desktop, at the lock's pace.
+    /// A flick takes the page off for the desktop too, and it goes up no
+    /// further than the lift allows before folding into its icon.
     #[test]
     fn a_flick_at_the_foot_still_leaves_for_the_desktop() {
-        let f = fonts();
+        let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Clock, W, H, PPD);
+        let mut c = Canvas::new(W, H);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 0);
         let x = W as f32 / 2.0;
         let from = H as f32 - 10.0;
         app.touch(Touch::Down(x, from), &f, 0);
@@ -1328,8 +1378,11 @@ mod tests {
         app.touch(Touch::Move(x, from - 1500.0), &f, 20);
         app.touch(Touch::Move(x, from - 2500.0), &f, 30);
         app.touch(Touch::Up, &f, 40);
-        assert_eq!(app.foot.as_ref().map(|foot| foot.to), Some(H as f32), "the page is on its way off");
-        app.tick(10_000);
+        assert_eq!(app.foot.as_ref().map(|foot| foot.to), Some(H as f32 / 4.0), "up as far as the lift allows");
+        // The frame after, the page is folding into its icon rather than
+        // being cut away.
+        app.tick(45);
+        assert!(app.turn.is_some(), "the page folds rather than being cut away");
         assert_eq!(app.screen(), Screen::Desktop);
     }
 }

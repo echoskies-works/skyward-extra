@@ -1616,23 +1616,23 @@ fn main() -> Result<()> {
     // The panel mid-gesture, to set beside recordings of the same moves.
     let moments: [Moment; 41] = [
         // A page pulled off the screen by its foot, the desktop come in
-        // under it: four frames of the one move, the page gone up by about a
-        // quarter, a half, three quarters and all but its last strip. The
-        // finger is still down in each, so each stands where it got to.
+        // under it: four frames of the one move. A page goes no higher than
+        // a quarter of the screen, so the last of them stands at that top
+        // with the finger still down and nothing more left to give.
         ("00-08-going-home-1-light", Screen::Calculator, false, &|app, f| {
-            let by = app.theme().m.h as f32 * 0.22;
+            let by = app.theme().m.h as f32 * 0.06;
             pull_up(app, f, by)
         }),
         ("00-08-going-home-2-light", Screen::Calculator, false, &|app, f| {
-            let by = app.theme().m.h as f32 * 0.48;
+            let by = app.theme().m.h as f32 * 0.12;
             pull_up(app, f, by)
         }),
         ("00-08-going-home-3-light", Screen::Calculator, false, &|app, f| {
-            let by = app.theme().m.h as f32 * 0.74;
+            let by = app.theme().m.h as f32 * 0.19;
             pull_up(app, f, by)
         }),
         ("00-08-going-home-4-light", Screen::Calculator, false, &|app, f| {
-            let by = app.theme().m.h as f32 * 0.93;
+            let by = app.theme().m.h as f32 * 0.25;
             pull_up(app, f, by)
         }),
         // The power menu over the desktop, brought up the way the panel

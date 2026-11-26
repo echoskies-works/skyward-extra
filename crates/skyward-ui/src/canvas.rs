@@ -514,11 +514,18 @@ impl Canvas {
     /// page comes out of the desktop icon: small and clear at first, then
     /// filling the screen as it becomes whole.
     ///
+    /// `radius` rounds the corners of what is drawn, in the pixels `w` and
+    /// `h` are given in: a page is a card, and a card shrinking back into
+    /// its icon keeps its corners round on a phone whose screen is round.
+    /// Nought leaves them square. A page filling the screen wants nought
+    /// whatever the phone: it is the screen then, and its corners are the
+    /// screen's rather than its own, which the copy below gives.
+    ///
     /// Sampling is bilinear with fixed-point weights worked out once per
     /// column and row, rather than for every pixel. A page drawn at its own
     /// size and strength is copied whole, so the last frames of the move
     /// cost one copy rather than a screen of samples.
-    pub fn draw_scaled_alpha(&mut self, src: &Canvas, x: f32, y: f32, w: f32, h: f32, alpha: f32) {
+    pub fn draw_scaled_alpha(&mut self, src: &Canvas, x: f32, y: f32, w: f32, h: f32, alpha: f32, radius: f32) {
         if src.w == 0 || src.h == 0 || w <= 0.0 || h <= 0.0 || alpha <= 0.0 {
             return;
         }
@@ -543,27 +550,62 @@ impl Canvas {
         };
         let cols: Vec<(u32, u32, u16)> = (x0..x1).map(|col| near((col as f32 + 0.5 - x) * sx - 0.5, src.w)).collect();
         let rows: Vec<(u32, u32, u16)> = (y0..y1).map(|row| near((row as f32 + 0.5 - y) * sy - 0.5, src.h)).collect();
-        let lerp = |a: u8, b: u8, f: u16| -> u8 {
-            // Signed: a channel falls as often as it rises, and an unsigned
-            // difference would wrap when b < a.
-            let v = a as i32 * 256 + (b as i32 - a as i32) * f as i32 + 128;
-            (v >> 8).clamp(0, 255) as u8
-        };
+        let pixels = src.data.as_chunks::<4>().0;
         let strength = (alpha.clamp(0.0, 1.0) * 256.0).round() as u32;
+        // How much of a pixel the rounded rect covers, in 1/256ths: wholly
+        // inside or outside of the corners, and one pixel of edge where the
+        // round passes through. Only the corner squares ask, so a row clear
+        // of both draws whole; the square root is paid for by the pixel the
+        // edge crosses and no other.
+        let r = radius.min(w * 0.5).min(h * 0.5);
+        let rounded = r > 0.5;
+        let cover = |col: i32, row: i32| -> u32 {
+            let (px, py) = (col as f32 + 0.5, row as f32 + 0.5);
+            let dx = if px < x + r {
+                px - (x + r)
+            } else if px > x + w - r {
+                px - (x + w - r)
+            } else {
+                return 256;
+            };
+            let dy = if py < y + r {
+                py - (y + r)
+            } else if py > y + h - r {
+                py - (y + h - r)
+            } else {
+                return 256;
+            };
+            let (d2, inner, outer) = (dx * dx + dy * dy, (r - 1.0) * (r - 1.0), r * r);
+            if d2 >= outer {
+                return 0;
+            }
+            if d2 <= inner {
+                return 256;
+            }
+            ((r - d2.sqrt()).clamp(0.0, 1.0) * 256.0) as u32
+        };
         for (row, &(sy0, sy1, fy)) in (y0..y1).zip(rows.iter()) {
+            // Whether this row reaches into the corners at all.
+            let py = row as f32 + 0.5;
+            let corner = rounded && (py < y + r || py > y + h - r);
+            // The two source rows it stands between, as places in the array
+            // of pixels rather than in the bytes.
+            let (row0, row1) = (sy0 as usize * src.w as usize, sy1 as usize * src.w as usize);
+            let fy = fy as u32;
             for (col, &(sx0, sx1, fx)) in (x0..x1).zip(cols.iter()) {
-                let ia = ((sy0 * src.w + sx0) * 4) as usize;
-                let ib = ((sy0 * src.w + sx1) * 4) as usize;
-                let ic = ((sy1 * src.w + sx0) * 4) as usize;
-                let id = ((sy1 * src.w + sx1) * 4) as usize;
-                let a = &src.data[ia..ia + 4];
-                let b = &src.data[ib..ib + 4];
-                let c = &src.data[ic..ic + 4];
-                let d = &src.data[id..id + 4];
-                let pixel = [lerp(lerp(a[0], b[0], fx), lerp(c[0], d[0], fx), fy), lerp(lerp(a[1], b[1], fx), lerp(c[1], d[1], fx), fy), lerp(lerp(a[2], b[2], fx), lerp(c[2], d[2], fx), fy), 255];
+                let strength = if corner { (strength * cover(col, row)) >> 8 } else { strength };
+                if strength == 0 {
+                    continue;
+                }
+                let a = u32::from_ne_bytes(pixels[row0 + sx0 as usize]);
+                let b = u32::from_ne_bytes(pixels[row0 + sx1 as usize]);
+                let c = u32::from_ne_bytes(pixels[row1 + sx0 as usize]);
+                let d = u32::from_ne_bytes(pixels[row1 + sx1 as usize]);
+                let pixel = lerp2(lerp2(a, b, fx as u32), lerp2(c, d, fx as u32), fy);
                 let i = self.at(col, row);
-                let under = [self.data[i], self.data[i + 1], self.data[i + 2], self.data[i + 3]];
-                self.data[i..i + 4].copy_from_slice(&mix(under, pixel, strength));
+                let under = u32::from_ne_bytes([self.data[i], self.data[i + 1], self.data[i + 2], self.data[i + 3]]);
+                let out = if strength >= 256 { pixel } else { mix2(under, pixel, strength) };
+                self.data[i..i + 4].copy_from_slice(&out.to_ne_bytes());
             }
         }
     }
@@ -1701,6 +1743,28 @@ impl Drop for Canvas {
     }
 }
 
+/// The four channels of `a` and `b`, `f` 256ths of the way from the one to
+/// the other, a pair at a time: red with blue in one multiply and green with
+/// alpha in the other, so a sample costs four multiplies rather than twelve.
+#[inline]
+fn lerp2(a: u32, b: u32, f: u32) -> u32 {
+    let n = 256 - f;
+    let rb = (((a & 0x00ff_00ff) * n + (b & 0x00ff_00ff) * f + 0x0080_0080) >> 8) & 0x00ff_00ff;
+    let ga = ((((a >> 8) & 0x00ff_00ff) * n + ((b >> 8) & 0x00ff_00ff) * f + 0x0080_0080) >> 8) & 0x00ff_00ff;
+    rb | (ga << 8)
+}
+
+/// The pixel `s` laid over `d` at `a` 256ths, a pair of channels at a time.
+/// Both are opaque pages, so the alpha each carries is the same 255 and is
+/// left as it falls.
+#[inline]
+fn mix2(d: u32, s: u32, a: u32) -> u32 {
+    let n = 256 - a;
+    let rb = (((s & 0x00ff_00ff) * a + (d & 0x00ff_00ff) * n + 0x0080_0080) >> 8) & 0x00ff_00ff;
+    let ga = ((((s >> 8) & 0x00ff_00ff) * a + ((d >> 8) & 0x00ff_00ff) * n + 0x0080_0080) >> 8) & 0x00ff_00ff;
+    rb | (ga << 8)
+}
+
 /// The pixel `s` laid over the pixel `d` `a` 256ths of the way, `d`'s
 /// alpha kept: red and blue mixed in one multiply, then green.
 #[inline]
@@ -1987,6 +2051,27 @@ fn rr_sdf(px: f32, py: f32, cx: f32, cy: f32, hx: f32, hy: f32, r: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A page drawn scaled keeps the corners round to the radius it is
+    /// given, the way a card shrinking into its icon does, and leaves them
+    /// square when it is given none.
+    #[test]
+    fn a_scaled_page_keeps_its_corners_round() {
+        let (w, h) = (60, 60);
+        let page = Canvas::filled(w, h, Rgba::rgb(255, 255, 255));
+        let mut c = Canvas::filled(w, h, Rgba::rgb(0, 0, 0));
+        c.draw_scaled_alpha(&page, 10.0, 10.0, 40.0, 40.0, 1.0, 12.0);
+        let at = |x: u32, y: u32| c.data[((y * w + x) * 4) as usize];
+        assert_eq!(at(11, 11), 0, "the corner outside the round keeps what lay under it");
+        assert_eq!(at(30, 30), 255, "the page lies down inside the round");
+        assert_eq!(at(10, 30), 255, "and reaches the edge between the corners");
+
+        // No radius asked for: the corners are the rect's own again, and
+        // nothing of it is left out.
+        let mut c = Canvas::filled(w, h, Rgba::rgb(0, 0, 0));
+        c.draw_scaled_alpha(&page, 10.0, 10.0, 40.0, 40.0, 1.0, 0.0);
+        assert_eq!(c.data[((11 * w + 11) * 4) as usize], 255, "square corners leave nothing out");
+    }
 
     #[test]
     fn the_frost_smears_what_lies_under_it_and_leaves_the_corners() {

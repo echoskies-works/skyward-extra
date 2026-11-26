@@ -61,7 +61,7 @@ impl App {
         if let Some(fr) = self.frame.as_ref().filter(|_| self.cols < self.w) {
             left.fill_rect(self.cols as f32, 0.0, (self.w - self.cols) as f32, self.h as f32, fr.bg);
         }
-        self.turn = Some(Turn { back, rise, icon, left, spring: None });
+        self.turn = Some(Turn { back, rise, icon, lifted: 0.0, left, spring: None });
         self.dirty = true;
     }
 
@@ -100,6 +100,43 @@ impl App {
             || s.backup_job.as_ref().is_some_and(|j| j.outcome.is_none())
             || s.skyward_job.as_ref().is_some_and(|j| j.outcome.is_none())
             || installing
+    }
+
+    /// Fold the page shown back into its icon from where a pull at the foot
+    /// of the screen carried it, `up` pixels past the top: the same fold a
+    /// page goes back with, begun from the lift's last frame instead of
+    /// from the whole screen, so the pull and the fold read as one motion.
+    ///
+    /// The icon is the app's own, wherever on the desktop it keeps it, not
+    /// the one the page was opened from: a pull takes the page it holds off
+    /// for the desktop from wherever it is, so a page opened from inside
+    /// another app folds into its own square rather than its opener's.
+    pub(super) fn leave_by_foot(&mut self, up: f32) {
+        if self.working() {
+            // A page at work stays where the pull left it: the pull cuts
+            // nothing short that going back waits for.
+            return;
+        }
+        self.foot = None;
+        let Some(view) = self.shown.take() else {
+            // Nothing was drawn to fold: the page goes at once.
+            self.leave_for_desktop();
+            return;
+        };
+        let mut left = self.backdrop.take().unwrap_or_else(|| Canvas::new(self.w, self.h));
+        self.icon_press = None;
+        let view = View { pressing: None, ..view };
+        let t = self.theme();
+        self.paint_page(&mut left, &t, None, &view);
+        if let Some(fr) = self.frame.as_ref().filter(|_| self.cols < self.w) {
+            left.fill_rect(self.cols as f32, 0.0, (self.w - self.cols) as f32, self.h as f32, fr.bg);
+        }
+        let icon = pages::tile_of(&t, self.screen()).or(self.desk_icon);
+        self.turn = Some(Turn { back: true, rise: true, icon, lifted: up, left, spring: None });
+        // The pull leaves for the desktop whatever lay between: no page in
+        // between, the desktop at the top.
+        self.leave_for_desktop();
+        self.dirty = true;
     }
 
     /// Leave whatever page is shown for the desktop, as a pull from the
@@ -548,5 +585,33 @@ mod tests {
         let mut app = App::new(Screen::Reboot, W, H, PPD);
         tap(&mut app, &f, &i, Action::Open(Screen::Slot));
         assert_eq!(app.screen(), Screen::Slot);
+    }
+
+    /// A page pulled off from deep inside an app folds into its own icon,
+    /// not the one the app was opened from: a pull takes off the page it
+    /// holds, whatever lies under it, and each app keeps its own tile.
+    #[test]
+    fn a_page_pulled_off_folds_into_its_own_icon() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Desktop, W, H, PPD);
+        let mut c = Canvas::new(W, H);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 0);
+        // The clock out of its icon, then the calculator over it: the pull
+        // is let go over a page the desktop's icon holds for the calculator
+        // alone.
+        app.open(Screen::Clock);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 16);
+        app.push(Screen::Calculator);
+        app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 32);
+        let t = app.theme();
+        let (clock, calc) = (pages::tile_of(&t, Screen::Clock), pages::tile_of(&t, Screen::Calculator));
+        assert!(clock.is_some() && calc.is_some() && clock != calc, "the two keep tiles of their own");
+        assert_eq!(app.desk_icon, clock, "the page was opened out of the clock's icon");
+        app.leave_by_foot(200.0);
+        let icon = app.turn.as_ref().and_then(|t| t.icon);
+        assert!(!app.turn.as_ref().is_some_and(|t| t.lifted < 1.0), "the fold begins where the pull left it");
+        assert_eq!(icon, calc, "the page folds into its own icon");
+        assert_ne!(icon, clock, "not into the one its opener came out of");
+        assert_eq!(app.screen(), Screen::Desktop, "and the desktop is what it leaves for");
     }
 }

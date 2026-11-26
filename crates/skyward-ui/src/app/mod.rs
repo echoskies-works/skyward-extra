@@ -1304,6 +1304,11 @@ struct Turn {
     /// from this rect instead of sliding: kept while the move lasts so a
     /// page going back finds the same icon it came out of.
     icon: Option<Rect>,
+    /// A page folding back from a pull at the foot of the screen starts not
+    /// from the whole screen but from where the pull left it: this many
+    /// pixels up, its top edge already past the top of the screen. Set only
+    /// by the fold, so a page going back by the key starts where it stood.
+    lifted: f32,
     /// The page left, as it last showed.
     left: Canvas,
     /// How far from the left edge the page in front stands, in thousandths

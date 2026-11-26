@@ -392,10 +392,14 @@ impl App {
                         c
                     }
                 };
+                // A rounded screen's corners follow the page as it shrinks,
+                // so the card keeps its own shape rather than turning into a
+                // pill: the radius is the screen's, scaled with the page.
+                let radius = self.corners * (rect.w / self.w as f32);
                 let left = &self.turn.as_ref().expect("zooming").left;
                 let (front, behind) = if back { (left, &page) } else { (&page, left) };
                 out.put(behind, 0);
-                out.draw_scaled_alpha(front, rect.x, rect.y, rect.w, rect.h, alpha);
+                out.draw_scaled_alpha(front, rect.x, rect.y, rect.w, rect.h, alpha, radius);
                 self.layer = Some((view, page));
             }
             Motion::None => {
@@ -798,8 +802,12 @@ impl App {
                 None => self.zoom_start_middle(),
             };
             let (sw, sh) = (self.w as f32, self.h as f32);
+            // The whole screen the page fills, carried up by however far a
+            // pull at the foot took it: a fold begun from the pull starts
+            // where the pull left the page, not where it stands at rest.
+            let lifted = self.turn.as_ref().map_or(0.0, |t| t.lifted);
             let lerp = |from: f32, to: f32| from + (to - from) * q;
-            let rect = Rect::new(lerp(start.x, 0.0), lerp(start.y, 0.0), lerp(start.w, sw), lerp(start.h, sh));
+            let rect = Rect::new(lerp(start.x, 0.0), lerp(start.y, -lifted), lerp(start.w, sw), lerp(start.h, sh));
             return Motion::Zoom { rect, alpha: q };
         }
         // Where the page in front stands, in screen widths from the left
