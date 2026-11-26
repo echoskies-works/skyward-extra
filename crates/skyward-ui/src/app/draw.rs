@@ -57,6 +57,7 @@ impl App {
                     band: Some(band),
                     now: self.now,
                     wallpaper: self.wallpaper.as_ref(),
+                    tasks: &self.tasks,
                 };
                 let fresh = pages::render(screen, &cx);
                 let mut canvas = self.frame.take().expect("checked above").canvas;
@@ -85,6 +86,7 @@ impl App {
                 band: Some(band),
                 now: self.now,
                 wallpaper: self.wallpaper.as_ref(),
+                tasks: &self.tasks,
             };
             let mut frame = pages::render(screen, &cx);
             // A page drawn in part across holds its rows whole, the columns
@@ -162,6 +164,7 @@ impl App {
             band: Some(band),
             now: self.now,
             wallpaper: self.wallpaper.as_ref(),
+            tasks: &self.tasks,
         };
         let part = pages::render(self.screen(), &cx).canvas;
         self.frame
@@ -212,6 +215,7 @@ impl App {
                 band: Some(band),
                 now: self.now,
                 wallpaper: self.wallpaper.as_ref(),
+                tasks: &self.tasks,
             };
             let part = pages::render(screen, &cx).canvas;
             self.frame.as_mut().expect("drawn above").canvas.join(&part);
@@ -447,6 +451,7 @@ impl App {
                 band: Some(band),
                 now: self.now,
                 wallpaper: self.wallpaper.as_ref(),
+                tasks: &self.tasks,
             };
             let down = pages::render(screen, &cx).canvas;
             assert_eq!(
@@ -680,6 +685,7 @@ impl App {
             band: None,
             now,
             wallpaper: self.wallpaper.as_ref(),
+            tasks: &self.tasks,
         };
         pages::render(screen, &cx).canvas.crop(0, 0, w, h)
     }
@@ -921,6 +927,7 @@ impl App {
                                 band: None,
                                 now: self.now,
                                 wallpaper: self.wallpaper.as_ref(),
+                                tasks: &self.tasks,
                             };
                             pages::row(screen, &cx, i, &mut c);
                             self.drawn.push((i, c));
@@ -1436,6 +1443,7 @@ mod tests {
                     band,
                     now: 0,
                     wallpaper: None,
+                    tasks: &[],
                 };
                 let whole = pages::render(screen, &cx(None)).canvas;
                 let row = whole.w as usize * 4;
@@ -1533,6 +1541,7 @@ mod tests {
                 band: None,
                 now: 0,
                 wallpaper: app.wallpaper.as_ref(),
+                tasks: &app.tasks,
             },
         )
         .canvas;
@@ -1566,6 +1575,7 @@ mod tests {
                     band: None,
                     now: 0,
                     wallpaper: app.wallpaper.as_ref(),
+                    tasks: &app.tasks,
                 },
             )
         };

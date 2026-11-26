@@ -1,7 +1,10 @@
-//! The tasks page the desktop opens: which of its three faces the page shows.
-//! The processes it will list, the services and the figures it will draw are
-//! not read off the phone yet — the page is, so that the way in is settled
-//! before there is anything to show.
+//! The tasks page the desktop opens: which of its three faces the page shows,
+//! and the processes it lists on the first of them. The list is a stand-in
+//! for now — the apps on it are demo ones, and none of them can be ended —
+//! but the shape it takes and the words it uses are settled, and a real list
+//! will fill the same card.
+
+use crate::lang::{tri, Lang, Text};
 
 /// The three faces of the tasks page: the processes the machine is running,
 /// the services it keeps going, and how it is bearing them. The words across
@@ -21,6 +24,66 @@ impl TasksFace {
     /// The faces in the order the words name them, left to right.
     pub const ALL: [TasksFace; 3] = [TasksFace::Process, TasksFace::Service, TasksFace::Performance];
 }
+
+/// How an application stands, as the processes face says it under the app's
+/// name: at work, at work but held back, or frozen with its state still in
+/// memory.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TaskState {
+    /// In front and at work.
+    Running,
+    /// Still at work, but held back.
+    Eco,
+    /// Frozen, its state kept in memory.
+    Suspended,
+}
+
+impl TaskState {
+    /// What a row says for this state.
+    pub fn words(self, l: Lang) -> &'static str {
+        l.pick(match self {
+            TaskState::Running => tri("运行中", "執行中", "Running"),
+            TaskState::Eco => tri("运行中（节能）", "執行中（節能）", "Running (Eco)"),
+            TaskState::Suspended => tri("已挂起", "已暫停", "Suspended"),
+        })
+    }
+}
+
+/// One application as the processes face lists it: what it is called, how it
+/// stands, and the share of the memory it holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Task {
+    pub name: Text,
+    pub state: TaskState,
+    /// Whole percent of the phone's memory, or nothing where the phone
+    /// cannot say how much an app holds.
+    pub memory: Option<u8>,
+}
+
+impl Task {
+    /// The line under the app's name: how it stands, then what it holds.
+    pub fn line(&self, l: Lang) -> String {
+        let state = self.state.words(l);
+        match self.memory {
+            Some(share) => match l {
+                Lang::Hans => format!("{state} - 已用 {share}% 内存"),
+                Lang::Hant => format!("{state} - 已用 {share}% 記憶體"),
+                _ => format!("{state} - {share}% of memory"),
+            },
+            None => state.to_string(),
+        }
+    }
+}
+
+/// The applications the processes face lists for now, as if one had been
+/// opened after another: enough for the card's shape to be read, with one
+/// app in each of the three states so the words for them stand side by side.
+/// A real list replaces these whole.
+pub const DEMO: [Task; 3] = [
+    Task { name: tri("计算器", "計算機", "Calculator"), state: TaskState::Running, memory: Some(4) },
+    Task { name: tri("音乐", "音樂", "Music"), state: TaskState::Eco, memory: Some(2) },
+    Task { name: tri("文件管理", "檔案管理", "Files"), state: TaskState::Suspended, memory: Some(1) },
+];
 
 #[cfg(test)]
 mod tests {
@@ -103,6 +166,51 @@ mod tests {
         assert_eq!(app.state.tasks_face, TasksFace::Process, "and another brings the processes");
         pull(&mut app, 100.0, 700.0, 100_000);
         assert_eq!(app.state.tasks_face, TasksFace::Process, "a last one stays at the first face");
+    }
+
+    /// A row says how its app stands and what it holds, in the words the
+    /// three states were given.
+    #[test]
+    fn a_row_says_how_the_app_stands_and_what_it_holds() {
+        let task = |state, memory| Task { name: tri("计算器", "計算機", "Calculator"), state, memory };
+        assert_eq!(task(TaskState::Running, Some(4)).line(Lang::Hans), "运行中 - 已用 4% 内存");
+        assert_eq!(task(TaskState::Eco, Some(2)).line(Lang::Hans), "运行中（节能） - 已用 2% 内存");
+        assert_eq!(task(TaskState::Suspended, Some(1)).line(Lang::Hant), "已暫停 - 已用 1% 記憶體");
+        assert_eq!(task(TaskState::Eco, Some(2)).line(Lang::En), "Running (Eco) - 2% of memory");
+        assert_eq!(task(TaskState::Suspended, None).line(Lang::En), "Suspended", "a row that cannot say what an app holds says only its state");
+        assert_eq!(TaskState::Running.words(Lang::En), "Running");
+        assert_eq!(TaskState::Eco.words(Lang::En), "Running (Eco)");
+        assert_eq!(TaskState::Suspended.words(Lang::En), "Suspended");
+    }
+
+    /// Every app handed to the page gets a row, and every row a button at
+    /// its end; a list with nothing on it has neither, and the page says so
+    /// in words rather than standing blank.
+    #[test]
+    fn the_processes_face_lists_a_row_for_each_app() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Tasks, W, H, PPD);
+        let ends = |app: &mut App| -> Vec<usize> {
+            app.frame(&f, &i)
+                .hits
+                .iter()
+                .filter_map(|h| match h.action {
+                    Action::EndTask(k) => Some(k),
+                    _ => None,
+                })
+                .collect()
+        };
+        assert_eq!(ends(&mut app), (0..app.tasks.len()).collect::<Vec<_>>(), "one button per app, in the order they stand");
+
+        // The button answers where the app cannot be ended: the panel says
+        // so rather than leaving the touch unheard.
+        tap_at(&mut app, &f, &i, Action::EndTask(0), 1_000);
+        assert!(app.toast.is_some(), "the page says why nothing happened");
+
+        let listed = app.frame(&f, &i).canvas.data.clone();
+        app.set_tasks(Vec::new());
+        assert!(ends(&mut app).is_empty(), "a list with nothing on it has no button");
+        assert_ne!(app.frame(&f, &i).canvas.data, listed, "and the page says something else");
     }
 
     /// The gear stands at the page's top right with the other three apps'

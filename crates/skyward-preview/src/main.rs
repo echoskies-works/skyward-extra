@@ -512,17 +512,24 @@ fn main() -> Result<()> {
         .collect(),
         celsius: Some(42.0),
     };
-    let tasks: [(&str, TasksFace, bool); 5] = [
-        ("00-10-tasks-process-light", TasksFace::Process, false),
-        ("00-10-tasks-service-light", TasksFace::Service, false),
-        ("00-10-tasks-performance-light", TasksFace::Performance, false),
-        ("00-10-tasks-performance-dark", TasksFace::Performance, true),
-        ("00-10-tasks-process-dark", TasksFace::Process, true),
+    // The processes face is shot twice: once with the demo apps on it, one
+    // of each state, and once with the list empty, which is what a phone
+    // that has opened nothing says.
+    let tasks: [(&str, TasksFace, bool, bool); 6] = [
+        ("00-10-tasks-process-light", TasksFace::Process, false, false),
+        ("00-10-tasks-process-empty-light", TasksFace::Process, false, true),
+        ("00-10-tasks-service-light", TasksFace::Service, false, false),
+        ("00-10-tasks-performance-light", TasksFace::Performance, false, false),
+        ("00-10-tasks-performance-dark", TasksFace::Performance, true, false),
+        ("00-10-tasks-process-dark", TasksFace::Process, true, false),
     ];
-    for (name, face, dark) in tasks {
+    for (name, face, dark, empty) in tasks {
         let mut app = opened(Screen::Tasks, w, h, ppd);
         app.state.tasks_face = face;
         app.state.dark = dark;
+        if empty {
+            app.set_tasks(Vec::new());
+        }
         let _ = app.tick(0);
         // After the tick, which reads the machine and finds no processor
         // of the phone's here: the sample is what the card draws.
@@ -2489,7 +2496,7 @@ fn whole_page(app: &mut App, f: &Fonts, info: &DeviceInfo) -> Canvas {
         fold.draw(&mut c, &t, &widgets::search_words(&t, f, fold.bar, fold.hint), 0.0);
     }
     if let Some(rows) = &frame.rows {
-        let cx = Ctx { t: &t, f, info, state: &state, term: None, band: None, now, wallpaper: wallpaper.as_ref() };
+        let cx = Ctx { t: &t, f, info, state: &state, term: None, band: None, now, wallpaper: wallpaper.as_ref(), tasks: &[] };
         for k in 0..rows.count() {
             let mut row = Canvas::new(c.w, (rows.edges[k + 1] - rows.edges[k]) as u32);
             pages::row(screen, &cx, k, &mut row);

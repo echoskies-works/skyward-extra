@@ -376,6 +376,9 @@ pub enum Action {
     MusicFilter(MusicFilter),
     /// Show this face of the tasks page: the processes, or the performance.
     TasksFace(TasksFace),
+    /// End the application at this place on the processes face. Nothing is
+    /// ended yet — the list is demo — and the panel says so.
+    EndTask(usize),
     /// Show this face of the Aether store: the front, everything it lists,
     /// or what the phone already has.
     StoreFace(StoreFace),
@@ -1614,6 +1617,10 @@ pub struct App {
     /// They belong to the panel, not to whoever put them: a page going away
     /// does not take them with it, and nothing runs out on its own.
     notifier: Notifier,
+    /// The applications the tasks page lists: the ones opened since the
+    /// system came up, in the order they were opened. Demo ones for now —
+    /// nothing is ended here, and a real list replaces them whole.
+    tasks: Vec<Task>,
     /// Where the clock's two counts stand with the panel while its page is
     /// left behind: no notice put, one standing, or one a finger took away.
     clock_stopwatch: notify::Shown,
@@ -1743,6 +1750,7 @@ impl App {
             shade: None,
             banner: None,
             notifier: Notifier::default(),
+            tasks: DEMO.to_vec(),
             clock_stopwatch: notify::Shown::No,
             clock_timer: notify::Shown::No,
             battery_told: 0,
@@ -1858,6 +1866,14 @@ impl App {
 
     pub fn screen(&self) -> Screen {
         self.top().0
+    }
+
+    /// The applications the tasks page lists, handed over whole: the ones
+    /// the system has opened. A list read off the phone replaces the demo
+    /// one here, and the page drawing it does not change.
+    pub fn set_tasks(&mut self, tasks: Vec<Task>) {
+        self.tasks = tasks;
+        self.refresh();
     }
 
     /// The time last told, as the pages read it: the clock's counts are

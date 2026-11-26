@@ -76,6 +76,13 @@ impl App {
                     self.refresh();
                 }
             }
+            // Nothing on the list can be ended yet: the apps on it are demo
+            // ones, so the page says where it stands rather than swallowing
+            // the touch.
+            Action::EndTask(_) => {
+                let said = self.state.lang.among("还不能结束应用", "還不能結束應用", "Apps cannot be ended yet");
+                self.say(said, now);
+            }
             Action::StoreFace(face) => {
                 if self.state.store_face != face {
                     let from = StoreFace::ALL.iter().position(|f| *f == self.state.store_face).unwrap_or(0);

@@ -296,6 +296,7 @@ fn renders(f: &Fonts, i: &DeviceInfo, only: Option<&str>, quiet: bool) {
                     band,
                     now: 0,
                     wallpaper: None,
+                    tasks: &[],
                 };
                 let mut ms: Vec<f64> = (0..5)
                     .map(|_| {

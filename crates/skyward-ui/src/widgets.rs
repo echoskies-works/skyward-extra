@@ -1523,12 +1523,19 @@ pub fn section_first(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, label: &str
 /// Grey explanatory text below a card, wrapped to the content width.
 pub fn footnote(c: &mut Canvas, t: &Theme, f: &Fonts, y: f32, text: &str) -> f32 {
     let m = &t.m;
-    let x = m.title_x + m.dp(0.9);
-    let max_w = m.w as f32 - x - m.title_x;
-    let lines = wrap(c, &f.value, text, m.sub_px, max_w);
-    let mut top = y + m.dp(10.0);
-    for line in &lines {
-        c.text_top(&f.value, line, x, top, m.sub_px, t.pal.value, None);
+    note(c, t, f, m.title_x + m.dp(0.9), y + m.dp(10.0), text)
+}
+
+/// The same grey words [`footnote`] sets under a card, from `x` with its
+/// first line's ink at `y`: a page saying something above its list starts it
+/// where the list's own words start rather than under the card. Returns
+/// where the text ends.
+pub fn note(c: &mut Canvas, t: &Theme, f: &Fonts, x: f32, y: f32, text: &str) -> f32 {
+    let m = &t.m;
+    let max_w = m.w as f32 - x * 2.0;
+    let mut top = y;
+    for line in wrap(c, &f.value, text, m.sub_px, max_w) {
+        c.text_top(&f.value, &line, x, top, m.sub_px, t.pal.value, None);
         top += m.sub_pitch;
     }
     top

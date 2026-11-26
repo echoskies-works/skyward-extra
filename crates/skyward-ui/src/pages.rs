@@ -4,7 +4,7 @@ use crate::app::{
     EraseStop, Field, FileKind,
     FileOp, FileTask, Fold, Folder, FootBar, FootFace, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, MusicFace, MusicFilter, Pick, Place, Region, Rows,
     Screen,
-    SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, StoreFace, Switch, SystemsWork, Target, TasksFace, UsbDrive, UsbLink, Wipe, ADDABLE,
+    SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, StoreFace, Switch, SystemsWork, Target, Task, TasksFace, UsbDrive, UsbLink, Wipe, ADDABLE,
     BACKUP_PARTS, CLOCK_MOST, DATA_PART, DATA_PARTITION, DEFAULT_TIMER_SOUND, DOWNLOADS, FASTBOOT_CHOICES, MEDIA_PART, RULER_MINUTE_DP, SCREEN_OFF, TARGETS, TIME_ZONES, UTC,
     WIPES, installs, listed, starting,
 };
@@ -58,6 +58,10 @@ pub struct Ctx<'a> {
     /// The picture the desktop is drawn on, already filling the screen; a
     /// desktop without one is black.
     pub wallpaper: Option<&'a Canvas>,
+    /// The applications the tasks page lists, the ones opened since the
+    /// system came up: the page draws what it is given and knows nothing of
+    /// where the list comes from.
+    pub tasks: &'a [Task],
 }
 
 /// Rows `rows` of a page, and of them the columns `cols`, each from the
@@ -724,11 +728,9 @@ pub fn tasks(cx: &Ctx) -> Frame {
         // The figures, card by card down the page, scroll as the settings
         // page does: more will stand under this one.
         TasksFace::Performance => cpu_card(&mut c, cx, m.content_top),
-        face => {
-            let said = match face {
-                TasksFace::Process => l.among("还没有读取进程", "還沒有讀取進程", "Processes are not read yet"),
-                _ => l.among("还没有读取服务", "還沒有讀取服務", "Services are not read yet"),
-            };
+        TasksFace::Process => process_face(&mut c, cx, m.content_top, &mut out),
+        TasksFace::Service => {
+            let said = l.among("还没有读取服务", "還沒有讀取服務", "Services are not read yet");
             c.text_center(&f.body, said, m.w as f32 / 2.0, m.h as f32 / 2.0, m.sub_px, t.pal.subtitle);
             m.h as f32
         }
@@ -747,6 +749,79 @@ pub fn tasks(cx: &Ctx) -> Frame {
         button_still: true,
         ..Frame::new(t, fit(c, t, bottom), out, "", m.content_top)
     }
+}
+
+/// The processes face: a line saying what the list is and what ending one
+/// does, then the applications opened since the system came up, a row each —
+/// its icon, its name with the state and the memory it holds beneath it, and
+/// the button that would end it. Returns where the page's content ends.
+///
+/// Nothing is ended yet: the list it is handed is demo, and the button
+/// answers with a word rather than a kill.
+fn process_face(c: &mut Canvas, cx: &Ctx, top: f32, out: &mut Vec<Hit>) -> f32 {
+    let (t, f, l) = (cx.t, cx.f, cx.state.lang);
+    let m = &t.m;
+
+    // What the list is, said once above it in the grey the settings pages
+    // say such things in, its lines starting where the rows' own words do.
+    // A page with nothing to list says that instead, and where something
+    // comes from: the words stand here either way rather than the page going
+    // blank with a line across its middle. Each sentence is wrapped on its
+    // own, so a line breaks between them rather than inside a word.
+    let says = match (cx.tasks.is_empty(), l) {
+        (true, Lang::Hans) => "没有运行中的应用。可以从桌面打开。",
+        (true, Lang::Hant) => "沒有執行中的應用。可以從桌面開啟。",
+        (true, _) => "Nothing is running. Open something from the desktop.",
+        (false, Lang::Hans) => "这里列出了这次打开过的应用。\n结束会清掉它的状态，下次打开时重新加载。",
+        (false, Lang::Hant) => "這裡列出了這次開啟過的應用。\n結束會清掉它的狀態，下次開啟時重新載入。",
+        (false, _) => "The apps opened this time are listed here.\nEnding one clears its state; it loads afresh next time.",
+    };
+    let x = m.margin + m.inner;
+    let mut y = top;
+    for sentence in says.split('\n') {
+        y = widgets::note(c, t, f, x, y, sentence);
+    }
+    if cx.tasks.is_empty() {
+        return y;
+    }
+
+    // The list's name over its card, as the performance face names its own.
+    let card = widgets::section_first(c, t, f, y + m.dp(8.0), l.among("应用", "應用", "Apps"));
+
+    let row_h = m.row_h + m.dp(22.0);
+    let w = m.w as f32 - m.margin * 2.0;
+    let h = row_h * cx.tasks.len() as f32;
+    c.fill_round_rect(m.margin, card, w, h, m.card_radius, t.pal.card);
+
+    let (bw, bh) = (m.dp(58.0), m.dp(26.0));
+    let end = l.among("结束", "結束", "End");
+    for (k, task) in cx.tasks.iter().enumerate() {
+        let row = card + row_h * k as f32;
+        let cy = row + row_h / 2.0;
+        // The app's own picture will stand here once apps carry one; a square
+        // of the card's colour keeps its place until then.
+        let size = m.icon;
+        let ix = m.margin + m.inner;
+        c.fill_round_rect(ix, cy - size / 2.0, size, size, size * 0.28, t.pal.chevron);
+        let name_x = ix + size + m.icon_gap;
+
+        // The word that would end it, in outline at the row's end; the name
+        // and what stands under it stop short of it.
+        let bx = m.margin + w - m.inner - bw;
+        let room = bx - name_x - m.dp(10.0);
+        c.text_top(&f.heading, l.pick(task.name), name_x, cy - m.dp(19.0), m.row_title_px, t.pal.text, Some(room));
+        c.text_top(&f.value, &task.line(l), name_x, cy + m.dp(2.0), m.sub_px, t.pal.subtitle, Some(room));
+
+        c.stroke_round_rect(bx, cy - bh / 2.0, bw, bh, bh / 2.0, m.dp(1.0), t.pal.track);
+        c.text_center(&f.value, end, bx + bw / 2.0, cy, m.sub_px, t.pal.value);
+        out.push(Hit { rect: Rect::new(bx - m.dp(10.0), row, bw + m.dp(20.0), row_h), action: Action::EndTask(k) });
+
+        // A hairline between one row and the next, and none under the last.
+        if k + 1 < cx.tasks.len() {
+            c.fill_rect(name_x, row + row_h, m.margin + w - m.inner - name_x, m.dp(0.5), t.pal.track);
+        }
+    }
+    card + h
 }
 
 /// The performance face's first card, titled `CPU`: a chart of how hard the

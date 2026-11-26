@@ -60,7 +60,7 @@ impl App {
     /// off the screen leaves showing.
     pub(super) fn desktop_canvas(&mut self, f: &Fonts, info: &DeviceInfo, clock: &str) -> Canvas {
         let t = self.theme();
-        let cx = Ctx { t: &t, f, info, state: &self.state, term: self.term.as_ref(), band: None, now: self.now, wallpaper: self.wallpaper.as_ref() };
+        let cx = Ctx { t: &t, f, info, state: &self.state, term: self.term.as_ref(), band: None, now: self.now, wallpaper: self.wallpaper.as_ref(), tasks: &self.tasks };
         let mut c = pages::render(Screen::Desktop, &cx).canvas;
         let bar = self.bar(clock, info);
         widgets::status_bar(&mut c, &t, f, &bar, pages::DESKTOP_STATUS, true);

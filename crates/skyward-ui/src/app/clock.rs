@@ -480,7 +480,7 @@ mod tests {
         let t = app.theme();
         crate::pages::render(
             Screen::Clock,
-            &Ctx { t: &t, f, info: i, state: &app.state, term: None, band: None, now, wallpaper: app.wallpaper.as_ref() },
+            &Ctx { t: &t, f, info: i, state: &app.state, term: None, band: None, now, wallpaper: app.wallpaper.as_ref(), tasks: &app.tasks },
         )
     }
 
