@@ -299,6 +299,11 @@ pub(crate) fn failure(crash: Crash, code: i32, reason: Option<Reason>, lang: Lan
         Crash::Runtime => ["Skyward-Extra stopped while running.", "Skyward-Extra 已停止运行。"],
     };
     let mut lines = vec![
+        // A face before the verdict. The sentence says what happened and
+        // which button to press; this says only that the panel knows it fell
+        // over. Same in both languages — a face has no translation — and it
+        // sits above the verdict rather than replacing any of the words.
+        Line::plain("(T_T)"),
         Line::plain(lang.pick(what)),
         // Two words and a number: no clause to read, and the one fact that
         // matters is not buried in prose. `Error code` rather than `Stop
@@ -672,8 +677,9 @@ mod tests {
                 (Crash::Runtime, ["Skyward-Extra stopped while running.", "Skyward-Extra 已停止运行。"]),
             ] {
                 let lines = failure(crash, 139, None, lang);
-                assert_eq!(lines[0].text(), lang.pick(what), "{lang:?}: the screen names which case it was");
-                assert_eq!(lines[1].text(), format!("{} 139", lang.pick(["Error code:", "错误代码:"])), "{lang:?}");
+                assert_eq!(lines[0].text(), "(T_T)", "{lang:?}: a face above the verdict, in both languages");
+                assert_eq!(lines[1].text(), lang.pick(what), "{lang:?}: the screen names which case it was");
+                assert_eq!(lines[2].text(), format!("{} 139", lang.pick(["Error code:", "错误代码:"])), "{lang:?}");
                 let n = lines.len();
                 for (i, exit) in EXIT.iter().enumerate() {
                     assert_eq!(lines[n - EXIT.len() + i].text(), lang.pick(*exit), "{lang:?}: the way out ends the screen, in order");
@@ -683,14 +689,15 @@ mod tests {
     }
 
     #[test]
-    fn the_two_failures_differ_only_in_the_first_line() {
+    fn the_two_failures_differ_only_in_the_verdict_line() {
         for lang in BOTH {
             let startup = failure(Crash::Startup, 139, None, lang);
             let runtime = failure(Crash::Runtime, 139, None, lang);
-            assert_ne!(startup[0].text(), runtime[0].text(), "{lang:?}: which case it was is said");
-            // Same stop code, same blank, same key: one layout with a different
-            // verdict on top, not two designs.
-            assert_eq!(&startup[1..], &runtime[1..], "{lang:?}");
+            assert_eq!(startup[0].text(), "(T_T)", "{lang:?}: the face is shared");
+            assert_ne!(startup[1].text(), runtime[1].text(), "{lang:?}: which case it was is said");
+            // Same face, stop code, blank and key: one layout with a different
+            // verdict under the face, not two designs.
+            assert_eq!(&startup[2..], &runtime[2..], "{lang:?}");
         }
     }
 
@@ -701,12 +708,12 @@ mod tests {
             let said = failure(Crash::Runtime, 67, Some(Reason::Music), lang);
             // A phone that fell over leaves nothing to say; one that stopped
             // on purpose says which app, in a paragraph of its own.
-            assert_eq!(plain.len(), 5, "{lang:?}: what happened, the code, a blank, the way out");
-            assert_eq!(said.len(), 7, "{lang:?}: and two rows for the reason");
-            assert_eq!(&said[..3], &plain[..3], "{lang:?}: nothing above the reason moves");
-            assert_eq!(said[3].text(), Reason::Music.label(lang), "{lang:?}: the app is named");
-            assert_eq!(said[4].text(), "", "{lang:?}: a row of air under it");
-            assert_eq!(&said[5..], &plain[3..], "{lang:?}: the way out is where it was");
+            assert_eq!(plain.len(), 6, "{lang:?}: a face, what happened, the code, a blank, the way out");
+            assert_eq!(said.len(), 8, "{lang:?}: and two rows for the reason");
+            assert_eq!(&said[..4], &plain[..4], "{lang:?}: nothing above the reason moves");
+            assert_eq!(said[4].text(), Reason::Music.label(lang), "{lang:?}: the app is named");
+            assert_eq!(said[5].text(), "", "{lang:?}: a row of air under it");
+            assert_eq!(&said[6..], &plain[4..], "{lang:?}: the way out is where it was");
         }
     }
 
@@ -717,8 +724,8 @@ mod tests {
         for lang in BOTH {
             for reason in [Reason::Music, Reason::Browser, Reason::Tasks] {
                 let lines = failure(Crash::Runtime, 67, Some(reason), lang);
-                assert_eq!(lines.len(), 7, "{lang:?} {reason:?}");
-                assert_eq!(lines[3].text(), reason.label(lang), "{lang:?} {reason:?}");
+                assert_eq!(lines.len(), 8, "{lang:?} {reason:?}");
+                assert_eq!(lines[4].text(), reason.label(lang), "{lang:?} {reason:?}");
             }
         }
     }
@@ -742,7 +749,7 @@ mod tests {
         let (w, h) = (1200u32, 2608u32);
         for lang in BOTH {
             for crash in [Crash::Startup, Crash::Runtime] {
-                for (reason, count) in [(None, 5), (Some(Reason::Tasks), 7)] {
+                for (reason, count) in [(None, 6), (Some(Reason::Tasks), 8)] {
                     let mut screen = Screen::new(w, h);
                     draw(&mut screen, View::Failure { crash, code: 67, reason }, lang);
                     // What happened, the code, a blank, the reason where
