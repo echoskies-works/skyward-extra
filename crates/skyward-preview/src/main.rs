@@ -238,6 +238,7 @@ fn main() -> Result<()> {
             let probes = args.get(3).ok_or_else(|| anyhow!("--match needs a probe file"))?;
             return matcher::run(&fonts, Path::new(probes));
         }
+        Some("--charge") => return charge_shots(&out, &fonts, &light, &fuxi(&cfg), lang),
         _ => {}
     }
 
@@ -2557,6 +2558,34 @@ fn fuxi(cfg: &DeviceConfig) -> DeviceInfo {
         snapshot: SnapshotState::None,
         boot: Boot { unlocked: Some(true), verified: Some("orange".into()) },
     }
+}
+
+/// The charging screen as the cable goes in: the level and what the charger
+/// does, and under them the tide climbing from the foot of the screen —
+/// into place in RISE, then swelling once as it breathes over BREATH. Shot
+/// at the times the rise is worth seeing at, then across one breath.
+fn charge_shots(out: &Path, f: &Fonts, t: &Theme, info: &DeviceInfo, lang: Lang) -> Result<()> {
+    let battery = info.battery.as_ref().ok_or_else(|| anyhow!("the charging screen needs a battery"))?;
+    for ms in [0u64, 100, 200, 320, 460, 620, 900, 1_300, 1_950, 2_600] {
+        charge_shot(out, f, t, lang, battery, ms, &format!("205-charge-{ms:04}"))?;
+    }
+    // The crest stands as high as the battery is full: a low one, for what
+    // the tide looks like most of the time the cable is in.
+    let low = Battery { level: 23, ..battery.clone() };
+    charge_shot(out, f, t, lang, &low, 900, "205-charge-low-0900")?;
+    Ok(())
+}
+
+fn charge_shot(out: &Path, f: &Fonts, t: &Theme, lang: Lang, battery: &Battery, ms: u64, name: &str) -> Result<()> {
+    let m = &t.m;
+    let art = skyward_ui::charge::Art::new(f, m, lang, battery)?;
+    let dither = skyward_ui::glow::Dither::new(m.w as usize, m.h as usize);
+    let mut c = Canvas::new(m.w, m.h);
+    skyward_ui::charge::draw(&mut c, &art, m, battery.level, ms, &dither);
+    let path = out.join(format!("{name}.png"));
+    write_png(&path, &c)?;
+    println!("wrote {}", path.display());
+    Ok(())
 }
 
 /// Weight ladders for matching stroke widths against device screenshots: the
