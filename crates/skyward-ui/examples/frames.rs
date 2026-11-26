@@ -2,7 +2,7 @@ use skyward_info::{Battery, Boot, Charge, Cpu, DeviceInfo, Storage};
 use skyward_ui::app::{Action, FileKind, FileRow, Key, Screen, Touch};
 use skyward_ui::pages::Band;
 use skyward_ui::widgets::{self, Cap};
-use skyward_ui::{pages, App, Canvas, Ctx, Fonts, Theme};
+use skyward_ui::{App, Canvas, Ctx, Fonts, Theme, pages};
 use skyward_vab::{Slot, SnapshotState};
 use std::time::Instant;
 
@@ -16,7 +16,10 @@ const FRAME_US: u64 = 8333;
 const BUDGET_MS: f64 = 5.5;
 
 /// The moves timed, each from the page it starts on.
-const MOVES: [&str; 14] = ["press", "open", "drag", "fold", "fling", "back", "zoom", "pull", "search", "about", "files", "dark", "charge", "renders"];
+const MOVES: [&str; 17] = [
+    "press", "open", "drag", "fold", "fling", "back", "zoom", "pull", "search", "about", "files",
+    "dark", "charge", "renders", "shade", "lock", "power",
+];
 
 /// Times what the UI draws: whole pages rendered, and every frame of the
 /// moves people make, driven the way the runtime drives the app. Run with
@@ -40,7 +43,12 @@ fn main() {
     let mut rest = args[2..].iter();
     while let Some(a) = rest.next() {
         match a.as_str() {
-            "x" => times = rest.next().and_then(|n| n.parse().ok()).expect("a count after x"),
+            "x" => {
+                times = rest
+                    .next()
+                    .and_then(|n| n.parse().ok())
+                    .expect("a count after x")
+            }
             a => named.push(a),
         }
     }
@@ -155,7 +163,11 @@ fn run(name: &str, f: &Fonts, i: &DeviceInfo, quiet: bool) {
                 uid: 1023,
                 gid: 1023,
             });
-            p.app.set_files("/sdcard/DCIM/Camera".into(), Ok(many.collect()), 1_792_348_260 + 86_400);
+            p.app.set_files(
+                "/sdcard/DCIM/Camera".into(),
+                Ok(many.collect()),
+                1_792_348_260 + 86_400,
+            );
             p.run(100);
             p.skip();
             p.fling(2600.0, 600.0);
@@ -182,6 +194,48 @@ fn run(name: &str, f: &Fonts, i: &DeviceInfo, quiet: bool) {
             p.run(1000);
             p.report("the charging screen going for the page");
         }
+        "shade" => {
+            // The panel pulled down from the status bar and pushed back up.
+            let mut p = Panel::new(Screen::Settings, f, i, quiet);
+            p.drag(20.0, 1900.0, 700);
+            p.run(500);
+            p.report("the panel pulled down from the bar");
+            p.drag(2300.0, 200.0, 700);
+            p.run(500);
+            p.report("the panel pushed back up");
+        }
+        "lock" => {
+            // The phone locked, then the lock pushed up and away: the page
+            // under it is the whole picture again.
+            let mut p = Panel::new(Screen::Settings, f, i, quiet);
+            p.app.lock_now();
+            p.run(300);
+            p.skip();
+            p.drag(3000.0, 200.0, 700);
+            p.run(500);
+            p.report("the lock pushed up and away");
+        }
+        "power" => {
+            // The power key and volume up bring the menu up; the volume key
+            // lights its first entry, the power key takes it, and the word
+            // it asks for is taken too: the page goes black as the phone
+            // leaves.
+            let mut p = Panel::new(Screen::Settings, f, i, quiet);
+            p.down(Key::Power);
+            p.down(Key::VolumeUp);
+            p.frame();
+            p.up(Key::VolumeUp);
+            p.up(Key::Power);
+            p.run(500);
+            p.report("the power menu rising over the page");
+            p.press(Key::VolumeDown);
+            p.press(Key::Power);
+            p.run(500);
+            p.report("the confirmation rising over the page");
+            p.press(Key::Power);
+            p.run(900);
+            p.report("the page going black as the phone leaves");
+        }
         _ => panic!("no move named {name}; the moves are {MOVES:?}"),
     }
 }
@@ -189,8 +243,17 @@ fn run(name: &str, f: &Fonts, i: &DeviceInfo, quiet: bool) {
 /// Where on the unscrolled page named `page` each control is, for driving
 /// the panel itself: its centre and what it does.
 fn hits(page: &str, f: &Fonts, i: &DeviceInfo) {
-    let screens = [Screen::Home, Screen::Settings, Screen::Advanced, Screen::About, Screen::Search];
-    let screen = screens.into_iter().find(|s| format!("{s:?}") == page).unwrap_or_else(|| panic!("no page {page} among {screens:?}"));
+    let screens = [
+        Screen::Home,
+        Screen::Settings,
+        Screen::Advanced,
+        Screen::About,
+        Screen::Search,
+    ];
+    let screen = screens
+        .into_iter()
+        .find(|s| format!("{s:?}") == page)
+        .unwrap_or_else(|| panic!("no page {page} among {screens:?}"));
     let mut p = Panel::new(screen, f, i, true);
     let (x, y) = widgets::back_rect(&p.app.theme()).centre();
     println!("{x:.0} {y:.0} Back");
@@ -204,11 +267,36 @@ fn hits(page: &str, f: &Fonts, i: &DeviceInfo) {
 /// theme and held down; only the page named `only`, when one is.
 fn renders(f: &Fonts, i: &DeviceInfo, only: Option<&str>, quiet: bool) {
     let state = skyward_ui::app::State::default();
-    let screens = [Screen::Home, Screen::Settings, Screen::Advanced, Screen::About, Screen::Search, Screen::Install, Screen::Reboot, Screen::Wipe, Screen::Backup, Screen::Specs];
+    let screens = [
+        Screen::Home,
+        Screen::Settings,
+        Screen::Advanced,
+        Screen::About,
+        Screen::Search,
+        Screen::Install,
+        Screen::Reboot,
+        Screen::Wipe,
+        Screen::Backup,
+        Screen::Specs,
+        Screen::Desktop,
+        Screen::Clock,
+    ];
     for t in [Theme::light(W, H, PPD), Theme::light(W, H, PPD).pressed()] {
-        for screen in screens.into_iter().filter(|s| only.is_none_or(|o| format!("{s:?}") == o)) {
+        for screen in screens
+            .into_iter()
+            .filter(|s| only.is_none_or(|o| format!("{s:?}") == o))
+        {
             let time = |band| {
-                let cx = Ctx { t: &t, f, info: i, state: &state, term: None, band, now: 0, wallpaper: None };
+                let cx = Ctx {
+                    t: &t,
+                    f,
+                    info: i,
+                    state: &state,
+                    term: None,
+                    band,
+                    now: 0,
+                    wallpaper: None,
+                };
                 let mut ms: Vec<f64> = (0..5)
                     .map(|_| {
                         let t0 = Instant::now();
@@ -222,7 +310,11 @@ fn renders(f: &Fonts, i: &DeviceInfo, only: Option<&str>, quiet: bool) {
             let band = |rows| Some(Band { rows, cols: (0, W) });
             let (whole, first, laid) = (time(None), time(band((0, H))), time(band((0, 0))));
             if !quiet {
-                let held = if t.pal.card == Theme::light(W, H, PPD).pal.card { "" } else { " held down" };
+                let held = if t.pal.card == Theme::light(W, H, PPD).pal.card {
+                    ""
+                } else {
+                    " held down"
+                };
                 println!(
                     "render {screen:?}{held}: {:.1} ms (slowest {:.1}), its first screen {:.1} ms (slowest {:.1}), laid out only {:.2} ms",
                     whole.0, whole.1, first.0, first.1, laid.0
@@ -249,7 +341,15 @@ impl<'a> Panel<'a> {
     fn new(screen: Screen, f: &'a Fonts, i: &'a DeviceInfo, quiet: bool) -> Panel<'a> {
         let mut app = App::new(screen, W, H, PPD);
         app.set_screen_corners(140.0);
-        let mut p = Panel { app, f, i, out: Canvas::new(W, H), us: 0, ms: Vec::new(), quiet };
+        let mut p = Panel {
+            app,
+            f,
+            i,
+            out: Canvas::new(W, H),
+            us: 0,
+            ms: Vec::new(),
+            quiet,
+        };
         p.run(100);
         p.skip();
         p
@@ -273,8 +373,13 @@ impl<'a> Panel<'a> {
         self.app.tick(now);
         if self.app.take_dirty() {
             let t0 = Instant::now();
-            self.app.compose(&mut self.out, self.f, self.i, "12:00", "11月16日 周一", now);
-            self.ms.push(t0.elapsed().as_secs_f64() * 1000.0);
+            self.app
+                .compose(&mut self.out, self.f, self.i, "12:00", "11月16日 周一", now);
+            let ms = t0.elapsed().as_secs_f64() * 1000.0;
+            if std::env::var_os("SKY_FRAME_TRACE").is_some() {
+                println!("t={now} {ms:.2} ms");
+            }
+            self.ms.push(ms);
         }
     }
 
@@ -292,10 +397,28 @@ impl<'a> Panel<'a> {
         self.app.key_up(key, now);
     }
 
+    /// A key held down, and let go, with a frame drawn between: a pair of
+    /// them held at once brings the power menu up.
+    fn down(&mut self, key: Key) {
+        let now = self.now();
+        self.app.key(key, now);
+    }
+
+    fn up(&mut self, key: Key) {
+        let now = self.now();
+        self.app.key_up(key, now);
+    }
+
     /// Where the page's control doing `action` is on screen.
     fn at(&mut self, action: Action) -> (f32, f32) {
         let frame = self.app.frame(self.f, self.i);
-        frame.hits.iter().find(|h| h.action == action).unwrap_or_else(|| panic!("{action:?} is on the page")).rect.centre()
+        frame
+            .hits
+            .iter()
+            .find(|h| h.action == action)
+            .unwrap_or_else(|| panic!("{action:?} is on the page"))
+            .rect
+            .centre()
     }
 
     /// A quick tap on the control doing `action`.
@@ -312,7 +435,10 @@ impl<'a> Panel<'a> {
         self.touch(Touch::Down(700.0, y0));
         let steps = ms * 1000 / FRAME_US;
         for k in 1..=steps {
-            self.touch(Touch::Move(700.0 + (k % 2) as f32, y0 + (y1 - y0) * k as f32 / steps as f32));
+            self.touch(Touch::Move(
+                700.0 + (k % 2) as f32,
+                y0 + (y1 - y0) * k as f32 / steps as f32,
+            ));
             self.frame();
         }
         self.run(120);
@@ -324,7 +450,10 @@ impl<'a> Panel<'a> {
     fn fling(&mut self, y0: f32, y1: f32) {
         self.touch(Touch::Down(700.0, y0));
         for k in 1..=12u64 {
-            self.touch(Touch::Move(700.0 + (k % 2) as f32, y0 + (y1 - y0) * k as f32 / 12.0));
+            self.touch(Touch::Move(
+                700.0 + (k % 2) as f32,
+                y0 + (y1 - y0) * k as f32 / 12.0,
+            ));
             self.frame();
         }
         self.touch(Touch::Up);
@@ -345,7 +474,10 @@ impl<'a> Panel<'a> {
             return;
         }
         let over = ms.iter().filter(|&&m| m > BUDGET_MS).count();
-        let worst = (0..ms.len()).max_by(|&a, &b| ms[a].total_cmp(&ms[b])).expect("frames were drawn") + 1;
+        let worst = (0..ms.len())
+            .max_by(|&a, &b| ms[a].total_cmp(&ms[b]))
+            .expect("frames were drawn")
+            + 1;
         ms.sort_by(f64::total_cmp);
         let at = |q: f64| ms[((ms.len() - 1) as f64 * q).round() as usize];
         println!(
@@ -363,7 +495,10 @@ fn info() -> DeviceInfo {
         model: "Xiaomi 13 Ultra".into(),
         codename: "ishtar".into(),
         soc: None,
-        cpu: Cpu { cores: 8, max_khz: Some(3_187_200) },
+        cpu: Cpu {
+            cores: 8,
+            max_khz: Some(3_187_200),
+        },
         ram_kib: 15_556_972,
         panel: Some((W, H)),
         screen: Some(6.73),
@@ -373,7 +508,10 @@ fn info() -> DeviceInfo {
         time_zone: None,
         security_patch: None,
         kernel: "5.15.178".into(),
-        storage: Storage { total: 496_550_785_024, free: None },
+        storage: Storage {
+            total: 496_550_785_024,
+            free: None,
+        },
         // A battery with a temperature and an A/B phone, as the status bar
         // shows them on every frame.
         battery: Some(Battery {
@@ -390,6 +528,9 @@ fn info() -> DeviceInfo {
         }),
         slot: Some(Slot::B),
         snapshot: SnapshotState::None,
-        boot: Boot { unlocked: None, verified: None },
+        boot: Boot {
+            unlocked: None,
+            verified: None,
+        },
     }
 }

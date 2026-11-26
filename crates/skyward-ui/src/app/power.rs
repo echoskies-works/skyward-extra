@@ -63,14 +63,20 @@ const POWER_CHOICES: [(PowerChoice, Text); 4] = [
 
 /// The menu's keys as a sheet's rows: a whole row for each of the four.
 fn power_rows() -> dialog::SheetRows {
-    POWER_CHOICES.iter().map(|(choice, name)| vec![(*name, Action::PowerMenuChoice(*choice))]).collect()
+    POWER_CHOICES
+        .iter()
+        .map(|(choice, name)| vec![(*name, Action::PowerMenuChoice(*choice))])
+        .collect()
 }
 
 /// The words of the sheet a choice opens, and the keys on it. Power off and
 /// restart go on to leave the system once confirmed, through the black-out
 /// `PowerExit` stands for; suspend is not wired up, so its 确定 does no more
 /// than its 取消.
-pub(super) fn power_confirm(choice: PowerChoice, lang: crate::lang::Lang) -> (Text, String, dialog::SheetRows) {
+pub(super) fn power_confirm(
+    choice: PowerChoice,
+    lang: crate::lang::Lang,
+) -> (Text, String, dialog::SheetRows) {
     let ok: Text = tri("确定", "確定", "OK");
     let cancel: Text = tri("取消", "取消", "Cancel");
     match choice {
@@ -147,13 +153,21 @@ impl App {
     pub fn plugged(&mut self, now: u64, cable_in: bool) {
         if cable_in {
             let dark = !self.display_on;
-            let mut shown = self.charging.take().map_or(Fade::hidden(CHARGE_SHOW, CHARGE_HIDE), |c| c.shown);
+            let mut shown = self
+                .charging
+                .take()
+                .map_or(Fade::hidden(CHARGE_SHOW, CHARGE_HIDE), |c| c.shown);
             if dark {
                 shown.jump(true);
             } else {
                 shown.set(true, now);
             }
-            self.charging = Some(Charging { since: now, shown, dark_after: dark });
+            self.charging = Some(Charging {
+                since: now,
+                shown,
+                dark_after: dark,
+            });
+            self.charge_drawn = false;
             self.dirty = true;
         }
         if self.display_on {
@@ -172,6 +186,7 @@ impl App {
         self.charging = None;
         self.charge_art = None;
         self.charge_canvas = None;
+        self.charge_drawn = false;
     }
 
     /// Whether the charging screen shows, or is coming up.
@@ -191,7 +206,8 @@ impl App {
     /// Whether the panel lit so recently that a touch or key should only
     /// keep it awake.
     pub(super) fn just_woke(&self, now: u64) -> bool {
-        self.woke_at.is_some_and(|w| now.saturating_sub(w) < WAKE_GUARD_MS)
+        self.woke_at
+            .is_some_and(|w| now.saturating_sub(w) < WAKE_GUARD_MS)
     }
 
     /// Turn the panel off: the content goes dark under the backlight it has
@@ -249,14 +265,22 @@ impl App {
     /// tap of the motor.
     pub(super) fn show_power_menu(&mut self, now: u64) -> Vec<Effect> {
         self.chord = None;
-        self.power_menu = Some(PowerMenu { chosen: 0, lit: false, since: now });
+        self.power_menu = Some(PowerMenu {
+            chosen: 0,
+            lit: false,
+            since: now,
+        });
         self.power_blur = None;
         // The volume panel goes with it: the menu's ground is a blurred copy
         // of the page, and a second card left on it would be blurred too.
         self.volume_bar = None;
         self.dirty = true;
         self.stir(now);
-        if self.state.vibrate { vec![Effect::Haptic] } else { Vec::new() }
+        if self.state.vibrate {
+            vec![Effect::Haptic]
+        } else {
+            Vec::new()
+        }
     }
 
     /// The power menu goes, and the phone goes on as it was.
@@ -286,94 +310,103 @@ impl App {
         }
     }
 
-/// A finger on the power menu: a tap on an entry takes it, a tap beside the
-/// card puts the menu away and does nothing else. The card is the common
-/// sheet's; a finger landing while it rises finds the keys where they were.
-pub(super) fn power_menu_touch(&mut self, ev: Touch, f: &Fonts, now: u64) -> Vec<Effect> {
-    let Touch::Down(x, y) = ev else { return Vec::new() };
-    let t = self.theme();
-    let shown = self.power_menu.as_ref().map_or(0.0, |m| dialog::shown_sheet(m.since, None, now));
-    let rows = power_rows();
-    if let Some(action) = dialog::sheet_hit(&t, f, &rows, "", shown, x, y) {
-        return self.act(action, now);
-    }
-    if dialog::sheet_miss(&t, f, &rows, "", shown, x, y) {
-        self.hide_power_menu();
-    }
-    Vec::new()
-}
-
-/// The keys while the power menu shows: the volume keys move the light
-/// down the list and up it, the power key takes what is lit, back puts the
-/// menu away. Taking a key hands the choice to `act`, which puts the menu
-/// away and opens the sheet that asks for the word.
-pub(super) fn power_menu_key(&mut self, key: Key, now: u64) -> Vec<Effect> {
-    let volume = matches!(key, Key::VolumeUp | Key::VolumeDown);
-    // Turned to the volume, the volume keys are the volume's: they neither
-    // light an entry nor move the light on one, as they move nothing on a
-    // page either.
-    if volume && !self.state.volume_keys {
-        return Vec::new();
-    }
-    let Some(menu) = self.power_menu.as_mut() else { return Vec::new() };
-    if volume && !menu.lit {
-        // The first press only puts the light on the entry the menu opens
-        // with, as the first key on a page lights the first control in view.
-        // Each after moves it on.
-        menu.lit = true;
-    } else if volume {
-        let last = POWER_CHOICES.len() - 1;
-        menu.chosen = if key == Key::VolumeUp {
-            menu.chosen.checked_sub(1).unwrap_or(last)
-        } else {
-            (menu.chosen + 1) % POWER_CHOICES.len()
+    /// A finger on the power menu: a tap on an entry takes it, a tap beside the
+    /// card puts the menu away and does nothing else. The card is the common
+    /// sheet's; a finger landing while it rises finds the keys where they were.
+    pub(super) fn power_menu_touch(&mut self, ev: Touch, f: &Fonts, now: u64) -> Vec<Effect> {
+        let Touch::Down(x, y) = ev else {
+            return Vec::new();
         };
-    }
-    let chosen = menu.chosen;
-    self.dirty = true;
-    match key {
-        Key::Power => self.act(Action::PowerMenuChoice(POWER_CHOICES[chosen].0), now),
-        Key::Back => {
+        let t = self.theme();
+        let shown = self
+            .power_menu
+            .as_ref()
+            .map_or(0.0, |m| dialog::shown_sheet(m.since, None, now));
+        let rows = power_rows();
+        if let Some(action) = dialog::sheet_hit(&t, f, &rows, "", shown, x, y) {
+            return self.act(action, now);
+        }
+        if dialog::sheet_miss(&t, f, &rows, "", shown, x, y) {
             self.hide_power_menu();
-            Vec::new()
         }
-        _ => {
-            self.stir(now);
-            Vec::new()
-        }
+        Vec::new()
     }
-}
 
-/// The power menu over the page: the same card the sheets use, but the page
-/// under it is softened, not darkened — the one thing that tells this menu
-/// from the confirmations it opens. The soft copy is made once and laid over
-/// the page a little more each frame as the card rises from the foot.
-pub(super) fn compose_power_menu(&mut self, out: &mut Canvas, f: &Fonts, now: u64) {
-    let Some(menu) = self.power_menu.as_ref() else { return };
-    let since = menu.since;
-    // The entry is ringed only once the volume keys have asked for a light:
-    // a menu just come up is a menu nothing is chosen on yet.
-    let chosen = menu.lit.then_some(menu.chosen);
-    let t = self.theme();
-    let lang = self.state.lang;
-    let m = &t.m;
-    let along = dialog::shown_sheet(since, None, now);
-    if along <= 0.0 {
-        return;
+    /// The keys while the power menu shows: the volume keys move the light
+    /// down the list and up it, the power key takes what is lit, back puts the
+    /// menu away. Taking a key hands the choice to `act`, which puts the menu
+    /// away and opens the sheet that asks for the word.
+    pub(super) fn power_menu_key(&mut self, key: Key, now: u64) -> Vec<Effect> {
+        let volume = matches!(key, Key::VolumeUp | Key::VolumeDown);
+        // Turned to the volume, the volume keys are the volume's: they neither
+        // light an entry nor move the light on one, as they move nothing on a
+        // page either.
+        if volume && !self.state.volume_keys {
+            return Vec::new();
+        }
+        let Some(menu) = self.power_menu.as_mut() else {
+            return Vec::new();
+        };
+        if volume && !menu.lit {
+            // The first press only puts the light on the entry the menu opens
+            // with, as the first key on a page lights the first control in view.
+            // Each after moves it on.
+            menu.lit = true;
+        } else if volume {
+            let last = POWER_CHOICES.len() - 1;
+            menu.chosen = if key == Key::VolumeUp {
+                menu.chosen.checked_sub(1).unwrap_or(last)
+            } else {
+                (menu.chosen + 1) % POWER_CHOICES.len()
+            };
+        }
+        let chosen = menu.chosen;
+        self.dirty = true;
+        match key {
+            Key::Power => self.act(Action::PowerMenuChoice(POWER_CHOICES[chosen].0), now),
+            Key::Back => {
+                self.hide_power_menu();
+                Vec::new()
+            }
+            _ => {
+                self.stir(now);
+                Vec::new()
+            }
+        }
     }
-    // Blurred once into a copy kept while the menu stands, then laid back
-    // over the page as the card comes up: softened ground, not a dark one.
-    if self.power_blur.is_none() {
-        self.power_blur = Some(super::lock::soft_ground(out, m.w, m.h));
+
+    /// The power menu over the page: the same card the sheets use, but the page
+    /// under it is softened, not darkened — the one thing that tells this menu
+    /// from the confirmations it opens. The soft copy is made once and laid over
+    /// the page a little more each frame as the card rises from the foot.
+    pub(super) fn compose_power_menu(&mut self, out: &mut Canvas, f: &Fonts, now: u64) {
+        let Some(menu) = self.power_menu.as_ref() else {
+            return;
+        };
+        let since = menu.since;
+        // The entry is ringed only once the volume keys have asked for a light:
+        // a menu just come up is a menu nothing is chosen on yet.
+        let chosen = menu.lit.then_some(menu.chosen);
+        let t = self.theme();
+        let lang = self.state.lang;
+        let m = &t.m;
+        let along = dialog::shown_sheet(since, None, now);
+        if along <= 0.0 {
+            return;
+        }
+        // Blurred once into a copy kept while the menu stands, then laid back
+        // over the page as the card comes up: softened ground, not a dark one.
+        if self.power_blur.is_none() {
+            self.power_blur = Some(super::lock::soft_ground(out, m.w, m.h));
+        }
+        if let Some(blur) = self.power_blur.as_ref() {
+            out.lay_opaque_coarse(blur, along);
+        }
+        let rows = power_rows();
+        let geom = dialog::sheet_geom(&t, f, "", &rows);
+        let off = dialog::sheet_off(&t, along);
+        dialog::paint_sheet(out, &t, f, lang, POWER_TITLE, &rows, &geom, off, chosen);
     }
-    if let Some(blur) = self.power_blur.clone() {
-        out.lay(&blur, 0, 0, along);
-    }
-    let rows = power_rows();
-    let geom = dialog::sheet_geom(&t, f, "", &rows);
-    let off = dialog::sheet_off(&t, along);
-    dialog::paint_sheet(out, &t, f, lang, POWER_TITLE, &rows, &geom, off, chosen);
-}
 }
 
 #[cfg(test)]
@@ -383,11 +416,23 @@ mod tests {
     use skyward_info::Charge;
 
     /// The centre of the `index`-th key of a sheet's rows, once it has risen.
-    fn sheet_key_at(app: &App, f: &Fonts, rows: &dialog::SheetRows, body: &str, index: usize) -> (f32, f32) {
+    fn sheet_key_at(
+        app: &App,
+        f: &Fonts,
+        rows: &dialog::SheetRows,
+        body: &str,
+        index: usize,
+    ) -> (f32, f32) {
         let t = app.theme();
         let geom = dialog::sheet_geom(&t, f, body, rows);
         let off = dialog::sheet_off(&t, 1.0);
-        let (rect, _) = geom.rows.iter().flatten().zip(rows.iter().flatten()).nth(index).unwrap();
+        let (rect, _) = geom
+            .rows
+            .iter()
+            .flatten()
+            .zip(rows.iter().flatten())
+            .nth(index)
+            .unwrap();
         (rect.x + rect.w / 2.0, rect.y + off + rect.h / 2.0)
     }
 
@@ -402,10 +447,17 @@ mod tests {
         let rows = power_rows();
         assert_eq!(rows.len(), 4, "four rows");
         assert!(rows.iter().all(|r| r.len() == 1), "each a whole row");
-        assert_eq!(rows[3][0].1, Action::PowerMenuChoice(PowerChoice::Cancel), "cancel is last");
+        assert_eq!(
+            rows[3][0].1,
+            Action::PowerMenuChoice(PowerChoice::Cancel),
+            "cancel is last"
+        );
         // A finger on a key hands its choice to act, which opens the card.
         let (x, y) = sheet_key_at(&app, &f, &rows, "", 0);
-        assert!(app.touch(Touch::Down(x, y), &f, dialog::RISE_MS).is_empty(), "power off asks first");
+        assert!(
+            app.touch(Touch::Down(x, y), &f, dialog::RISE_MS).is_empty(),
+            "power off asks first"
+        );
         assert!(app.power_menu.is_none(), "the menu went");
         let sheet = app.sheet.as_ref().unwrap();
         assert_eq!(sheet.title, tri("关机", "關機", "Power off"));
@@ -423,7 +475,10 @@ mod tests {
         let rows = power_rows();
         let (x, y) = sheet_key_at(&app, &f, &rows, "", 3);
         assert!(app.touch(Touch::Down(x, y), &f, dialog::RISE_MS).is_empty());
-        assert!(app.power_menu.is_none() && app.sheet.is_none(), "nothing stands over the page now");
+        assert!(
+            app.power_menu.is_none() && app.sheet.is_none(),
+            "nothing stands over the page now"
+        );
         assert_eq!(app.screen(), Screen::Home, "and the page is where it was");
         let _ = i;
     }
@@ -438,8 +493,16 @@ mod tests {
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.show_power_menu(0);
         assert_eq!(app.deadline(0), Some(0), "the card is on its way up");
-        assert_eq!(app.deadline(dialog::RISE_MS / 2), Some(0), "and still on its way");
-        assert_ne!(app.deadline(dialog::RISE_MS + 1), Some(0), "come up, it asks for nothing more");
+        assert_eq!(
+            app.deadline(dialog::RISE_MS / 2),
+            Some(0),
+            "and still on its way"
+        );
+        assert_ne!(
+            app.deadline(dialog::RISE_MS + 1),
+            Some(0),
+            "come up, it asks for nothing more"
+        );
         let _ = app.take_dirty();
         app.tick(dialog::RISE_MS / 2);
         assert!(app.take_dirty(), "every frame of the rise is drawn");
@@ -465,7 +528,11 @@ mod tests {
         let _ = app.take_dirty();
         app.tick(mid);
         assert!(app.take_dirty(), "the fall is drawn as it goes");
-        assert_eq!(app.deadline(mid), Some(0), "and asked for a frame at a time until it is gone");
+        assert_eq!(
+            app.deadline(mid),
+            Some(0),
+            "and asked for a frame at a time until it is gone"
+        );
     }
 
     /// A confirmation's 确定 does what it says and takes the sheet with it;
@@ -484,11 +551,22 @@ mod tests {
         let rows = sheet.rows.clone();
         assert_eq!(rows[0].len(), 2, "确定 and 取消 share the first row");
         let (cx, cy) = sheet_key_at(&app, &f, &rows, &app.sheet.as_ref().unwrap().body, 1);
-        assert!(app.touch(Touch::Down(cx, cy), &f, dialog::RISE_MS * 2).is_empty(), "cancel does nothing");
-        assert!(app.sheet.as_ref().unwrap().closing.is_some(), "but the sheet goes");
+        assert!(
+            app.touch(Touch::Down(cx, cy), &f, dialog::RISE_MS * 2)
+                .is_empty(),
+            "cancel does nothing"
+        );
+        assert!(
+            app.sheet.as_ref().unwrap().closing.is_some(),
+            "but the sheet goes"
+        );
         assert!(app.power_exit.is_none(), "and nothing goes black");
         app.tick(dialog::RISE_MS * 2 + dialog::FALL_MS);
-        assert_eq!(app.screen(), Screen::Home, "back to the page that was under it");
+        assert_eq!(
+            app.screen(),
+            Screen::Home,
+            "back to the page that was under it"
+        );
 
         // Open it again and this time confirm.
         app.show_power_menu(dialog::RISE_MS * 3);
@@ -500,13 +578,26 @@ mod tests {
         let body = sheet.body.clone();
         let (cx, cy) = sheet_key_at(&app, &f, &rows, &body, 0);
         let at = dialog::RISE_MS * 5;
-        assert!(app.touch(Touch::Down(cx, cy), &f, at).is_empty(), "确定 asks for no word at once");
+        assert!(
+            app.touch(Touch::Down(cx, cy), &f, at).is_empty(),
+            "确定 asks for no word at once"
+        );
         let exit = app.power_exit.as_ref().expect("the black-out has begun");
         assert_eq!(exit.target, Target::PowerOff);
         assert_eq!(exit.since, at, "it began on the key");
-        assert!(app.tick(at + BLACK_MS + BLACK_HOLD_MS - 1).is_empty(), "black first, then the beat");
-        assert_eq!(app.tick(at + BLACK_MS + BLACK_HOLD_MS), vec![Effect::Reboot(Target::PowerOff)], "and the phone leaves");
-        assert!(app.tick(at + BLACK_MS + BLACK_HOLD_MS + 1000).is_empty(), "asked for once, not again");
+        assert!(
+            app.tick(at + BLACK_MS + BLACK_HOLD_MS - 1).is_empty(),
+            "black first, then the beat"
+        );
+        assert_eq!(
+            app.tick(at + BLACK_MS + BLACK_HOLD_MS),
+            vec![Effect::Reboot(Target::PowerOff)],
+            "and the phone leaves"
+        );
+        assert!(
+            app.tick(at + BLACK_MS + BLACK_HOLD_MS + 1000).is_empty(),
+            "asked for once, not again"
+        );
         let _ = i;
     }
 
@@ -530,8 +621,14 @@ mod tests {
         let (x, y) = sheet_key_at(&app, &f, &rows, &body, 2);
         let at = dialog::RISE_MS;
         assert!(app.touch(Touch::Down(x, y), &f, at).is_empty());
-        assert_eq!(app.power_exit.as_ref().map(|e| e.target), Some(Target::Recovery));
-        assert_eq!(app.tick(at + BLACK_MS + BLACK_HOLD_MS), vec![Effect::Reboot(Target::Recovery)]);
+        assert_eq!(
+            app.power_exit.as_ref().map(|e| e.target),
+            Some(Target::Recovery)
+        );
+        assert_eq!(
+            app.tick(at + BLACK_MS + BLACK_HOLD_MS),
+            vec![Effect::Reboot(Target::Recovery)]
+        );
         let _ = i;
     }
 
@@ -555,7 +652,10 @@ mod tests {
         let geom = dialog::sheet_geom(&t, &f, &body, &rows);
         let early = at + 40;
         let off = dialog::sheet_off(&t, dialog::shown_sheet(at, Some(at), early));
-        let (card_x, card_y) = (geom.card.x + geom.card.w / 2.0, geom.card.y + off + t.m.dp(10.0));
+        let (card_x, card_y) = (
+            geom.card.x + geom.card.w / 2.0,
+            geom.card.y + off + t.m.dp(10.0),
+        );
         let ink = |app: &mut App, now| {
             let mut c = Canvas::new(W, H);
             app.compose(&mut c, &f, &i, "12:00", "11月18日 周二", now);
@@ -563,8 +663,14 @@ mod tests {
         };
         let (page_before, card_before) = ink(&mut app, at);
         let (page_early, card_early) = ink(&mut app, early);
-        assert!(page_early < page_before, "the page is going black: {page_early} of {page_before}");
-        assert_eq!(card_early, card_before, "the card keeps its colour on the way down");
+        assert!(
+            page_early < page_before,
+            "the page is going black: {page_early} of {page_before}"
+        );
+        assert_eq!(
+            card_early, card_before,
+            "the card keeps its colour on the way down"
+        );
         let (page_black, _) = ink(&mut app, at + BLACK_MS + 1);
         assert_eq!(page_black, 0, "and the page is black once it has gone");
     }
@@ -592,8 +698,14 @@ mod tests {
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.act(Action::PowerMenuChoice(PowerChoice::Suspend), 0);
         let sheet = app.sheet.as_ref().unwrap();
-        assert_eq!(sheet.title, tri("确定要挂起吗？", "確定要掛起嗎？", "Suspend?"));
-        assert!(sheet.rows[0].iter().all(|(_, a)| *a == Action::SheetCancel), "both keys only close it");
+        assert_eq!(
+            sheet.title,
+            tri("确定要挂起吗？", "確定要掛起嗎？", "Suspend?")
+        );
+        assert!(
+            sheet.rows[0].iter().all(|(_, a)| *a == Action::SheetCancel),
+            "both keys only close it"
+        );
         let rows = sheet.rows.clone();
         let body = sheet.body.clone();
         let (x, y) = sheet_key_at(&app, &f, &rows, &body, 0);
@@ -607,21 +719,35 @@ mod tests {
     fn power_key_turns_the_panel_off_and_on() {
         let mut app = App::new(Screen::Home, W, H, PPD);
         assert!(app.key(Key::Power, 0).is_empty());
-        assert_eq!(app.panel(0), Some(SLIDER_START), "it waits for volume down first");
+        assert_eq!(
+            app.panel(0),
+            Some(SLIDER_START),
+            "it waits for volume down first"
+        );
         assert_eq!(app.deadline(0), Some(CHORD_MS));
         // Past the wait for its partner nothing has come of it yet: let go,
         // the panel goes off; held the long press through, the power menu
         // comes up instead.
         assert!(app.tick(CHORD_MS).is_empty());
         assert!(app.display_on());
-        assert_eq!(app.key_up(Key::Power, CHORD_MS + 50), vec![Effect::Ticks], "let go, it turns the panel off, ticking the motor");
+        assert_eq!(
+            app.key_up(Key::Power, CHORD_MS + 50),
+            vec![Effect::Ticks],
+            "let go, it turns the panel off, ticking the motor"
+        );
         assert!(!app.display_on());
         assert!(app.key(Key::Power, CHORD_MS + 60).is_empty());
         assert!(app.display_on(), "and lights it again");
-        assert!(app.key_up(Key::Power, CHORD_MS + 100).is_empty(), "a press that only lit the panel does not put it out");
+        assert!(
+            app.key_up(Key::Power, CHORD_MS + 100).is_empty(),
+            "a press that only lit the panel does not put it out"
+        );
         assert!(app.key(Key::Power, 1000).is_empty());
         assert_eq!(app.key_up(Key::Power, 1050), vec![Effect::Ticks]);
-        assert!(!app.display_on(), "let go sooner, it turns the panel off then");
+        assert!(
+            !app.display_on(),
+            "let go sooner, it turns the panel off then"
+        );
     }
 
     #[test]
@@ -632,10 +758,17 @@ mod tests {
         assert!(app.tick(1400).is_empty(), "once");
         app.state.vibrate = false;
         press(&mut app, Key::Power, 2000);
-        assert_eq!(press(&mut app, Key::Power, 3000), vec![Effect::Ticks], "with vibration off too");
+        assert_eq!(
+            press(&mut app, Key::Power, 3000),
+            vec![Effect::Ticks],
+            "with vibration off too"
+        );
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.tick(0);
-        assert!(app.tick(OFF).is_empty(), "but not the screen going off by itself");
+        assert!(
+            app.tick(OFF).is_empty(),
+            "but not the screen going off by itself"
+        );
         assert!(!app.display_on());
     }
 
@@ -647,7 +780,11 @@ mod tests {
         app.state.vibrate = true;
         assert!(app.key(Key::Power, 0).is_empty());
         let shot = vec![Effect::Haptic, Effect::Screenshot { storage: false }];
-        assert_eq!(app.key(Key::VolumeDown, CHORD_MS - 1), shot, "volume down follows in time");
+        assert_eq!(
+            app.key(Key::VolumeDown, CHORD_MS - 1),
+            shot,
+            "volume down follows in time"
+        );
         assert_eq!(app.chord, None, "nothing is left waiting");
         assert!(app.tick(1000).is_empty());
         assert!(app.key_up(Key::Power, 1000).is_empty());
@@ -666,7 +803,10 @@ mod tests {
         app.state.vibrate = false;
         app.data_waiting(None);
         app.key(Key::Power, 3000);
-        assert_eq!(app.key(Key::VolumeDown, 3010), vec![Effect::Screenshot { storage: true }]);
+        assert_eq!(
+            app.key(Key::VolumeDown, 3010),
+            vec![Effect::Screenshot { storage: true }]
+        );
     }
 
     #[test]
@@ -679,13 +819,23 @@ mod tests {
         assert!(!app.keys, "volume down waits for the power key first");
         assert!(app.tick(CHORD_MS).is_empty());
         assert!(app.keys, "then lights a control on its own");
-        assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Search))));
+        assert_eq!(
+            lit(&mut app, &f, &i),
+            Some(Stop::Hit(Action::Open(Screen::Search)))
+        );
         // The volume key is let go before power comes down: there is no pair
         // of keys held together any more, so power works the lit control.
         assert!(app.key_up(Key::VolumeDown, CHORD_MS + 20).is_empty());
-        assert!(app.key(Key::Power, CHORD_MS + 30).is_empty(), "the power key came too late");
+        assert!(
+            app.key(Key::Power, CHORD_MS + 30).is_empty(),
+            "the power key came too late"
+        );
         assert!(app.tick(CHORD_MS * 2 + 10).is_empty());
-        assert_eq!(app.screen(), Screen::Home, "the power key waits on the control lit until it comes up");
+        assert_eq!(
+            app.screen(),
+            Screen::Home,
+            "the power key waits on the control lit until it comes up"
+        );
         app.key_up(Key::Power, CHORD_MS * 3);
         assert_eq!(app.screen(), Screen::Search, "and then works it");
     }
@@ -703,7 +853,10 @@ mod tests {
         app.state.volume_keys = true;
         app.frame(&f, &i);
         assert!(app.key(Key::VolumeDown, 0).is_empty());
-        assert!(app.tick(CHORD_MS).is_empty(), "the held key lands on the light");
+        assert!(
+            app.tick(CHORD_MS).is_empty(),
+            "the held key lands on the light"
+        );
         assert!(app.keys);
         assert_eq!(
             app.key(Key::Power, 1000),
@@ -722,7 +875,10 @@ mod tests {
         assert!(app.key(Key::VolumeUp, 0).is_empty());
         assert!(app.tick(CHORD_MS).is_empty());
         assert_eq!(app.key(Key::Power, 1000), Vec::new());
-        assert!(app.power_menu.is_some(), "power with volume up held brings the menu");
+        assert!(
+            app.power_menu.is_some(),
+            "power with volume up held brings the menu"
+        );
         assert!(app.key_up(Key::Power, 1100).is_empty());
         assert!(app.key_up(Key::VolumeUp, 1110).is_empty());
         assert!(app.power_menu.is_some(), "the keys let go do not close it");
@@ -736,27 +892,46 @@ mod tests {
         press(&mut app, Key::VolumeDown, 0);
         assert!(app.keys && app.lit().is_some());
         assert!(app.key(Key::Power, 1000).is_empty());
-        assert!(app.tick(1000 + CHORD_MS).is_empty(), "power lands on the lit control");
+        assert!(
+            app.tick(1000 + CHORD_MS).is_empty(),
+            "power lands on the lit control"
+        );
         assert_eq!(
             app.key(Key::VolumeDown, 1200),
             vec![Effect::Screenshot { storage: false }]
         );
         assert!(app.key_up(Key::Power, 1300).is_empty());
         assert!(app.key_up(Key::VolumeDown, 1310).is_empty());
-        assert_eq!(app.screen(), Screen::Home, "power did not take the lit control");
+        assert_eq!(
+            app.screen(),
+            Screen::Home,
+            "power did not take the lit control"
+        );
     }
 
     #[test]
     fn a_screenshot_says_where_it_went() {
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.screenshot_saved(Ok(Shot::Album), 0);
-        assert_eq!(app.toast.as_ref().map(|t| t.0.as_str()), Some("截图已保存到相册"));
+        assert_eq!(
+            app.toast.as_ref().map(|t| t.0.as_str()),
+            Some("截图已保存到相册")
+        );
         app.screenshot_saved(Ok(Shot::Held), 0);
-        assert_eq!(app.toast.as_ref().map(|t| t.0.as_str()), Some("截图已暂存，解密后存入相册"));
+        assert_eq!(
+            app.toast.as_ref().map(|t| t.0.as_str()),
+            Some("截图已暂存，解密后存入相册")
+        );
         app.screenshot_saved(Err("No space left on device".into()), 0);
-        assert_eq!(app.toast.as_ref().map(|t| t.0.as_str()), Some("截图保存失败：No space left on device"));
+        assert_eq!(
+            app.toast.as_ref().map(|t| t.0.as_str()),
+            Some("截图保存失败：No space left on device")
+        );
         app.screenshots_not_kept("Read-only file system", 0);
-        assert_eq!(app.toast.as_ref().map(|t| t.0.as_str()), Some("暂存的截图未能存入相册：Read-only file system"));
+        assert_eq!(
+            app.toast.as_ref().map(|t| t.0.as_str()),
+            Some("暂存的截图未能存入相册：Read-only file system")
+        );
     }
 
     /// With the default two minutes, when the panel dims and when it goes
@@ -772,17 +947,32 @@ mod tests {
         app.tick(DIMS - 1);
         assert_eq!(app.panel(DIMS - 1), Some(SLIDER_START));
         app.tick(DIMS);
-        assert_eq!(app.deadline(DIMS), Some(DIMS + BACKLIGHT_STEP_MS), "the backlight steps down a frame at a time");
+        assert_eq!(
+            app.deadline(DIMS),
+            Some(DIMS + BACKLIGHT_STEP_MS),
+            "the backlight steps down a frame at a time"
+        );
         let midway = app.panel(DIMS + 250).unwrap();
-        assert!(midway < SLIDER_START && midway > dim_level(SLIDER_START), "{midway}");
+        assert!(
+            midway < SLIDER_START && midway > dim_level(SLIDER_START),
+            "{midway}"
+        );
         assert_eq!(app.panel(DIMS + 500), Some(dim_level(SLIDER_START)));
         assert_eq!(app.deadline(DIMS + 500), Some(OFF), "dim until it goes off");
         app.tick(OFF);
         assert!(!app.display_on());
-        assert_eq!(app.panel(OFF), Some(dim_level(SLIDER_START)), "the content goes dark under the dim backlight");
+        assert_eq!(
+            app.panel(OFF),
+            Some(dim_level(SLIDER_START)),
+            "the content goes dark under the dim backlight"
+        );
         app.tick(OFF + 365);
         assert_eq!(app.panel(OFF + 365), None);
-        assert_eq!(app.deadline(OFF + 365), None, "nothing to wait for on a dark panel");
+        assert_eq!(
+            app.deadline(OFF + 365),
+            None,
+            "nothing to wait for on a dark panel"
+        );
     }
 
     #[test]
@@ -818,8 +1008,16 @@ mod tests {
         app.touch(Touch::Down(x, y), &f, DIMS + 600);
         app.touch(Touch::Up, &f, DIMS + 650);
         assert_eq!(app.screen(), Screen::Settings, "the tap counts");
-        assert_eq!(app.panel(DIMS + 800), Some(SLIDER_START), "back to full brightness");
-        assert_eq!(app.deadline(DIMS + 800), Some(DIMS + 650 + DIMS), "the wait starts over");
+        assert_eq!(
+            app.panel(DIMS + 800),
+            Some(SLIDER_START),
+            "back to full brightness"
+        );
+        assert_eq!(
+            app.deadline(DIMS + 800),
+            Some(DIMS + 650 + DIMS),
+            "the wait starts over"
+        );
     }
 
     #[test]
@@ -840,7 +1038,11 @@ mod tests {
         // before the page takes a finger.
         unlock(&mut app, &f, 300);
         tap_at(&mut app, &f, &i, Action::Open(Screen::Settings), 1400);
-        assert_eq!(app.screen(), Screen::Settings, "a tap on the lit panel does");
+        assert_eq!(
+            app.screen(),
+            Screen::Settings,
+            "a tap on the lit panel does"
+        );
     }
 
     #[test]
@@ -855,15 +1057,33 @@ mod tests {
         assert!(app.display_on(), "the cable coming out lights the panel");
         assert!(!app.charge_shown(), "and shows the page");
         assert_eq!(app.panel(pulled), Some(SLIDER_START));
-        assert_eq!(app.deadline(pulled + 520), Some(pulled + DIMS), "for the screen-off time, once the content is up");
+        assert_eq!(
+            app.deadline(pulled + 520),
+            Some(pulled + DIMS),
+            "for the screen-off time, once the content is up"
+        );
         app.tick(pulled + DIMS);
-        assert_eq!(app.panel(pulled + DIMS + 500), Some(dim_level(SLIDER_START)));
+        assert_eq!(
+            app.panel(pulled + DIMS + 500),
+            Some(dim_level(SLIDER_START))
+        );
         let again = pulled + DIMS + 600;
         app.plugged(again, false);
-        assert_eq!(app.panel(again + 150), Some(SLIDER_START), "a cable coming out brightens a lit panel");
-        assert_eq!(app.deadline(again + 150), Some(again + DIMS), "and the wait starts over");
+        assert_eq!(
+            app.panel(again + 150),
+            Some(SLIDER_START),
+            "a cable coming out brightens a lit panel"
+        );
+        assert_eq!(
+            app.deadline(again + 150),
+            Some(again + DIMS),
+            "and the wait starts over"
+        );
         press(&mut app, Key::Power, again + 200);
-        assert!(!app.display_on(), "the power key turns it off at once, as ever");
+        assert!(
+            !app.display_on(),
+            "the power key turns it off at once, as ever"
+        );
     }
 
     #[test]
@@ -875,13 +1095,23 @@ mod tests {
         assert_eq!(app.panel(365), None);
         let plugged = 1000;
         app.plugged(plugged, true);
-        assert!(app.display_on() && app.charge_shown(), "the charging screen lights the panel");
-        assert_eq!(app.deadline(plugged + 1000), Some(0), "its tide moves a frame at a time");
+        assert!(
+            app.display_on() && app.charge_shown(),
+            "the charging screen lights the panel"
+        );
+        assert_eq!(
+            app.deadline(plugged + 1000),
+            Some(0),
+            "its tide moves a frame at a time"
+        );
         app.tick(plugged + CHARGE_MS - 1);
         assert!(app.display_on());
         app.tick(plugged + CHARGE_MS);
         assert!(!app.display_on(), "then the panel goes dark again");
-        assert!(app.panel(plugged + CHARGE_MS + 100).is_some(), "as the charging screen goes dark");
+        assert!(
+            app.panel(plugged + CHARGE_MS + 100).is_some(),
+            "as the charging screen goes dark"
+        );
         app.tick(plugged + CHARGE_MS + 365);
         assert_eq!(app.panel(plugged + CHARGE_MS + 365), None);
         assert!(app.charging.is_none(), "and goes with it");
@@ -895,7 +1125,10 @@ mod tests {
         assert!(app.display_on() && app.charge_shown());
         app.tick(1000 + CHARGE_MS);
         assert!(app.display_on(), "the panel stays lit");
-        assert!(!app.charge_shown(), "as the charging screen goes for the page");
+        assert!(
+            !app.charge_shown(),
+            "as the charging screen goes for the page"
+        );
         app.tick(1000 + CHARGE_MS + 300);
         assert!(app.charging.is_none());
     }
@@ -923,7 +1156,13 @@ mod tests {
 
     #[test]
     fn the_charging_screen_shows_the_level_over_a_tide_of_light() {
-        let (f, i) = (fonts(), DeviceInfo { battery: Some(battery_at(64, Charge::Charging)), ..info() });
+        let (f, i) = (
+            fonts(),
+            DeviceInfo {
+                battery: Some(battery_at(64, Charge::Charging)),
+                ..info()
+            },
+        );
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.tick(0);
         press(&mut app, Key::Power, 0);
@@ -937,7 +1176,10 @@ mod tests {
         };
         assert_eq!(px(0, 0), [0, 0, 0], "on black");
         let foot = px(W / 2, H - 4);
-        assert!(foot[2] > 40 && foot[2] > foot[0] * 4 && foot[2] > foot[1] * 2, "the tide's light at the foot is blue: {foot:?}");
+        assert!(
+            foot[2] > 40 && foot[2] > foot[0] * 4 && foot[2] > foot[1] * 2,
+            "the tide's light at the foot is blue: {foot:?}"
+        );
     }
 
     #[test]
@@ -945,8 +1187,15 @@ mod tests {
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.tick(0);
         press(&mut app, Key::Power, 1000);
-        assert!(!app.display_on(), "touches and keys take the screen as off at once");
-        assert_eq!(app.panel(1000), Some(SLIDER_START), "while its content goes dark under the backlight it had");
+        assert!(
+            !app.display_on(),
+            "touches and keys take the screen as off at once"
+        );
+        assert_eq!(
+            app.panel(1000),
+            Some(SLIDER_START),
+            "while its content goes dark under the backlight it had"
+        );
         assert_eq!(app.deadline(1000), Some(0), "a frame at a time");
         assert_eq!(app.panel(1300), Some(SLIDER_START));
         app.tick(1365);
@@ -963,7 +1212,10 @@ mod tests {
         press(&mut app, Key::Power, 1100);
         assert!(app.display_on(), "the power key lit it again");
         let level = app.curtain.level(1100);
-        assert!(level > 0.0 && level < 1.0, "from as dark as it had gone: {level}");
+        assert!(
+            level > 0.0 && level < 1.0,
+            "from as dark as it had gone: {level}"
+        );
         assert_eq!(app.curtain.level(1100 + 520), 1.0);
     }
 
@@ -976,7 +1228,14 @@ mod tests {
         app.tick(365);
         press(&mut app, Key::Power, 1000);
         let mut c = Canvas::new(W, H);
-        let light = |c: &Canvas| c.data.as_chunks::<4>().0.iter().map(|p| p[0] as u64 + p[1] as u64 + p[2] as u64).sum::<u64>();
+        let light = |c: &Canvas| {
+            c.data
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|p| p[0] as u64 + p[1] as u64 + p[2] as u64)
+                .sum::<u64>()
+        };
         app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 1000);
         let first = light(&c);
         app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 1260);
@@ -984,7 +1243,10 @@ mod tests {
         app.compose(&mut c, &f, &i, "12:00", "11月16日 周一", 1520);
         let full = light(&c);
         assert_eq!(first, 0, "black as the panel lights");
-        assert!(halfway > full / 2 && halfway < full, "{halfway} of {full} halfway through");
+        assert!(
+            halfway > full / 2 && halfway < full,
+            "{halfway} of {full} halfway through"
+        );
     }
 
     #[test]
@@ -1024,12 +1286,22 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = sideloading(&f, &i);
         press(&mut app, Key::Power, 0);
-        app.install(Event::Finished(Outcome::Installed { slot: Slot::A, wipe: false }), 100);
+        app.install(
+            Event::Finished(Outcome::Installed {
+                slot: Slot::A,
+                wipe: false,
+            }),
+            100,
+        );
         assert!(app.display_on(), "the finished install lit the panel");
         // A finger reaching for the phone lands on 重启到系统; within the
         // guard it only keeps the panel awake.
         assert!(tap_at(&mut app, &f, &i, Action::RebootTo(Target::System), 200).is_empty());
-        assert_eq!(app.screen(), Screen::Installing, "the stray tap did not reboot");
+        assert_eq!(
+            app.screen(),
+            Screen::Installing,
+            "the stray tap did not reboot"
+        );
         // Past the guard the lock is swiped away, and the same tap reboots.
         unlock(&mut app, &f, 400);
         assert_eq!(
@@ -1042,7 +1314,13 @@ mod tests {
     fn a_finger_held_as_the_panel_goes_off_lets_go() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Reboot, W, H, PPD);
-        let track = app.frame(&f, &i).hits.iter().find(|h| h.action == Action::Confirm(Confirm::Reboot)).unwrap().rect;
+        let track = app
+            .frame(&f, &i)
+            .hits
+            .iter()
+            .find(|h| h.action == Action::Confirm(Confirm::Reboot))
+            .unwrap()
+            .rect;
         let y = track.centre().1;
         app.touch(Touch::Down(track.x + track.h / 2.0, y), &f, 0);
         app.touch(Touch::Move(track.x + track.w * 0.6, y), &f, 10);
@@ -1050,7 +1328,10 @@ mod tests {
         press(&mut app, Key::Power, 20);
         assert_eq!(app.state.confirm, 0.0, "the knob is back at the start");
         app.touch(Touch::Move(track.x + track.w, y), &f, 30);
-        assert!(app.touch(Touch::Up, &f, 40).is_empty(), "no reboot from a dark panel");
+        assert!(
+            app.touch(Touch::Up, &f, 40).is_empty(),
+            "no reboot from a dark panel"
+        );
         assert!(!app.display_on());
     }
 
@@ -1072,15 +1353,31 @@ mod tests {
         press(&mut app, Key::Power, 0);
         app.install(Event::Checking { size: 1 << 20 }, 10);
         assert!(!app.display_on(), "reading the package does not light it");
-        app.install(Event::Image { kind: ImageKind::Dtbo, size: 1 << 20, partitions: slotted(&["dtbo"]) }, 20);
+        app.install(
+            Event::Image {
+                kind: ImageKind::Dtbo,
+                size: 1 << 20,
+                partitions: slotted(&["dtbo"]),
+            },
+            20,
+        );
         assert!(app.display_on(), "an image waiting for its partition does");
         app.tick(20 + 520);
         assert_eq!(app.deadline(20 + 520), Some(20 + DIMS));
-        app.state.install = Install::Flashing { partition: "dtbo".into(), stage: None };
+        app.state.install = Install::Flashing {
+            partition: "dtbo".into(),
+            stage: None,
+        };
         press(&mut app, Key::Power, 500);
         app.install(Event::Progress(Stage::Flashing { done: 1, total: 2 }), 510);
         assert!(!app.display_on(), "progress does not");
-        app.install(Event::Finished(Outcome::Flashed { partition: "dtbo".into(), slots: vec![Slot::A] }), 520);
+        app.install(
+            Event::Finished(Outcome::Flashed {
+                partition: "dtbo".into(),
+                slots: vec![Slot::A],
+            }),
+            520,
+        );
         assert!(app.display_on(), "the end does");
     }
 
@@ -1109,13 +1406,30 @@ mod tests {
         press(&mut app, Key::VolumeDown, 0);
         assert!(app.keys && app.lit().is_some(), "the light is on a control");
         assert!(app.key(Key::Power, 1000).is_empty());
-        assert_eq!(app.deadline(1000), Some(1000 + CHORD_MS), "it waits for volume down first");
-        assert!(app.tick(1000 + CHORD_MS).is_empty(), "the power key lands on the control");
-        assert_eq!(app.deadline(1000 + CHORD_MS), Some(1000 + LONG_PRESS_MS), "the hold is timed");
+        assert_eq!(
+            app.deadline(1000),
+            Some(1000 + CHORD_MS),
+            "it waits for volume down first"
+        );
+        assert!(
+            app.tick(1000 + CHORD_MS).is_empty(),
+            "the power key lands on the control"
+        );
+        assert_eq!(
+            app.deadline(1000 + CHORD_MS),
+            Some(1000 + LONG_PRESS_MS),
+            "the hold is timed"
+        );
         assert!(app.tick(1000 + LONG_PRESS_MS - 1).is_empty());
         assert_eq!(app.tick(1000 + LONG_PRESS_MS), vec![Effect::Haptic]);
-        assert!(app.power_menu.is_some(), "held long enough, the menu comes up");
-        assert!(app.key_up(Key::Power, 1500).is_empty(), "and the key does not take the control too");
+        assert!(
+            app.power_menu.is_some(),
+            "held long enough, the menu comes up"
+        );
+        assert!(
+            app.key_up(Key::Power, 1500).is_empty(),
+            "and the key does not take the control too"
+        );
         assert_eq!(app.screen(), Screen::Home);
     }
 
@@ -1132,7 +1446,10 @@ mod tests {
         app.tick(2000 + LONG_PRESS_MS);
         assert!(app.power_menu.is_some(), "held on, the menu comes up");
         assert!(app.key_up(Key::Power, 2600).is_empty());
-        assert!(app.display_on(), "let go after the menu, the panel stays lit");
+        assert!(
+            app.display_on(),
+            "let go after the menu, the panel stays lit"
+        );
     }
 
     /// With the lock up, the power key and volume up still come together for
@@ -1148,9 +1465,16 @@ mod tests {
             app.lock_now();
             assert!(app.locked());
             assert!(app.key(first, 1000).is_empty());
-            let second = if first == Key::Power { Key::VolumeUp } else { Key::Power };
+            let second = if first == Key::Power {
+                Key::VolumeUp
+            } else {
+                Key::Power
+            };
             assert!(app.key(second, 1100).is_empty());
-            assert!(app.power_menu.is_some(), "the two together bring the menu up over the lock, {first:?} first");
+            assert!(
+                app.power_menu.is_some(),
+                "the two together bring the menu up over the lock, {first:?} first"
+            );
             assert_eq!(app.chord, None, "and neither waits for the other any more");
         }
     }

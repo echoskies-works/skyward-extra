@@ -8,10 +8,10 @@
 //! put away, one all the way — and the finger moves it one for one, as the
 //! lock is moved up.
 
-use crate::tr;
 use super::*;
 use crate::icons::{self, Icon};
 use crate::theme::Palette;
+use crate::tr;
 
 /// How far down a finger drags, as a share of the screen's height, for
 /// letting go to leave the panel out rather than send it back.
@@ -80,14 +80,42 @@ pub enum ShadeKey {
 }
 
 pub(super) const SHADE_KEYS: [(ShadeKey, Icon, Text); 8] = [
-    (ShadeKey::Wlan, Icon::Wlan, tri("无线网络", "無線網路", "Wi-Fi")),
-    (ShadeKey::Theme, Icon::Moon, tri("深色模式", "深色模式", "Dark mode")),
+    (
+        ShadeKey::Wlan,
+        Icon::Wlan,
+        tri("无线网络", "無線網路", "Wi-Fi"),
+    ),
+    (
+        ShadeKey::Theme,
+        Icon::Moon,
+        tri("深色模式", "深色模式", "Dark mode"),
+    ),
     (ShadeKey::Mute, Icon::Bell, tri("静音", "靜音", "Silence")),
-    (ShadeKey::Vibrate, Icon::Phone, tri("振动", "振動", "Vibrate")),
-    (ShadeKey::Shot, Icon::Screenshot, tri("截图", "截圖", "Screenshot")),
-    (ShadeKey::Sleep, Icon::Lock, tri("熄屏", "熄屏", "Screen off")),
-    (ShadeKey::Restart, Icon::Replay, tri("重启", "重啟", "Restart")),
-    (ShadeKey::PowerOff, Icon::Power, tri("关机", "關機", "Power off")),
+    (
+        ShadeKey::Vibrate,
+        Icon::Phone,
+        tri("振动", "振動", "Vibrate"),
+    ),
+    (
+        ShadeKey::Shot,
+        Icon::Screenshot,
+        tri("截图", "截圖", "Screenshot"),
+    ),
+    (
+        ShadeKey::Sleep,
+        Icon::Lock,
+        tri("熄屏", "熄屏", "Screen off"),
+    ),
+    (
+        ShadeKey::Restart,
+        Icon::Replay,
+        tri("重启", "重啟", "Restart"),
+    ),
+    (
+        ShadeKey::PowerOff,
+        Icon::Power,
+        tri("关机", "關機", "Power off"),
+    ),
 ];
 
 /// Where the panel's parts stand on this screen, in pixels.
@@ -130,11 +158,26 @@ pub(super) struct Shade {
     /// The notices drawn once and kept, see-through where no card stands:
     /// laid as a layer over the page, so the page shows through.
     pub(super) body: Option<Canvas>,
+    /// The panel already mixed into the page it stands over, a row of it
+    /// for every row the panel covers. The page under a panel that is out
+    /// does not move, so the mixing is done once where the panel first
+    /// shows and every frame of the pull copies the rows of it out: a pull
+    /// is a fifth of a second of a finger, and mixing a screen of glass
+    /// for each frame of it is the whole of what that costs.
+    pub(super) blend: Option<Canvas>,
 }
 
 impl Shade {
     fn new() -> Shade {
-        Shade { open: 0.0, to: 0.0, spring: None, scroll: 0.0, head: None, body: None }
+        Shade {
+            open: 0.0,
+            to: 0.0,
+            spring: None,
+            scroll: 0.0,
+            head: None,
+            body: None,
+            blend: None,
+        }
     }
 }
 
@@ -158,7 +201,11 @@ pub(super) struct Banner {
 impl Banner {
     /// A card for a notice that has just come.
     pub(super) fn new(notice: Notification, since: u64) -> Banner {
-        Banner { notice, since, card: None }
+        Banner {
+            notice,
+            since,
+            card: None,
+        }
     }
 
     /// How much of it stands out: nought not yet or gone, one whole.
@@ -270,7 +317,9 @@ impl App {
     /// is: only the notices move under it.
     fn shade_scroll_by(&mut self, delta: f32) -> f32 {
         let max = self.shade_max_scroll();
-        let Some(shade) = self.shade.as_mut() else { return 0.0 };
+        let Some(shade) = self.shade.as_mut() else {
+            return 0.0;
+        };
         let before = shade.scroll;
         let next = (shade.scroll + delta).clamp(0.0, max);
         let moved = next - before;
@@ -291,8 +340,10 @@ impl App {
         let geom = self.shade_geom();
         let m = &self.theme().m;
         let pitch = m.dp(CARD_H_DP) + m.dp(CARD_GAP_DP);
-        let content =
-            m.dp(BODY_TOP_DP) + self.notifier.len() as f32 * pitch + m.dp(CLEAR_H_DP) + m.dp(CLEAR_GAP_DP);
+        let content = m.dp(BODY_TOP_DP)
+            + self.notifier.len() as f32 * pitch
+            + m.dp(CLEAR_H_DP)
+            + m.dp(CLEAR_GAP_DP);
         (content - geom.body_h).max(0.0)
     }
 
@@ -300,8 +351,14 @@ impl App {
     /// quickly, and settle it there.
     pub(super) fn shade_release(&mut self, now: u64, velocity: f32) {
         let flick = velocity.abs() > self.theme().m.dp(SHADE_FLICK_DP);
-        let Some(shade) = self.shade.as_mut() else { return };
-        let out = if flick { velocity > 0.0 } else { shade.open >= SHADE_SWIPE };
+        let Some(shade) = self.shade.as_mut() else {
+            return;
+        };
+        let out = if flick {
+            velocity > 0.0
+        } else {
+            shade.open >= SHADE_SWIPE
+        };
         let to = if out { 1.0 } else { 0.0 };
         shade.to = to;
         shade.spring = Some(Spring::new(now, shade.open - to, velocity, SHADE_PERIOD));
@@ -316,7 +373,11 @@ impl App {
                 None => shade.open,
                 Some(spring) => {
                     let (x, settled) = spring.at(now);
-                    if settled { shade.to } else { (shade.to + x).clamp(0.0, 1.0) }
+                    if settled {
+                        shade.to
+                    } else {
+                        (shade.to + x).clamp(0.0, 1.0)
+                    }
                 }
             },
         }
@@ -333,6 +394,7 @@ impl App {
         if let Some(shade) = self.shade.as_mut() {
             shade.head = None;
             shade.body = None;
+            shade.blend = None;
         }
     }
 
@@ -347,8 +409,15 @@ impl App {
         if open <= 0.0 {
             return;
         }
-        if self.shade.as_ref().is_some_and(|s| s.head.is_none() || s.body.is_none()) {
+        if self
+            .shade
+            .as_ref()
+            .is_some_and(|s| s.head.is_none() || s.body.is_none())
+        {
             self.shade_draw(f);
+            if let Some(shade) = self.shade.as_mut() {
+                shade.blend = None;
+            }
         }
         let geom = self.shade_geom();
         // The panel hangs from the status bar's foot and grows down from it:
@@ -359,24 +428,33 @@ impl App {
         let top = geom.top.round() as i32;
         let seen = (geom.panel_h() * open).round() as i32;
 
-        if let Some(head) = self.shade.as_ref().and_then(|s| s.head.as_ref()) {
-            let rows = seen.min(geom.head_h as i32);
-            if rows > 0 {
-                // Laid rather than put: the card rounds away from its
-                // corners, so the page has to show through where the card is
-                // not.
-                let part = head.crop(0, 0, head.w, rows as u32);
-                out.lay(&part, 0, top, 1.0);
+        let want = seen.min(geom.panel_h() as i32);
+        if want <= 0 || top >= out.h as i32 {
+            return;
+        }
+        // The panel mixed into the page once, at the size it will be pulled
+        // to. Laid rather than put: the card rounds away from its corners,
+        // so the page has to show through where the card is not — and that
+        // is the mix this keeps, so the frames after it are a copy.
+        if self.shade.as_ref().is_some_and(|s| s.blend.is_none()) {
+            let (head, body) = match self.shade.as_ref() {
+                Some(s) => (s.head.as_ref(), s.body.as_ref()),
+                None => (None, None),
+            };
+            let mut blend = Canvas::new(out.w, out.h);
+            blend.put_rows(out, top, top + geom.panel_h() as i32, top);
+            if let Some(head) = head {
+                blend.lay_rows(head, 0, top, geom.head_h as i32, 1.0);
+            }
+            if let Some(body) = body {
+                blend.lay_rows(body, 0, top + geom.head_h as i32, body.h as i32, 1.0);
+            }
+            if let Some(shade) = self.shade.as_mut() {
+                shade.blend = Some(blend);
             }
         }
-        if seen > geom.head_h as i32
-            && let Some(body) = self.shade.as_ref().and_then(|s| s.body.as_ref())
-        {
-            let rows = (seen - geom.head_h as i32).min(body.h as i32);
-            if rows > 0 {
-                let part = body.crop(0, 0, body.w, rows as u32);
-                out.lay(&part, 0, top + geom.head_h as i32, 1.0);
-            }
+        if let Some(blend) = self.shade.as_ref().and_then(|s| s.blend.as_ref()) {
+            out.put_rows(blend, top, top + want, top);
         }
     }
 
@@ -398,20 +476,43 @@ impl App {
         // shadow on a card that stands over its own page reads as a second
         // edge drawn round the first — the corners are the edge.
         let card = geom.card;
-        head.fill_round_rect(card.x, card.y - top, card.w, card.h, m.card_radius, pal.card);
-        icons::glyph(&mut head, Icon::Sun, geom.sun.0, geom.sun.1 - top, m.dp(SUN_DP), pal.subtitle);
+        head.fill_round_rect(
+            card.x,
+            card.y - top,
+            card.w,
+            card.h,
+            m.card_radius,
+            pal.card,
+        );
+        icons::glyph(
+            &mut head,
+            Icon::Sun,
+            geom.sun.0,
+            geom.sun.1 - top,
+            m.dp(SUN_DP),
+            pal.subtitle,
+        );
         let b = geom.bright;
         let (bx, by, bw, bh) = (b.x, b.y - top, b.w, b.h);
         let level = self.state.brightness.clamp(0.0, 1.0);
         head.fill_round_rect(bx, by, bw, bh, bh / 2.0, pal.track);
         head.fill_round_rect(bx, by, bw * level, bh, bh / 2.0, pal.accent);
-        head.fill_circle(bx + bw * level, by + bh / 2.0, m.dp(DOT_DP) / 2.0, Rgba::rgb(255, 255, 255));
+        head.fill_circle(
+            bx + bw * level,
+            by + bh / 2.0,
+            m.dp(DOT_DP) / 2.0,
+            Rgba::rgb(255, 255, 255),
+        );
 
         for (i, (key, icon, label)) in SHADE_KEYS.iter().enumerate() {
             let (r, lr) = &geom.tiles[i];
             let on = self.shade_key_on(*key);
             let fill = if on { pal.accent } else { pal.track };
-            let ink = if on { Rgba::rgb(255, 255, 255) } else { pal.subtitle };
+            let ink = if on {
+                Rgba::rgb(255, 255, 255)
+            } else {
+                pal.subtitle
+            };
             head.fill_round_rect(r.x, r.y - top, r.w, r.h, m.dp(TILE_R_DP), fill);
             icons::glyph(
                 &mut head,
@@ -449,7 +550,12 @@ impl App {
                 w as f32 / 2.0,
                 m.dp(BODY_TOP_DP) + m.dp(CARD_H_DP) / 2.0,
                 m.dp(CARD_BODY_DP),
-                Rgba { r: 255, g: 255, b: 255, a: 200 },
+                Rgba {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                    a: 200,
+                },
             );
         }
         for notice in self.notifier.iter() {
@@ -496,8 +602,12 @@ impl App {
     /// went, and one sent all the way back is let go whole, so nothing is
     /// drawn or kept for it.
     pub(super) fn settle_shade(&mut self, now: u64) {
-        let Some(shade) = self.shade.as_mut() else { return };
-        let Some(spring) = shade.spring.as_ref() else { return };
+        let Some(shade) = self.shade.as_mut() else {
+            return;
+        };
+        let Some(spring) = shade.spring.as_ref() else {
+            return;
+        };
         if !spring.at(now).1 {
             return;
         }
@@ -511,7 +621,9 @@ impl App {
 
     /// Send the panel back, from wherever it stands.
     pub(super) fn shade_away(&mut self, now: u64) {
-        let Some(shade) = self.shade.as_mut() else { return };
+        let Some(shade) = self.shade.as_mut() else {
+            return;
+        };
         shade.to = 0.0;
         shade.spring = Some(Spring::new(now, shade.open, 0.0, SHADE_PERIOD));
         self.dirty = true;
@@ -565,7 +677,10 @@ impl App {
                     fx.extend(self.act(action, now));
                     return fx;
                 }
-                self.drag = Drag::Shade { last: y, bar: false };
+                self.drag = Drag::Shade {
+                    last: y,
+                    bar: false,
+                };
             }
             Touch::Move(x, y) => match std::mem::replace(&mut self.drag, Drag::Idle) {
                 Drag::Shade { last, bar } => {
@@ -675,7 +790,11 @@ impl App {
     /// Whether a key of the control centre stands on.
     fn shade_key_on(&self, key: ShadeKey) -> bool {
         match key {
-            ShadeKey::Wlan => self.state.wlan.as_ref().is_some_and(|w| w.power == Power::On),
+            ShadeKey::Wlan => self
+                .state
+                .wlan
+                .as_ref()
+                .is_some_and(|w| w.power == Power::On),
             ShadeKey::Theme => self.state.dark,
             ShadeKey::Mute => self.state.muted,
             ShadeKey::Vibrate => self.state.vibrate,
@@ -686,12 +805,27 @@ impl App {
 
 /// One notice as a card, its left edge at `x` and its top at `y`: the mark
 /// it carries, its words, and the bar of work under way.
-fn notice_card(out: &mut Canvas, t: &Theme, f: &Fonts, notice: &Notification, x: f32, y: f32, w: f32) {
+fn notice_card(
+    out: &mut Canvas,
+    t: &Theme,
+    f: &Fonts,
+    notice: &Notification,
+    x: f32,
+    y: f32,
+    w: f32,
+) {
     let m = &t.m;
     let pal = &t.pal;
     out.fill_round_rect(x, y, w, m.dp(CARD_H_DP), m.dp(CARD_R_DP), pal.card);
     let (icon, ink) = notice_mark(notice, pal);
-    icons::glyph(out, icon, x + m.dp(CARD_ICON_X_DP), y + m.dp(CARD_TITLE_Y_DP), m.dp(CARD_ICON_DP), ink);
+    icons::glyph(
+        out,
+        icon,
+        x + m.dp(CARD_ICON_X_DP),
+        y + m.dp(CARD_TITLE_Y_DP),
+        m.dp(CARD_ICON_DP),
+        ink,
+    );
     out.text(
         &f.value,
         &notice.title,
@@ -754,7 +888,8 @@ fn shade_geom(t: &Theme) -> ShadeGeom {
     let pitch = tile + gap;
     let row1 = card_top + m.dp(TILE_TOP_DP);
     let row2 = row1 + tile + m.dp(TILE_LABEL_GAP_DP) + m.dp(TILE_LABEL_H_DP) + gap;
-    let card_h = row2 + tile + m.dp(TILE_LABEL_GAP_DP) + m.dp(TILE_LABEL_H_DP) + m.dp(CARD_FOOT_DP) - card_top;
+    let card_h = row2 + tile + m.dp(TILE_LABEL_GAP_DP) + m.dp(TILE_LABEL_H_DP) + m.dp(CARD_FOOT_DP)
+        - card_top;
     let head_foot = card_top + card_h + m.dp(HEAD_FOOT_DP);
     let body_h = (m.h as f32 - head_foot).max(0.0);
     let bright_x = inner_x + m.dp(SUN_DP) + m.dp(SUN_GAP_DP);
@@ -766,7 +901,12 @@ fn shade_geom(t: &Theme) -> ShadeGeom {
         let y = if row == 0 { row1 } else { row2 };
         tiles.push((
             Rect::new(x, y, tile, tile),
-            Rect::new(x, y + tile + m.dp(TILE_LABEL_GAP_DP), tile, m.dp(TILE_LABEL_H_DP)),
+            Rect::new(
+                x,
+                y + tile + m.dp(TILE_LABEL_GAP_DP),
+                tile,
+                m.dp(TILE_LABEL_H_DP),
+            ),
         ));
     }
     ShadeGeom {
@@ -774,8 +914,16 @@ fn shade_geom(t: &Theme) -> ShadeGeom {
         card: Rect::new(card_x, card_top, card_w, card_h),
         head_h: head_foot - top,
         body_h,
-        bright: Rect::new(bright_x, bright_y, inner_x + inner_w - bright_x, m.dp(BRIGHT_H_DP)),
-        sun: (inner_x + m.dp(SUN_DP) / 2.0, bright_y + m.dp(BRIGHT_H_DP) / 2.0),
+        bright: Rect::new(
+            bright_x,
+            bright_y,
+            inner_x + inner_w - bright_x,
+            m.dp(BRIGHT_H_DP),
+        ),
+        sun: (
+            inner_x + m.dp(SUN_DP) / 2.0,
+            bright_y + m.dp(BRIGHT_H_DP) / 2.0,
+        ),
         tiles,
         clear: Rect::new(
             margin,
@@ -812,7 +960,10 @@ mod tests {
         let from = top / 2.0;
         app.touch(Touch::Down(200.0, from), &f, 0);
         app.touch(Touch::Move(200.0, from + panel * 0.4), &f, 100);
-        assert!(app.shade_open(100) > 0.0, "the panel comes along with the finger");
+        assert!(
+            app.shade_open(100) > 0.0,
+            "the panel comes along with the finger"
+        );
         app.touch(Touch::Up, &f, 200);
         app.tick(1_000);
         assert_eq!(app.shade_open(1_000), 1.0, "past the mark it stands out");
@@ -841,7 +992,10 @@ mod tests {
         let f = crate::font::bundled();
         let mut app = App::new(Screen::Desktop, 400, 800, 2.0);
         app.touch(Touch::Down(200.0, 600.0), &f, 0);
-        assert!(!matches!(app.drag, Drag::Shade { .. }), "the page keeps the finger");
+        assert!(
+            !matches!(app.drag, Drag::Shade { .. }),
+            "the page keeps the finger"
+        );
         assert!(app.shade.is_none(), "and no panel came down");
     }
 
@@ -854,7 +1008,10 @@ mod tests {
         app.wake(0);
         app.lock_now();
         app.touch(Touch::Down(200.0, 4.0), &f, 0);
-        assert!(app.shade.is_none(), "the bar of a locked phone begins nothing");
+        assert!(
+            app.shade.is_none(),
+            "the bar of a locked phone begins nothing"
+        );
     }
 
     /// The panel begins at the status bar's foot, so the bar stands whole
@@ -863,7 +1020,11 @@ mod tests {
     fn the_panel_begins_under_the_status_bar() {
         let app = App::new(Screen::Desktop, 400, 800, 2.0);
         let t = app.theme();
-        assert_eq!(app.shade_geom().top, t.m.status_cy * 2.0, "the bar keeps its own rows");
+        assert_eq!(
+            app.shade_geom().top,
+            t.m.status_cy * 2.0,
+            "the bar keeps its own rows"
+        );
     }
 
     /// A key of the control centre does what it says: the WLAN one turns
@@ -876,8 +1037,15 @@ mod tests {
         pulled(&mut app, &f);
         let (r, _) = app.shade_geom().tiles[0];
         let fx = app.touch(Touch::Down(r.x + r.w / 2.0, r.y + r.h / 2.0), &f, 1_100);
-        assert_eq!(fx, vec![Effect::Wlan(false)], "the key asks for the radio to go off");
-        assert_eq!(app.state.wlan.as_ref().expect("still there").power, Power::Off);
+        assert_eq!(
+            fx,
+            vec![Effect::Wlan(false)],
+            "the key asks for the radio to go off"
+        );
+        assert_eq!(
+            app.state.wlan.as_ref().expect("still there").power,
+            Power::Off
+        );
     }
 
     /// One tap on the panel's own key takes every notice at once.
@@ -904,7 +1072,11 @@ mod tests {
         app.touch(Touch::Down(200.0, 700.0), &f, 1_100);
         app.touch(Touch::Up, &f, 1_200);
         app.tick(2_000);
-        assert_eq!(app.screen(), before, "the page under the panel is left as it was");
+        assert_eq!(
+            app.screen(),
+            before,
+            "the page under the panel is left as it was"
+        );
         assert_eq!(app.shade_open(2_000), 1.0, "and the panel stays out");
     }
 
@@ -916,11 +1088,23 @@ mod tests {
         let f = crate::font::bundled();
         let info = crate::app::testing::info();
         let mut app = App::new(Screen::Desktop, 400, 800, 2.0);
-        app.notify(Notification::event(Origin::System, "battery", "电量偏低", "剩 15%"));
+        app.notify(Notification::event(
+            Origin::System,
+            "battery",
+            "电量偏低",
+            "剩 15%",
+        ));
         assert!(app.banner.is_some(), "it stands over the page");
         assert_eq!(app.notifier.len(), 1, "and is in the list all the same");
         let mut shot = Canvas::new(400, 800);
-        app.compose(&mut shot, &f, &info, "21:40", "11月16日 周一", BANNER_MOVE_MS);
+        app.compose(
+            &mut shot,
+            &f,
+            &info,
+            "21:40",
+            "11月16日 周一",
+            BANNER_MOVE_MS,
+        );
         app.tick(BANNER_HOLD_MS + BANNER_MOVE_MS + 1);
         assert!(app.banner.is_none(), "and then it is gone");
         assert_eq!(app.notifier.len(), 1, "leaving the notice where it stands");
@@ -933,8 +1117,16 @@ mod tests {
         let f = crate::font::bundled();
         let mut app = App::new(Screen::Desktop, 400, 800, 2.0);
         pulled(&mut app, &f);
-        app.notify(Notification::event(Origin::System, "battery", "电量偏低", "剩 15%"));
-        assert!(app.banner.is_none(), "nothing comes over a panel already out");
+        app.notify(Notification::event(
+            Origin::System,
+            "battery",
+            "电量偏低",
+            "剩 15%",
+        ));
+        assert!(
+            app.banner.is_none(),
+            "nothing comes over a panel already out"
+        );
         assert_eq!(app.notifier.len(), 1, "but it stands in the list");
     }
 
@@ -946,8 +1138,16 @@ mod tests {
         app.sleep(0);
         app.wake(0);
         app.lock_now();
-        app.notify(Notification::event(Origin::System, "battery", "电量偏低", "剩 15%"));
-        assert!(app.banner.is_none(), "the locked phone keeps it to the list");
+        app.notify(Notification::event(
+            Origin::System,
+            "battery",
+            "电量偏低",
+            "剩 15%",
+        ));
+        assert!(
+            app.banner.is_none(),
+            "the locked phone keeps it to the list"
+        );
         assert_eq!(app.notifier.len(), 1);
     }
 
@@ -963,11 +1163,17 @@ mod tests {
             app.notifier.post(notice);
         }
         pulled(&mut app, &f);
-        assert!(app.shade_max_scroll() > 0.0, "there is more than the panel holds");
+        assert!(
+            app.shade_max_scroll() > 0.0,
+            "there is more than the panel holds"
+        );
         let before = app.shade_scrolled();
         app.touch(Touch::Down(200.0, 700.0), &f, 1_100);
         app.touch(Touch::Move(200.0, 600.0), &f, 1_150);
-        assert!(app.shade_scrolled() > before, "the notices moved up the panel");
+        assert!(
+            app.shade_scrolled() > before,
+            "the notices moved up the panel"
+        );
         app.touch(Touch::Up, &f, 1_200);
         app.tick(2_000);
         assert_eq!(app.shade_open(2_000), 1.0, "and the panel is still out");
@@ -997,7 +1203,10 @@ mod tests {
         app.shade.as_mut().expect("the panel is out").scroll = max;
         app.touch(Touch::Down(200.0, 700.0), &f, 1_100);
         app.touch(Touch::Move(200.0, 60.0), &f, 1_150);
-        assert!(app.shade_open(1_150) < 1.0, "past the list's end the panel comes back");
+        assert!(
+            app.shade_open(1_150) < 1.0,
+            "past the list's end the panel comes back"
+        );
         assert_eq!(app.shade_scrolled(), max, "and the list stays where it was");
         app.touch(Touch::Up, &f, 1_200);
         app.tick(2_000);
@@ -1048,7 +1257,11 @@ mod tests {
         app.key(Key::Back, 1_100);
         app.tick(2_000);
         assert!(app.shade.is_none(), "the panel goes first");
-        assert_eq!(app.screen(), before, "and the page under it is left where it was");
+        assert_eq!(
+            app.screen(),
+            before,
+            "and the page under it is left where it was"
+        );
     }
 
     /// The control centre is a card of the pages' own kind: the same room
@@ -1060,9 +1273,17 @@ mod tests {
         let t = app.theme();
         let geom = app.shade_geom();
         assert_eq!(geom.card.x, t.m.margin, "inset from the left edge");
-        assert_eq!(geom.card.x + geom.card.w, t.m.w as f32 - t.m.margin, "and the right");
+        assert_eq!(
+            geom.card.x + geom.card.w,
+            t.m.w as f32 - t.m.margin,
+            "and the right"
+        );
         assert!(geom.card.y > geom.top, "it floats below the bar");
-        assert_eq!(geom.card.w, t.m.w as f32 - 2.0 * t.m.margin, "as wide as a notice");
+        assert_eq!(
+            geom.card.w,
+            t.m.w as f32 - 2.0 * t.m.margin,
+            "as wide as a notice"
+        );
         let (first, _) = geom.tiles[0];
         assert!(first.x > geom.card.x, "the keys keep the card's own room");
         assert!(
