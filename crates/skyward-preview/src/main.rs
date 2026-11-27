@@ -47,6 +47,25 @@ fn lang() -> Lang {
     *LANG.get().expect("the language is chosen before any page is drawn")
 }
 
+/// The shots a run is told to write, each `--only <needle>` adding one; a
+/// shot is written when its file name holds any of them, and every shot is
+/// written when the run was told none. Empty on the usual run.
+///
+/// This is here because a run draws all of them: the pictures are cheap but
+/// not free, and a change that moves one page should not have to wait for
+/// the three hundred and sixty that did not move.
+static ONLY: OnceLock<Vec<String>> = OnceLock::new();
+
+/// Whether the run was asked for the shot `path` names.
+fn wanted(path: &Path) -> bool {
+    let only = ONLY.get().map(Vec::as_slice).unwrap_or(&[]);
+    if only.is_empty() {
+        return true;
+    }
+    let name = path.file_stem().map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default();
+    only.iter().any(|needle| name.contains(needle.as_str()))
+}
+
 /// The day the lock stands over the time, in the language the shots are
 /// drawn in: the words of it are the one thing on the lock that a language
 /// changes, so a shot taken in English must not show the Chinese.
@@ -168,6 +187,12 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let out = out_dir(&args);
     std::fs::create_dir_all(&out)?;
+    // Every `--only` names a part of a file name; a run told none writes
+    // them all. Read before anything is drawn, so the pages it skips cost
+    // nothing but the drawing.
+    let only: Vec<String> =
+        args.iter().enumerate().filter(|(k, _)| *k > 0 && args[k - 1] == "--only").map(|(_, needle)| needle.clone()).collect();
+    ONLY.set(only).ok();
     let lang = match args.iter().position(|a| a == "--lang") {
         Some(k) => Lang::for_locale(args.get(k + 1).ok_or_else(|| anyhow!("--lang needs a locale"))?)?,
         None => Lang::Hans,
@@ -231,7 +256,6 @@ fn main() -> Result<()> {
         Some("--calibrate") => {
             let path = out.join("calibrate.png");
             write_png(&path, &calibrate(&fonts, &light)?)?;
-            println!("wrote {}", path.display());
             return Ok(());
         }
         Some("--match") => {
@@ -278,7 +302,6 @@ fn main() -> Result<()> {
         app.state.pattern = pattern.to_vec();
         let path = out.join(format!("{name}.png"));
         write_png(&path, &whole_page(&mut app, &fonts, info))?;
-        println!("wrote {}", path.display());
     }
     // The charging screen, which no page can be photographed as: it is drawn
     // by the millisecond, so it comes as a run of frames rather than a shot.
@@ -425,7 +448,6 @@ fn main() -> Result<()> {
             app.compose(&mut page, &fonts, &info, CLOCK, &shot_date(), now);
         }
         write_png(&path, &page)?;
-        println!("wrote {}", path.display());
     }
 
     // The clock's settings, opened by the gear at the page's top right: the
@@ -445,7 +467,6 @@ fn main() -> Result<()> {
         );
         let path = out.join(format!("{name}.png"));
         write_png(&path, &whole_page(&mut app, &fonts, &info))?;
-        println!("wrote {}", path.display());
     }
 
     // The player's two faces, neither with anything behind it yet: the songs
@@ -475,7 +496,6 @@ fn main() -> Result<()> {
         app.compose(&mut c, &fonts, &info, "21:40", &shot_date(), 200);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &c)?;
-        println!("wrote {}", path.display());
     }
 
     // The calculator's other face: the units page, named and not built.
@@ -486,7 +506,6 @@ fn main() -> Result<()> {
     app.compose(&mut c, &fonts, &info, "21:40", &shot_date(), 200);
     let path = out.join("00-02-calculator-convert-light.png");
     write_png(&path, &c)?;
-    println!("wrote {}", path.display());
 
     // The tasks page's three faces: the processes as a list that holds
     // none, the services it keeps, and the performance. A desk build has
@@ -538,7 +557,6 @@ fn main() -> Result<()> {
         app.compose(&mut c, &fonts, &info, "21:40", &shot_date(), 200);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &c)?;
-        println!("wrote {}", path.display());
     }
 
     // The Aether store's three faces, none with a shelf behind it yet: what
@@ -558,7 +576,6 @@ fn main() -> Result<()> {
         app.compose(&mut c, &fonts, &info, "21:40", &shot_date(), 200);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &c)?;
-        println!("wrote {}", path.display());
     }
 
     // The same page half way through a change: a word touched, so the face
@@ -587,7 +604,6 @@ fn main() -> Result<()> {
         app.compose(&mut c, &fonts, &info, "21:40", &shot_date(), now);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &c)?;
-        println!("wrote {}", path.display());
     }
 
     // The lock screen, the page under it kept soft: over a page of the
@@ -632,7 +648,6 @@ fn main() -> Result<()> {
         app.compose(&mut shot, &fonts, &told, "21:40", &shot_date(), 0);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &shot)?;
-        println!("wrote {}", path.display());
     }
 
     // The panel pulled down from the status bar: caught half way, out whole
@@ -667,7 +682,6 @@ fn main() -> Result<()> {
         app.compose(&mut shot, &fonts, &info, "21:40", &shot_date(), 1000);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &shot)?;
-        println!("wrote {}", path.display());
     }
 
     // The lock on its way off: a finger drags it up and every frame stands
@@ -709,7 +723,6 @@ fn main() -> Result<()> {
         app.compose(&mut shot, &fonts, &info, "21:40", &shot_date(), 0);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &shot)?;
-        println!("wrote {}", path.display());
     }
 
     // The screen kept on, which warns about burn-in.
@@ -717,7 +730,6 @@ fn main() -> Result<()> {
     app.state.screen_off = SCREEN_OFF.iter().position(Option::is_none).expect("one choice keeps the screen on");
     let path = out.join("14-screen-off-never-dark.png");
     write_png(&path, &whole_page(&mut app, &fonts, &info))?;
-    println!("wrote {}", path.display());
 
     // The menu that runs before anything else does, drawn by the code that
     // goes on the phone rather than by the page renderer: the list, the
@@ -757,7 +769,6 @@ fn main() -> Result<()> {
             canvas.data.copy_from_slice(&asmoday::render(w, h, view, panel_lang));
             let path = outside.join(format!("{name}-{suffix}.png"));
             write_png(&path, &canvas)?;
-            println!("wrote {}", path.display());
         }
     }
 
@@ -883,7 +894,6 @@ fn main() -> Result<()> {
         app.state.install = install;
         let path = out.join(format!("{name}.png"));
         write_png(&path, &whole_page(&mut app, &fonts, &info))?;
-        println!("wrote {}", path.display());
     }
 
     // The mount page as it opens after boot, after an unmount that failed,
@@ -907,7 +917,6 @@ fn main() -> Result<()> {
         }
         let path = out.join(format!("{name}.png"));
         write_png(&path, &whole_page(&mut app, &fonts, info))?;
-        println!("wrote {}", path.display());
     }
 
     // The pages the remaining features open, each with what it would show.
@@ -1621,7 +1630,6 @@ fn main() -> Result<()> {
         set(&mut app);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &whole_page(&mut app, &fonts, &info))?;
-        println!("wrote {}", path.display());
     }
 
     // The panel mid-gesture, to set beside recordings of the same moves.
@@ -1866,7 +1874,6 @@ fn main() -> Result<()> {
             app.compose(&mut c, &fonts, &info, CLOCK, &shot_date(), now);
             let path = out.join(format!("{name}.png"));
             write_png(&path, &c)?;
-            println!("wrote {}", path.display());
             Ok(())
         }));
         match drew {
@@ -1940,7 +1947,6 @@ fn main() -> Result<()> {
             let name = format!("00-08-going-home-{}-light", i + 5);
             let path = out.join(format!("{name}.png"));
             write_png(&path, &c)?;
-            println!("wrote {}", path.display());
         }
     }
 
@@ -1956,7 +1962,6 @@ fn main() -> Result<()> {
         app.compose(&mut shot, &fonts, &info, "21:40", &shot_date(), ms);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &shot)?;
-        println!("wrote {}", path.display());
     }
 
     // The clock's two counts running with its page left behind: the first
@@ -1978,7 +1983,6 @@ fn main() -> Result<()> {
         app.compose(&mut shot, &fonts, &info, "21:40", &shot_date(), 1_000);
         let path = out.join("00-14-clock-away-light.png");
         write_png(&path, &shot)?;
-        println!("wrote {}", path.display());
     }
 
     // The battery running down, said on a card: one for each of the three
@@ -2010,7 +2014,6 @@ fn main() -> Result<()> {
         app.compose(&mut shot, &fonts, &down, "21:40", &shot_date(), 800);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &shot)?;
-        println!("wrote {}", path.display());
     }
 
     // A desktop icon under a finger: a moment after it lands the tile
@@ -2031,7 +2034,6 @@ fn main() -> Result<()> {
         app.compose(&mut shot, &fonts, &info, "21:40", &shot_date(), 600);
         let path = out.join("00-16-icon-hold-light.png");
         write_png(&path, &shot)?;
-        println!("wrote {}", path.display());
     }
 
     // A page growing out of the desktop icon it was tapped on, and folding
@@ -2082,7 +2084,6 @@ fn main() -> Result<()> {
         app.compose(&mut shot, &fonts, &info, CLOCK, &shot_date(), now);
         let path = out.join(format!("{name}.png"));
         write_png(&path, &shot)?;
-        println!("wrote {}", path.display());
     }
 
     // The home page's card with each notice it gives: a battery too low to
@@ -2097,14 +2098,12 @@ fn main() -> Result<()> {
         app.set_boot_slots(Ok(BootSlots { active: Slot::A, bootable: [true, true], successful: [true, true] }));
         let path = out.join(format!("{name}.png"));
         write_png(&path, &whole_page(&mut app, &fonts, &wanting))?;
-        println!("wrote {}", path.display());
     }
 
     // The status bar's battery in each state, light and dark, one bar a row.
     for (name, theme) in [("66-battery-light", light), ("67-battery-dark", Theme::dark(w, h, ppd))] {
         let path = out.join(format!("{name}.png"));
         write_png(&path, &battery_states(&fonts, &theme))?;
-        println!("wrote {}", path.display());
     }
     Ok(())
 }
@@ -2594,7 +2593,6 @@ fn charge_shot(out: &Path, f: &Fonts, t: &Theme, lang: Lang, battery: &Battery, 
     skyward_ui::charge::draw(&mut c, &art, m, battery.level, ms, &dither);
     let path = out.join(format!("{name}.png"));
     write_png(&path, &c)?;
-    println!("wrote {}", path.display());
     Ok(())
 }
 
@@ -2650,6 +2648,11 @@ fn font_path() -> Result<PathBuf> {
 fn write_png(path: &Path, canvas: &Canvas) -> Result<()> {
     let (w, h, bytes) = (canvas.w, canvas.h, canvas.data.len() as u64);
     let shown = path.display();
+    if !wanted(path) {
+        // Drawn, and left on disk as it was: a run told to write some shots
+        // still walks past the rest, so nothing here may change them.
+        return Ok(());
+    }
     if w == 0 || h == 0 || bytes != u64::from(w) * u64::from(h) * 4 {
         return Err(anyhow!("{shown}: a {w}x{h} canvas of {bytes} bytes is not a picture"));
     }
@@ -2684,6 +2687,9 @@ fn write_png(path: &Path, canvas: &Canvas) -> Result<()> {
             }
         }
     }
+    // Said here rather than at each call, so a shot the run was not asked
+    // for leaves no line claiming it was written.
+    println!("wrote {shown}");
     Ok(())
 }
 
