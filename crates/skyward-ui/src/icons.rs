@@ -627,25 +627,44 @@ const SQUARE: &[Part] = &[add(Shape::Fill("M7.4,7.4H20.6V20.6H7.4Z"))];
 const RING: &[Part] = &[add(Shape::EvenOdd(
     "M5.6,14A8.4,8.4 0 1 1 22.4,14A8.4,8.4 0 1 1 5.6,14Z M9.4,14A4.6,4.6 0 1 0 18.6,14A4.6,4.6 0 1 0 9.4,14Z",
 ))];
-
-/// A sun behind a cloud: what a weather page shows. Drawn the stock way
-/// rather than copied, since the stock Settings has no weather of its own:
-/// the sun's disc and the four rays it throws, then the cloud in front of
-/// it built from rounds and a flat foot.
-const WEATHER: &[Part] = &[
-    // The sun's disc, and the four rays clear of the cloud.
-    add(Shape::Fill("M11.2,8.5A3.3,3.3 0 1 1 11.2,15.1A3.3,3.3 0 1 1 11.2,8.5Z")),
-    add(Shape::Line("M11.2,5.0V6.8", 1.5)),
-    add(Shape::Line("M11.2,16.8V18.6", 1.5)),
-    add(Shape::Line("M5.3,11.8H7.1", 1.5)),
-    add(Shape::Line("M15.3,11.8H17.1", 1.5)),
-    // The cloud's three rounds and the foot they stand on, filled one over
-    // the other: the union is the cloud.
-    add(Shape::Fill("M11.6,17.5A2.9,2.9 0 1 1 11.6,23.3A2.9,2.9 0 1 1 11.6,17.5Z")),
-    add(Shape::Fill("M16.6,15.3A3.7,3.7 0 1 1 16.6,22.7A3.7,3.7 0 1 1 16.6,15.3Z")),
-    add(Shape::Fill("M21.0,18.6A2.5,2.5 0 1 1 21.0,23.6A2.5,2.5 0 1 1 21.0,18.6Z")),
-    add(Shape::Fill("M11.5,20.6H21.0V23.8H11.5Z")),
-];
+/// A cloud with the sun behind it, from the user's `weather.svg`: the sun's
+/// disc and the three rays clear of the cloud on the left, the cloud's
+/// outline across the front of it, and the three drops struck down out of
+/// its foot. The drawing is a heavy line with its inside left open — the
+/// cloud and the sun alike are rings rather than filled shapes — so the
+/// whole is cut once by the odd-even rule.
+///
+/// It is drawn in its own 1024-unit box rather than this file's 28, as
+/// [`DRUM`] is, and its marks stop short of that box's edges: they cover
+/// five sixths of it. So it takes a greater share of a tile than the drums
+/// do, and still stands the same width on the desktop.
+const WEATHER: &[Part] = &[add(Shape::EvenOdd(
+    "M554.752 256.426667c135.168 0 211.882667 89.472 223.018667 197.546666h3.413333\
+     a157.312 157.312 0 0 1 157.525333 157.141334 157.312 157.312 0 0 1-157.525333 157.098666\
+     l-26.410667-0.042666-66.133333 111.957333a32 32 0 0 1-57.344-28.074667l1.92-3.925333 47.701333-79.957333\
+     h-91.136l-66.218666 111.957333a32 32 0 0 1-57.344-28.074667l1.962666-3.925333 47.701334-79.957333\
+     H424.746667l-66.218667 111.957333a32 32 0 0 1-57.344-28.074667\
+     l1.92-3.925333 47.701333-79.957333-22.528 0.042666\
+     a157.312 157.312 0 0 1-157.525333-157.098666 157.312 157.312 0 0 1 157.525333-157.141334h3.413334\
+     c11.221333-108.8 87.893333-197.546667 223.061333-197.546666z m0 63.914666\
+     c-88.405333 0-165.418667 69.674667-165.418667 165.930667 0 15.232-13.610667 27.221333-29.184 27.221333\
+     h-29.44\
+     c-53.845333 0-97.450667 42.709333-97.450666 95.402667 0 52.693333 43.605333 95.445333 97.408 95.445333\
+     h448.128c53.802667 0 97.408-42.752 97.408-95.445333s-43.605333-95.402667-97.408-95.402667h-29.44\
+     c-15.573333 0-29.184-11.946667-29.184-27.221333 0-97.493333-77.056-165.973333-165.418667-165.973333z \
+     m-368.426667 113.408a32 32 0 0 1-13.397333 39.850667l-3.882667 1.962667-39.552 16.341333\
+     a32 32 0 0 1-28.373333-57.173333l3.882667-1.962667 39.552-16.341333a32 32 0 0 1 41.813333 17.322666z \
+     m276.778667-206.250666l-7.296 2.474666a248.405333 248.405333 0 0 0-62.293333 32.341334\
+     A104.192 104.192 0 0 0 274.346667 418.773333\
+     a196.736 196.736 0 0 0-58.325334 27.306667 168.192 168.192 0 0 1 247.082667-218.538667z \
+     m-337.621333 1.322666l4.48 1.493334 39.509333 16.384a32 32 0 0 1-19.968 60.586666\
+     l-4.522667-1.450666-39.509333-16.384a32 32 0 0 1 20.010667-60.586667z m162.773333-127.402666\
+     l1.92 3.882666 16.384 39.552a32 32 0 0 1-57.173333 28.373334l-1.962667-3.882667-16.384-39.552\
+     a32 32 0 0 1 57.173333-28.373333z m185.728-13.568a32 32 0 0 1 18.816 37.290666\
+     l-1.493333 4.48-16.341334 39.552a32 32 0 0 1-60.629333-20.010666l1.493333-4.48 16.341334-39.552\
+     a32 32 0 0 1 41.813333-17.28\
+     z",
+))];
 
 /// The stopwatch's four keys, as the watch face's own drawing tool drew
 /// them — the same 1024-unit box, scaled into this file's 28.
@@ -778,7 +797,7 @@ fn outline(icon: Icon) -> (&'static [Part], f32) {
         Icon::Tasks => (DRUM, 0.69),
         Icon::Snare => (SNARE, 0.69),
         Icon::Store => (STORE, 1.0),
-        Icon::Weather => (WEATHER, 1.0),
+        Icon::Weather => (WEATHER, 0.83),
         Icon::Dot => (DOT, 1.0),
         Icon::Square => (SQUARE, 1.0),
         Icon::Ring => (RING, 1.0),
@@ -798,13 +817,13 @@ fn outline(icon: Icon) -> (&'static [Part], f32) {
 }
 
 /// The box `icon`'s paths are laid out in: this file's 28 units for every
-/// glyph drawn here, and the drawing's own box for the two the user handed
+/// glyph drawn here, and the drawing's own box for the three the user handed
 /// over whole. A box wider than it is tall is held to the longer of its
 /// sides, so what is drawn in it keeps the proportions it was drawn with
 /// rather than being stretched to the tile.
 fn laid_in(icon: Icon) -> (f32, f32) {
     match icon {
-        Icon::Tasks => (1024.0, 1024.0),
+        Icon::Tasks | Icon::Weather => (1024.0, 1024.0),
         Icon::Snare => (1055.0, 1024.0),
         _ => (BOX, BOX),
     }
