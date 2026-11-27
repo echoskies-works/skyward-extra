@@ -24,6 +24,11 @@ pub struct Palette {
     pub mono_icon: Rgba,
     pub danger: Rgba,
     pub danger_soft: Rgba,
+    /// The inks a process row's mark takes, one for each way an app stands:
+    /// at work, at work but held back, and frozen with its state kept.
+    pub state_run: Rgba,
+    pub state_eco: Rgba,
+    pub state_held: Rgba,
     /// Titles and values on the parameters page and captions inside cards, a
     /// step softer than `text`.
     pub info: Rgba,
@@ -268,6 +273,12 @@ const LIGHT: Palette = Palette {
     mono_icon: Rgba::rgb(179, 179, 179),
     danger: Rgba::rgb(230, 66, 60),
     danger_soft: Rgba::rgb(253, 236, 235),
+    // A process row's mark: the blue the stock Settings puts on a chosen
+    // item, the green of a battery on the cable, and a grey light enough to
+    // read as held back rather than as dim.
+    state_run: Rgba::rgb(52, 130, 255),
+    state_eco: Rgba::rgb(29, 205, 58),
+    state_held: Rgba::rgb(164, 169, 176),
     info: Rgba::rgb(51, 51, 51),
     outline: Rgba::rgb(102, 102, 102),
     spec_label: Rgba::rgb(127, 127, 127),
@@ -322,6 +333,12 @@ const DARK: Palette = Palette {
     mono_icon: Rgba::rgb(110, 110, 110),
     danger: Rgba::rgb(255, 92, 84),
     danger_soft: Rgba::rgb(52, 24, 24),
+    // The same three over a dark card: a step lighter, so that blue and green
+    // stay as clear of the card as they are over a white one, and the grey
+    // stays the one that reads as held back.
+    state_run: Rgba::rgb(91, 157, 255),
+    state_eco: Rgba::rgb(45, 217, 74),
+    state_held: Rgba::rgb(118, 123, 130),
     info: Rgba::rgb(214, 214, 214),
     outline: Rgba::rgb(140, 140, 140),
     spec_label: Rgba::rgb(128, 128, 128),

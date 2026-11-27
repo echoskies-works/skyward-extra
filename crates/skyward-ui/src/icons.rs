@@ -73,8 +73,11 @@ pub enum Icon {
     Music,
     /// A globe stood on its rings, as a browser shows one.
     Browser,
-    /// A monitor on its foot, as a tasks page shows one.
+    /// A drum kit: what the tasks page answers to on the desktop.
     Tasks,
+    /// A snare drum with its sticks: the mark a process row carries until
+    /// each app brings a picture of its own.
+    Snare,
     /// A shopping bag, its handles over its mouth: the Aether store's own.
     Store,
     /// A sun behind a cloud: what a weather page shows.
@@ -488,23 +491,117 @@ const BROWSER: &[Part] = &[add(Shape::Fill(
     C4.5,19.244,8.756,23.5,14,23.5C19.244,23.5,23.5,19.244,23.5,14C23.5,8.756,19.244,4.5,14,4.5Z"
 ))];
 
-/// A monitor on its foot: the screen, the neck under it and the stand, the
-/// screen's glass cut out of the frame. The drawing is the user's own
-/// `taskmgr.svg`, laid in this box at 19 units across: the drawing fills its
-/// own box edge to edge, so it is set a little smaller than the glyphs that
-/// keep a margin and reach the same size on a tile.
+/// A drum kit, from the user's `drum.svg`: the bass drum in front, the two
+/// toms over it and the cymbals on their stands either side. The drawing is
+/// in its own 1024-unit box rather than this file's 28, so [`laid_in`] keeps
+/// it to its own and it is set at four fifths of a tile: a kit that fills its
+/// box edge to edge would sit heavier than the glyphs drawn for this file if
+/// it filled the tile whole.
 ///
-/// Both of its subpaths are written as one outline cut by the odd-even rule:
-/// the frame and the screen inside it are one path each, and where the two
-/// go round together the screen is left out.
-const TASKS: &[Part] = &[add(Shape::EvenOdd(
-    "M20.909,5.364L7.091,5.364A2.591,2.591 0 0 0 4.5,7.955L4.5,16.591\
-     A2.591,2.591 0 0 0 7.091,19.182L13.136,19.182L13.136,20.909L10.545,20.909\
-     A0.864,0.864 0 0 0 10.545,22.636L17.455,22.636A0.864,0.864 0 0 0 17.455,20.909L14.864,20.909\
-     L14.864,19.182L20.909,19.182A2.591,2.591 0 0 0 23.5,16.591L23.5,7.955\
-     A2.591,2.591 0 0 0 20.909,5.364ZM21.773,16.591A0.864,0.864 0 0 1 20.909,17.455L7.091,17.455\
-     A0.864,0.864 0 0 1 6.227,16.591L6.227,7.955A0.864,0.864 0 0 1 7.091,7.091L20.909,7.091\
-     A0.864,0.864 0 0 1 21.773,7.955L21.773,16.591Z",
+/// Its outline is one path cut by the odd-even rule — the middle of the bass
+/// drum's head and the holes its stand's feet leave are not part of it — and
+/// the round in the middle of that head is a second path laid back in over
+/// the hole the first one leaves.
+const DRUM: &[Part] = &[
+    add(Shape::EvenOdd(
+    "M1024.349697 102.038216a17.066101 17.066101 0 0 0-17.066101-17.066101\
+     c-74.476463 0-104.308007 5.614747-119.462704 15.001103-15.154697-9.386355-44.986241-15.001102-119.462704-15.001103\
+     a17.066101 17.066101 0 1 0 0 34.132201\
+     c85.961949 0 100.160945 8.089332 102.157678 10.017801 0.255992 0.853305 0.255992 3.583881 0.238925 5.580615\
+     v113.062917L647.444864 306.677829\
+     a29.012371 29.012371 0 0 0-17.868207 13.601682 29.097702 29.097702 0 0 0-2.969501 22.288327\
+     l16.144531 60.277468A323.300211 323.300211 0 0 0 529.432779 375.676073v-102.976851h102.396603\
+     a17.066101 17.066101 0 1 0 0-34.132201H392.903973a17.066101 17.066101 0 1 0 0 34.132201h102.396604\
+     v102.976851a323.027153 323.027153 0 0 0-113.335974 27.169233l16.144531-60.277468\
+     a29.046503 29.046503 0 0 0-2.969501-22.288327 29.012371 29.012371 0 0 0-17.851142-13.601682\
+     L153.978564 247.765649V136.170417\
+     c0-0.238925-0.119463-0.426653-0.136528-0.665578 0.017066-0.221859 0.136529-0.409586 0.136528-0.648512\
+     v-0.136529\
+     c-0.017066-2.0138-0.017066-4.744376-0.08533-5.034499 2.32099-2.491651 16.519985-10.580982 102.481934-10.580983\
+     a17.066101 17.066101 0 1 0 0-34.132201\
+     c-74.476463 0-104.308007 5.614747-119.462704 15.001103-15.154697-9.386355-44.986241-15.001102-119.462705-15.001103\
+     a17.066101 17.066101 0 1 0 0 34.132201\
+     c85.961949 0 100.160945 8.089332 102.157679 10.017801 0.255992 0.853305 0.255992 3.583881 0.238925 5.597681\
+     v104.052016l-33.87621-8.942637c-15.205896-4.061732-31.657617 5.512351-35.75348 20.735313\
+     l-29.012372 108.301474\
+     c-2.030866 7.560283-0.989834 15.461887 2.93537 22.237129 3.925203 6.775242 10.290859 11.639081 17.885273 13.652881\
+     L119.846363 415.269427v464.761119L5.384026 994.492883a17.049035 17.049035 0 1 0 24.131466 24.1144\
+     L119.846363 928.293478v78.265138a17.066101 17.066101 0 1 0 34.132201 0v-78.265138l90.330871 90.330871\
+     a17.014902 17.014902 0 0 0 24.131466 0 17.049035 17.049035 0 0 0 0-24.131466L153.978564 880.01348\
+     V424.263262l139.156985 36.709182A320.620833 320.620833 0 0 0 188.110766 699.351738\
+     c0 112.65333 57.819949 211.995102 145.266648 270.122241l-8.22586 32.920508\
+     a17.031968 17.031968 0 0 0 16.571184 21.196097 17.066101 17.066101 0 0 0 16.537051-12.936104\
+     l5.81954-23.295227c44.491324 23.005104 94.836321 36.231332 148.287349 36.231331\
+     s103.796024-13.226228 148.287348-36.231331l5.819541 23.295227\
+     a17.066101 17.066101 0 1 0 33.108235-8.259993l-8.225861-32.920508\
+     C778.802641 911.34684 836.62259 812.022135 836.62259 699.351738\
+     a320.569634 320.569634 0 0 0-105.024783-238.379294L870.754791 424.280328v455.750218\
+     l-114.462337 114.462337a17.049035 17.049035 0 1 0 24.131467 24.131466L870.754791 928.293478v78.265138\
+     a17.066101 17.066101 0 1 0 34.132202 0v-78.265138l90.33087 90.330871\
+     a17.014902 17.014902 0 0 0 24.131467 0 17.049035 17.049035 0 0 0 0-24.131466L904.886993 880.01348\
+     V415.269427l77.855551-20.530519a29.217164 29.217164 0 0 0 17.851141-13.652881\
+     c3.908137-6.758176 4.966235-14.65978 2.935369-22.237129l-29.012371-108.318541\
+     c-4.078798-15.205896-20.530519-24.779978-35.753481-20.718246L904.886993 238.771814V136.170417\
+     c0-0.238925-0.119463-0.426653-0.136529-0.665578 0.017066-0.221859 0.136529-0.409586 0.136529-0.648512\
+     v-0.153595\
+     c-0.017066-1.996734-0.017066-4.72731-0.085331-5.034499 2.32099-2.474585 16.519985-10.563916 102.481934-10.563917\
+     a17.066101 17.066101 0 0 0 17.066101-17.0661z m-273.05761 597.313522\
+     c0 131.750297-107.175112 238.925409-238.925409 238.925409\
+     s-238.925409-107.175112-238.925409-238.925409 107.175112-238.925409 238.925409-238.925409 238.925409 107.192178 238.925409 238.925409\
+     zM768.358188 67.906014\
+     c74.476463 0 104.308007-5.614747 119.462704-15.001102 15.154697 9.386355 44.986241 15.001102 119.462704 15.001102\
+     a17.066101 17.066101 0 1 0 0-34.132201c-85.961949 0-100.160945-8.089332-102.157678-10.017801\
+     A31.640551 31.640551 0 0 1 904.886993 18.175397V16.707713\
+     c0-9.420488-7.611481-16.349324-17.031969-16.366391H887.820892\
+     c-9.403421 0-17.031968 8.277059-17.066101 17.68048v0.153595\
+     c0.017066 1.996734 0.017066 4.72731 0.085331 5.0345-2.32099 2.491651-16.519985 10.563916-102.481934 10.563916\
+     a17.066101 17.066101 0 1 0 0 34.132201zM17.449759 67.906014\
+     c74.476463 0 104.308007-5.614747 119.462705-15.001102 15.154697 9.386355 44.986241 15.001102 119.462704 15.001102\
+     a17.066101 17.066101 0 1 0 0-34.132201c-85.961949 0-100.160945-8.089332-102.157678-10.017801\
+     A31.452823 31.452823 0 0 1 153.978564 18.175397V16.707713\
+     C153.978564 7.287225 146.367084 0.358388 136.946596 0.341322 128.021025 1.0069 119.880495 8.618381 119.846363 18.038868\
+     v0.153595\
+     c0.017066 1.996734 0.017066 4.72731 0.085331 5.017434-2.32099 2.491651-16.519985 10.563916-102.481935 10.563916\
+     a17.066101 17.066101 0 1 0 0 34.132201\
+     z",
+    )),
+    add(Shape::Fill(
+    "M589.164131 682.285638c-42.340996 0-76.797453 34.456457-76.797453 76.797452\
+     s34.456457 76.797453 76.797453 76.797453 76.797453-34.456457 76.797453-76.797453-34.456457-76.797453-76.797453-76.797452\
+     z",
+    )),
+];
+
+/// A snare drum tipped towards the eye, from the user's `progress.svg`: the
+/// shell, the head across its top and the two sticks, the one standing out of
+/// the corner and the one struck into the middle. It is drawn in the same
+/// 1024-unit box as [`DRUM`] and set at the same share of a tile, so the two
+/// read as one set.
+///
+/// Every part is a heavy line with its inside left out, which the odd-even
+/// rule gives when the inside is drawn as well: one path, cut once.
+const SNARE: &[Part] = &[add(Shape::EvenOdd(
+    "M1039.058824 39.152941c-9.035294-18.070588-33.129412-24.094118-51.2-12.047059L560.188235 277.082353\
+     c-12.047059-9.035294-27.105882-15.058824-45.176471-15.058824-42.164706 0-75.294118 33.129412-75.294118 75.294118 0 42.164706 33.129412 75.294118 75.294118 75.294118 39.152941 0 69.270588-27.105882 75.294118-66.258824\
+     L783.058824 231.905882\
+     c87.341176 33.129412 138.541176 81.317647 138.541176 123.482353 0 84.329412-186.729412 168.658824-418.635294 168.658824\
+     S81.317647 439.717647 81.317647 355.388235s186.729412-168.658824 418.635294-168.658824\
+     c24.094118 0 48.188235 0 69.270588 3.011765 21.082353 3.011765 39.152941-15.058824 39.152941-36.141176\
+     s-15.058824-39.152941-36.141176-39.152941\
+     c-24.094118-3.011765-51.2-3.011765-75.294118-3.011765-271.058824 0-493.929412 102.4-493.929412 243.952941 0 0 0 3.011765 0 3.011765 0 0 0 0 0 0\
+     L3.011765 752.941176c0 141.552941 222.870588 243.952941 493.929412 243.952941\
+     s493.929412-102.4 493.929412-243.952941L990.870588 358.4\
+     c0 0 0 0 0 0 0 0 0-3.011765 0-3.011765 0-66.258824-48.188235-126.494118-132.517647-168.658824\
+     L1027.011765 90.352941C1045.082353 81.317647 1051.105882 57.223529 1039.058824 39.152941z\
+     M81.317647 752.941176 81.317647 487.905882c51.2 39.152941 123.482353 72.282353 210.823529 90.352941\
+     l0 322.258824C165.647059 867.388235 81.317647 813.176471 81.317647 752.941176z\
+     M370.447059 912.564706 370.447059 590.305882\
+     c42.164706 6.023529 87.341176 9.035294 132.517647 9.035294 54.211765 0 105.411765-3.011765 153.6-12.047059\
+     l0 322.258824c-48.188235 9.035294-99.388235 12.047059-153.6 12.047059\
+     C454.776471 921.6 409.6 918.588235 370.447059 912.564706zM728.847059 894.494118 728.847059 572.235294\
+     c78.305882-18.070588 144.564706-48.188235 192.752941-84.329412L921.6 752.941176\
+     C921.6 807.152941 846.305882 861.364706 728.847059 894.494118\
+     z",
 ))];
 
 /// A shopping bag with its handles over its mouth: the Aether store's own
@@ -678,7 +775,8 @@ fn outline(icon: Icon) -> (&'static [Part], f32) {
         Icon::Systems => (SYSTEMS, 1.0),
         Icon::Music => (MUSIC, 1.0),
         Icon::Browser => (BROWSER, 1.0),
-        Icon::Tasks => (TASKS, 1.0),
+        Icon::Tasks => (DRUM, 0.69),
+        Icon::Snare => (SNARE, 0.69),
         Icon::Store => (STORE, 1.0),
         Icon::Weather => (WEATHER, 1.0),
         Icon::Dot => (DOT, 1.0),
@@ -696,6 +794,19 @@ fn outline(icon: Icon) -> (&'static [Part], f32) {
         Icon::Bell => (BELL, 1.0),
         Icon::Screenshot => (SCREENSHOT, 1.0),
         Icon::Close => (CLOSE, 1.0),
+    }
+}
+
+/// The box `icon`'s paths are laid out in: this file's 28 units for every
+/// glyph drawn here, and the drawing's own box for the two the user handed
+/// over whole. A box wider than it is tall is held to the longer of its
+/// sides, so what is drawn in it keeps the proportions it was drawn with
+/// rather than being stretched to the tile.
+fn laid_in(icon: Icon) -> (f32, f32) {
+    match icon {
+        Icon::Tasks => (1024.0, 1024.0),
+        Icon::Snare => (1055.0, 1024.0),
+        _ => (BOX, BOX),
     }
 }
 
@@ -821,24 +932,30 @@ fn coverage(art: Art, size: f32) -> Arc<Coverage> {
     if let Some(cover) = found {
         return cover;
     }
-    let (parts, scale) = match art {
-        Art::Tile => (TILE, 1.0),
-        Art::Glyph(icon) => outline(icon),
+    let (parts, scale, from) = match art {
+        Art::Tile => (TILE, 1.0, (BOX, BOX)),
+        Art::Glyph(icon) => {
+            let (parts, scale) = outline(icon);
+            (parts, scale, laid_in(icon))
+        }
     };
-    let cover = Arc::new(rasterize(parts, scale, size));
+    let cover = Arc::new(rasterize(parts, from, scale, size));
     DRAWN.lock().expect("no one panics holding the drawings").push(Made { art, size, cover: cover.clone() });
     cover
 }
 
-/// What `parts` cover of a box `size` across, at `scale` of their size
-/// about the middle of the box they are laid out in. They are drawn
-/// together, so that what one part cuts out of another shows what lies
-/// under the whole.
-fn rasterize(parts: &[Part], scale: f32, size: f32) -> Coverage {
+/// What `parts`, laid out in a box `from` across, cover of a box `size`
+/// across at `scale` of their size about the middle of the box they are laid
+/// out in. They are drawn together, so that what one part cuts out of another
+/// shows what lies under the whole.
+fn rasterize(parts: &[Part], from: (f32, f32), scale: f32, size: f32) -> Coverage {
     let side = size.ceil() as u32;
     let mut art = Pixmap::new(side, side).expect("a glyph's box holds pixels");
-    let k = size / BOX * scale;
-    let at = Transform::from_translate(size / 2.0, size / 2.0).pre_scale(k, k).pre_translate(-BOX / 2.0, -BOX / 2.0);
+    // A unit of a filled tile takes this many pixels; a unit of the paths'
+    // own box takes that much again for each of this file's units its box
+    // holds, which leaves the box drawn for this file alone as it was.
+    let unit = size / BOX * scale * BOX / from.0.max(from.1);
+    let at = Transform::from_translate(size / 2.0, size / 2.0).pre_scale(unit, unit).pre_translate(-from.0 / 2.0, -from.1 / 2.0);
     for part in parts {
         let mut paint = Paint::default();
         paint.set_color(Color::WHITE);
@@ -876,7 +993,7 @@ fn path(d: &str) -> tiny_skia::Path {
 mod tests {
     use super::*;
 
-    const ALL: [Icon; 32] = [
+    const ALL: [Icon; 33] = [
         Icon::Install,
         Icon::Backup,
         Icon::Restore,
@@ -903,6 +1020,7 @@ mod tests {
         Icon::Music,
         Icon::Browser,
         Icon::Tasks,
+        Icon::Snare,
         Icon::Store,
         Icon::Weather,
         Icon::Dot,

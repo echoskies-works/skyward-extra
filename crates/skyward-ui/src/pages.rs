@@ -798,11 +798,13 @@ fn process_face(c: &mut Canvas, cx: &Ctx, top: f32, out: &mut Vec<Hit>) -> f32 {
     for (k, task) in cx.tasks.iter().enumerate() {
         let row = card + row_h * k as f32;
         let cy = row + row_h / 2.0;
-        // The app's own picture will stand here once apps carry one; a square
-        // of the card's colour keeps its place until then.
-        let size = m.icon;
+        // The app's own picture will stand here once apps carry one; the
+        // page's mark keeps its place until then, in the ink its state takes.
+        // Drawn above the row's own icon size, this row being taller than the
+        // rows the size was set for and carrying two lines rather than one.
+        let size = m.icon * 1.25;
         let ix = m.margin + m.inner;
-        c.fill_round_rect(ix, cy - size / 2.0, size, size, size * 0.28, t.pal.chevron);
+        icons::glyph(c, Icon::Snare, ix + size / 2.0, cy, size, task.state.ink(&t.pal));
         let name_x = ix + size + m.icon_gap;
 
         // The word that would end it, in outline at the row's end; the name

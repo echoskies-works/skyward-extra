@@ -4,7 +4,9 @@
 //! but the shape it takes and the words it uses are settled, and a real list
 //! will fill the same card.
 
+use crate::color::Rgba;
 use crate::lang::{tri, Lang, Text};
+use crate::theme::Palette;
 
 /// The three faces of the tasks page: the processes the machine is running,
 /// the services it keeps going, and how it is bearing them. The words across
@@ -46,6 +48,16 @@ impl TaskState {
             TaskState::Eco => tri("运行中（节能）", "執行中（節能）", "Running (Eco)"),
             TaskState::Suspended => tri("已挂起", "已暫停", "Suspended"),
         })
+    }
+
+    /// The ink the row's mark is drawn in, which is what tells one row's
+    /// state from another's before the line under the name is read.
+    pub fn ink(self, pal: &Palette) -> Rgba {
+        match self {
+            TaskState::Running => pal.state_run,
+            TaskState::Eco => pal.state_eco,
+            TaskState::Suspended => pal.state_held,
+        }
     }
 }
 
